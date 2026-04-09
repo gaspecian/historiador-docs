@@ -1,0 +1,53 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build:rust": {
+      "cache": true,
+      "inputs": [
+        "apps/api/**/*.rs",
+        "apps/api/Cargo.toml",
+        "apps/mcp/**/*.rs",
+        "apps/mcp/Cargo.toml",
+        "crates/**/*.rs",
+        "crates/**/Cargo.toml",
+        "crates/db/migrations/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml"
+      ],
+      "outputs": [
+        "target/release/api",
+        "target/release/mcp",
+        "target/release/gen-openapi"
+      ]
+    },
+    "gen:openapi": {
+      "dependsOn": ["build:rust"],
+      "cache": true,
+      "inputs": ["apps/api/**/*.rs"],
+      "outputs": ["openapi.yaml"]
+    },
+    "build:types": {
+      "dependsOn": ["gen:openapi"],
+      "cache": true,
+      "inputs": ["openapi.yaml"],
+      "outputs": ["packages/types/generated/**"]
+    },
+    "build": {
+      "dependsOn": ["build:types", "^build"],
+      "cache": true,
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "lint": {
+      "cache": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": true
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false
+    }
+  }
+}
