@@ -170,25 +170,20 @@ CREATE TRIGGER page_versions_updated_at BEFORE UPDATE ON page_versions FOR EACH 
 -- ============================================================
 -- Role GRANTs — enforces ADR-003 at the database layer.
 --
--- historiador_api: full CRUD on every table
--- historiador_mcp: SELECT only, and only on tables needed for
---                  source attribution in MCP responses. NOT on
---                  users or sessions — MCP has no business
---                  reading authentication data.
+-- Database- and schema-level grants (CONNECT + USAGE + CREATE) live in
+-- docker/postgres/init/10-roles.sh because only the superuser can issue
+-- them on first boot. This migration handles only table-level grants,
+-- which historiador_api can issue because it owns every table above.
+--
+-- historiador_api: already has full CRUD as the table owner; no GRANT
+--                  needed for itself. (SELECT/INSERT/UPDATE/DELETE +
+--                  sequence usage are implicit from ownership.)
+--
+-- historiador_mcp: SELECT only, and only on tables needed for source
+--                  attribution in MCP responses. Explicitly NOT on
+--                  users, sessions, or the sqlx migrations tracking
+--                  table — MCP has no business reading authentication
+--                  data or schema evolution state.
 -- ============================================================
 
--- API role (read/write owner)
-GRANT CONNECT ON DATABASE historiador TO historiador_api;
-GRANT USAGE ON SCHEMA public TO historiador_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO historiador_api;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO historiador_api;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO historiador_api;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO historiador_api;
-
--- MCP role (read-only, restricted surface)
-GRANT CONNECT ON DATABASE historiador TO historiador_mcp;
-GRANT USAGE ON SCHEMA public TO historiador_mcp;
 GRANT SELECT ON workspaces, collections, pages, page_versions, chunks TO historiador_mcp;
--- Explicitly NO grants on users, sessions, or the sqlx migrations table.

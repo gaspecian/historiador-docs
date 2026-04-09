@@ -45,12 +45,14 @@ services:
       retries: 10
 
   vexfs:
-    # VexFS has no published image. Pinned to a specific commit SHA of
-    # github.com/lspecian/vexfs so `docker compose build` is reproducible.
-    # Update by editing the SHA on the next line and re-running
-    # `docker compose build vexfs`.
+    # VexFS has no published image. Run `scripts/setup-vexfs.sh` once to
+    # clone the pinned commit into vendor/vexfs/ (the script sidesteps a
+    # broken submodule reference in the upstream repo by passing
+    # --no-recurse-submodules to git clone). Compose builds from the
+    # local clone, NOT from a git URL, because buildkit's git fetcher
+    # always initializes submodules and fails on the broken reference.
     build:
-      context: "https://github.com/lspecian/vexfs.git#5a0609dd0984afafef652c4271c6de69aec5c9be"
+      context: ./vendor/vexfs
     restart: unless-stopped
     environment:
       RUST_LOG: info
@@ -75,7 +77,7 @@ services:
         BIN_NAME: api
     restart: unless-stopped
     environment:
-      RUST_LOG: ${RUST_LOG:-historiador_api=info,tower_http=info,sqlx=warn}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
       DATABASE_URL_READWRITE: postgres://historiador_api:${POSTGRES_API_PASSWORD:-apipass}@postgres:5432/historiador
       VEXFS_URL: http://vexfs:7680
       API_PORT: "3001"
@@ -96,7 +98,7 @@ services:
         BIN_NAME: mcp
     restart: unless-stopped
     environment:
-      RUST_LOG: ${RUST_LOG:-historiador_mcp=info,tower_http=info}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
       # CRITICAL: readonly credential only. Never DATABASE_URL_READWRITE here.
       DATABASE_URL_READONLY: postgres://historiador_mcp:${POSTGRES_MCP_PASSWORD:-mcppass}@postgres:5432/historiador
       VEXFS_URL: http://vexfs:7680

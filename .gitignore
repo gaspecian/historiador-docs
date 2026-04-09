@@ -32,5 +32,8 @@ lcov.info
 *.pid
 *.log
 
+# --- Vendored upstream dependencies (populated by scripts/setup-vexfs.sh) ---
+vendor/
+
 # Note: openapi.yaml and packages/types/generated/** are committed intentionally
 # so contributors can see the API contract without running the full build.
