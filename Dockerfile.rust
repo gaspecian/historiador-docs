@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1.7
+#
+# Multi-stage Dockerfile shared by historiador-api and historiador-mcp.
+# Select the binary via `--build-arg BIN_NAME=api` or `BIN_NAME=mcp`.
+#
+# Uses cargo-chef to cache dependency compilation: changes to our own
+# source code do not re-download or re-compile the dependency tree.
+
+ARG RUST_VERSION=1.93.1
+ARG DEBIAN_VERSION=bookworm
+
+# ============================================================
+# Stage 1: chef base image
+# ============================================================
+FROM lukemathwalker/cargo-chef:latest-rust-${RUST_VERSION}-${DEBIAN_VERSION} AS chef
+WORKDIR /app
+
+# ============================================================
+# Stage 2: planner — compute the dependency recipe
+# ============================================================
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY apps ./apps
+COPY crates ./crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ============================================================
+# Stage 3: builder — cache deps, then compile the selected bin
+# ============================================================
+FROM chef AS builder
+ARG BIN_NAME
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependency layer — cached unless recipe.json changes
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Source layer — rebuilt on any *.rs change
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY apps ./apps
+COPY crates ./crates
+RUN cargo build --release --bin ${BIN_NAME}
+
+# ============================================================
+# Stage 4: runtime — slim non-root image with the single binary
+# ============================================================
+FROM debian:${DEBIAN_VERSION}-slim AS runtime
+ARG BIN_NAME
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -u 10001 -s /sbin/nologin app
+
+WORKDIR /app
+COPY --from=builder /app/target/release/${BIN_NAME} /usr/local/bin/app
+USER app
+
+# Informational — compose sets the real mapping.
+EXPOSE 3001 3002
+
+ENTRYPOINT ["/usr/local/bin/app"]

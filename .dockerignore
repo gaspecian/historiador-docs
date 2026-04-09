@@ -1,0 +1,28 @@
+# Build artifacts — rebuilt inside the container
+target/
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+.turbo/
+dist/
+
+# Git + CI + planning — not needed inside images
+.git/
+.github/
+artifacts/
+
+# Environment + secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Docker config — avoid recursion
+docker-compose.yml
+Dockerfile*
+.dockerignore
+
+# Markdown (keeps context small). Comment out if the build ever needs READMEs.
+**/*.md

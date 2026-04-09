@@ -1,0 +1,116 @@
+# Historiador Doc — local dev / single-node deployment.
+#
+# Network topology (ADR-003):
+#   * postgres (5432) — internal, bound to 127.0.0.1 in dev only
+#   * vexfs    (7680) — internal, bound to 127.0.0.1 in dev only
+#   * api      (3001) — internal, bound to 127.0.0.1 in dev only
+#   * mcp      (3002) — EXTERNALLY EXPOSED, all interfaces
+#   * web      (3000) — added by Item 6 (stretch) once apps/web exists
+#
+# Host port bindings are parameterized via HOST_PORT_* env vars so a
+# machine already running services on the defaults can override them
+# without editing this file. Container-internal ports are fixed — the
+# services talk to each other via the docker network using 5432/7680/3001.
+#
+# Security invariants (ADR-003):
+#   * api  gets DATABASE_URL_READWRITE → role `historiador_api`
+#   * mcp  gets DATABASE_URL_READONLY  → role `historiador_mcp`
+#   The two variable names are distinct — accidental reuse is syntactically
+#   impossible. Enforcement at the DB layer comes from GRANTs in the 0001
+#   migration; role creation happens in docker/postgres/init/10-roles.sh on
+#   first boot.
+
+name: historiador-doc
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: historiador_admin
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-devpassword}
+      POSTGRES_DB: historiador
+      # Consumed by docker/postgres/init/10-roles.sh on first boot.
+      POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD:-apipass}
+      POSTGRES_MCP_PASSWORD: ${POSTGRES_MCP_PASSWORD:-mcppass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${HOST_PORT_POSTGRES:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U historiador_admin -d historiador"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vexfs:
+    # VexFS has no published image. Pinned to a specific commit SHA of
+    # github.com/lspecian/vexfs so `docker compose build` is reproducible.
+    # Update by editing the SHA on the next line and re-running
+    # `docker compose build vexfs`.
+    build:
+      context: "https://github.com/lspecian/vexfs.git#5a0609dd0984afafef652c4271c6de69aec5c9be"
+    restart: unless-stopped
+    environment:
+      RUST_LOG: info
+      VEXFS_PORT: "7680"
+      VEXFS_DATA_DIR: /app/data
+    volumes:
+      - vexfs_data:/app/data
+    ports:
+      - "127.0.0.1:${HOST_PORT_VEXFS:-7680}:7680"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7680/api/v1/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      args:
+        BIN_NAME: api
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-historiador_api=info,tower_http=info,sqlx=warn}
+      DATABASE_URL_READWRITE: postgres://historiador_api:${POSTGRES_API_PASSWORD:-apipass}@postgres:5432/historiador
+      VEXFS_URL: http://vexfs:7680
+      API_PORT: "3001"
+      GIT_SHA: ${GIT_SHA:-unknown}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vexfs:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${HOST_PORT_API:-3001}:3001"
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      args:
+        BIN_NAME: mcp
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-historiador_mcp=info,tower_http=info}
+      # CRITICAL: readonly credential only. Never DATABASE_URL_READWRITE here.
+      DATABASE_URL_READONLY: postgres://historiador_mcp:${POSTGRES_MCP_PASSWORD:-mcppass}@postgres:5432/historiador
+      VEXFS_URL: http://vexfs:7680
+      MCP_PORT: "3002"
+      GIT_SHA: ${GIT_SHA:-unknown}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Wait for api so migrations have run before mcp opens its readonly pool.
+      api:
+        condition: service_started
+    ports:
+      - "${HOST_PORT_MCP:-3002}:3002"   # externally exposed per ADR-003
+
+volumes:
+  postgres_data:
+  vexfs_data:
