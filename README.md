@@ -55,6 +55,8 @@ scripts/setup-vexfs.sh
 cp .env.example .env
 # Edite o .env se as portas padrao (3000, 3001, 3002, 5432, 7680) colidirem
 # com outros servicos na sua maquina — use as variaveis HOST_PORT_*.
+# Em producao, SEMPRE sobrescreva JWT_SECRET e APP_ENCRYPTION_KEY (gere
+# ambos com `openssl rand -base64 32`).
 
 # Compilar e iniciar toda a stack
 docker compose up --build
@@ -80,6 +82,40 @@ curl http://localhost:3002/health
 ```
 
 > **Nota:** substitua os numeros de porta pelos valores `HOST_PORT_*` se voce os alterou no `.env`.
+
+### Primeiro uso: setup wizard
+
+Ate o wizard rodar, todos os endpoints da API (exceto `/health` e `/setup/init`) retornam `423 Locked`. O wizard cria o workspace, o usuario admin, valida a chave da LLM com uma chamada de teste real e encripta a chave no Postgres — tudo dentro de uma transacao atomica.
+
+```bash
+# 1. Inicializar a instalacao (chama a API da LLM para validar a chave)
+curl -X POST http://localhost:3001/setup/init \
+  -H 'content-type: application/json' \
+  -d '{
+    "admin_email": "admin@example.com",
+    "admin_password": "uma-senha-forte-aqui",
+    "workspace_name": "Docs da Minha Empresa",
+    "llm_provider": "openai",
+    "llm_api_key": "sk-...",
+    "languages": ["pt-BR", "en-US"],
+    "primary_language": "pt-BR"
+  }'
+
+# 2. Login — retorna access_token (JWT HS256, 1h) + refresh_token (7d)
+ACCESS=$(curl -sX POST http://localhost:3001/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"uma-senha-forte-aqui"}' \
+  | jq -r .access_token)
+
+# 3. Convidar outro usuario — retorna activation_url para o admin
+#    compartilhar fora de banda (v1 nao envia email)
+curl -X POST http://localhost:3001/admin/users/invite \
+  -H "authorization: Bearer $ACCESS" \
+  -H 'content-type: application/json' \
+  -d '{"email":"autor@example.com","role":"author"}'
+```
+
+Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev), dropar o volume `postgres_data` via `docker compose down -v`.
 
 ## Desenvolvimento
 
