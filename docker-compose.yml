@@ -113,6 +113,20 @@ services:
     ports:
       - "${HOST_PORT_MCP:-3002}:3002"   # externally exposed per ADR-003
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_INTERNAL_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${HOST_PORT_WEB:-3000}:3000"
+
 volumes:
   postgres_data:
   vexfs_data:

@@ -94,11 +94,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          tags: historiador-doc/web:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       # Note: the `vexfs` image is intentionally NOT built in CI. It requires
       # scripts/setup-vexfs.sh to clone upstream (github.com/lspecian/vexfs)
       # and apply a local patch to the broken Dockerfile entrypoint reference
       # — too much surface for a smoke-build job. Sprint 2 should revisit
       # once the upstream Dockerfile is fixed.
-      #
-      # Note: the `web` image (Next.js) is added by Item 6 and appears here
-      # then, not before.
