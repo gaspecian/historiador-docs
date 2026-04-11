@@ -60,6 +60,17 @@ comrak = "0.29"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
+# --- auth & setup (Sprint 2) ---
+argon2 = "0.5"
+jsonwebtoken = "9"
+validator = { version = "0.18", features = ["derive"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+aes-gcm = "0.10"
+base64 = "0.22"
+rand = "0.8"
+sha2 = "0.10"
+regex = "1"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

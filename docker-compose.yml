@@ -82,6 +82,13 @@ services:
       VEXFS_URL: http://vexfs:7680
       API_PORT: "3001"
       GIT_SHA: ${GIT_SHA:-unknown}
+      # Sprint 2: auth & encryption secrets. Defaults here are DEV
+      # ONLY — production must override both via an .env file or
+      # orchestration secrets. JWT_SECRET must be ≥32 chars;
+      # APP_ENCRYPTION_KEY must be base64-encoded 32 bytes.
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-do-not-use-in-production-xxxxxx}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,9 +1,25 @@
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
 use sqlx::PgPool;
 
+use crate::crypto::Cipher;
+use crate::setup::llm_probe::LlmProbe;
+
 /// Shared application state. Every route handler receives this via
-/// `State<Arc<AppState>>`. Sprint 2 will grow this with the LLM client,
-/// the VectorStore implementation, and the workspace cache.
+/// `State<Arc<AppState>>`.
 pub struct AppState {
     pub pool: PgPool,
     pub git_sha: String,
+    pub jwt_secret: Vec<u8>,
+    pub cipher: Cipher,
+    pub public_base_url: String,
+    /// Cached setup-complete flag. Seeded at startup from the
+    /// `installation` row and flipped to TRUE by the setup wizard
+    /// after the DB transaction commits. Avoids a per-request DB
+    /// round-trip on every gated route.
+    pub setup_complete: AtomicBool,
+    /// LLM probe — a trait object so the e2e test can swap in a
+    /// stub that never hits the network.
+    pub llm_probe: Arc<dyn LlmProbe>,
 }
