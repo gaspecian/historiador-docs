@@ -1,0 +1,43 @@
+openapi: 3.1.0
+info:
+  title: Historiador Doc API
+  description: REST API for Historiador Doc — self-hosted documentation with a built-in MCP server.
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      tags:
+      - system
+      operationId: handler
+      responses:
+        '200':
+          description: service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      description: |-
+        Response body for `GET /health`. Exposed as an OpenAPI schema so
+        stretch item 7 (openapi-typescript) can generate a matching
+        TypeScript type for the frontend.
+      required:
+      - status
+      - version
+      - git_sha
+      properties:
+        git_sha:
+          type: string
+        status:
+          type: string
+        version:
+          type: string
+tags:
+- name: system
+  description: Health and system metadata

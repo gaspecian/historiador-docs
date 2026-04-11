@@ -50,7 +50,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # --- openapi (stretch #7) ---
-utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "yaml"] }
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
 
 # --- markdown (Sprint 2 chunker) ---

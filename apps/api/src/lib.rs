@@ -7,5 +7,6 @@
 
 pub mod error;
 pub mod health;
+pub mod openapi;
 pub mod routes;
 pub mod state;
