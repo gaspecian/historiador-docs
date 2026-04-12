@@ -1,23 +1,75 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 
-/// Top-level error type for route handlers. Sprint 2 will grow this
-/// with typed variants (NotFound, Forbidden, ValidationError, ...)
-/// that map to appropriate HTTP status codes. In Sprint 1 every error
-/// becomes a 500 — we have no handlers that can fail yet.
+/// Top-level error type for route handlers.
+///
+/// Every variant maps to a known HTTP status. `Internal` is the only
+/// variant that logs at `ERROR` level — client-triggered errors
+/// (401/403/404/etc) are expected traffic and stay quiet.
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    #[error("unauthorized")]
+    Unauthorized,
+
+    #[error("forbidden")]
+    Forbidden,
+
+    #[error("not found")]
+    NotFound,
+
+    #[error("{0}")]
+    Validation(String),
+
+    #[error("{0}")]
+    Conflict(String),
+
+    #[error("setup required")]
+    SetupRequired,
+
     #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    Internal(#[from] anyhow::Error),
+}
+
+impl ApiError {
+    fn code_and_message(&self) -> (StatusCode, &'static str, String) {
+        match self {
+            ApiError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "authentication required".into(),
+            ),
+            ApiError::Forbidden => (
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "insufficient role".into(),
+            ),
+            ApiError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "resource not found".into(),
+            ),
+            ApiError::Validation(msg) => (StatusCode::BAD_REQUEST, "validation_error", msg.clone()),
+            ApiError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg.clone()),
+            ApiError::SetupRequired => (
+                StatusCode::LOCKED,
+                "setup_required",
+                "installation setup is not complete".into(),
+            ),
+            ApiError::Internal(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_server_error",
+                "internal server error".into(),
+            ),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        tracing::error!(error = ?self, "unhandled api error");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "internal_server_error" })),
-        )
-            .into_response()
+        if let ApiError::Internal(err) = &self {
+            tracing::error!(error = ?err, "internal api error");
+        }
+        let (status, code, message) = self.code_and_message();
+        (status, Json(json!({ "error": code, "message": message }))).into_response()
     }
 }

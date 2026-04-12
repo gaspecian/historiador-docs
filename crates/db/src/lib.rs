@@ -10,6 +10,7 @@
 //! The call would fail at runtime, but the right time to enforce this is
 //! at code review, not at a crashing container.
 
+pub mod password;
 pub mod postgres;
 pub mod vector_store;
 

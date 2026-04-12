@@ -18,6 +18,11 @@ mod health;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Best-effort .env load so `cargo run` from the repo root picks up
+    // local dev config without a wrapper script. Silently ignored if
+    // the file is absent — production containers pass env vars directly.
+    let _ = dotenvy::dotenv();
+
     init_tracing();
 
     // MCP receives the READONLY credential only.

@@ -7,6 +7,108 @@ info:
     identifier: AGPL-3.0-or-later
   version: 0.1.0
 paths:
+  /admin/users/invite:
+    post:
+      tags:
+      - admin
+      operationId: invite
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteRequest'
+        required: true
+      responses:
+        '200':
+          description: invited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+        '409':
+          description: email already in use
+      security:
+      - bearer: []
+  /auth/activate:
+    post:
+      tags:
+      - auth
+      operationId: activate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateRequest'
+        required: true
+      responses:
+        '204':
+          description: activated
+        '400':
+          description: validation error
+        '401':
+          description: invite token invalid or expired
+  /auth/login:
+    post:
+      tags:
+      - auth
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: validation error
+        '401':
+          description: invalid credentials
+  /auth/logout:
+    post:
+      tags:
+      - auth
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      responses:
+        '204':
+          description: logged out
+  /auth/refresh:
+    post:
+      tags:
+      - auth
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        '200':
+          description: rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: invalid or expired refresh token
   /health:
     get:
       tags:
@@ -19,8 +121,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /setup/init:
+    post:
+      tags:
+      - setup
+      operationId: init
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetupRequest'
+        required: true
+      responses:
+        '200':
+          description: installation initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupResponse'
+        '400':
+          description: validation error or LLM key rejected
+        '409':
+          description: setup already complete
 components:
   schemas:
+    ActivateRequest:
+      type: object
+      required:
+      - invite_token
+      - password
+      properties:
+        invite_token:
+          type: string
+        password:
+          type: string
     HealthResponse:
       type: object
       description: |-
@@ -38,6 +172,135 @@ components:
           type: string
         version:
           type: string
+    InviteRequest:
+      type: object
+      required:
+      - email
+      - role
+      properties:
+        email:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+    InviteResponse:
+      type: object
+      required:
+      - user_id
+      - activation_url
+      - expires_at
+      properties:
+        activation_url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+          format: uuid
+    LlmProvider:
+      type: string
+      enum:
+      - openai
+      - anthropic
+      - ollama
+      - test
+    LoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    LogoutRequest:
+      type: object
+      required:
+      - refresh_token
+      properties:
+        refresh_token:
+          type: string
+    RefreshRequest:
+      type: object
+      required:
+      - refresh_token
+      properties:
+        refresh_token:
+          type: string
+    Role:
+      type: string
+      enum:
+      - admin
+      - author
+      - viewer
+    SetupRequest:
+      type: object
+      required:
+      - admin_email
+      - admin_password
+      - workspace_name
+      - llm_provider
+      - llm_api_key
+      - languages
+      - primary_language
+      properties:
+        admin_email:
+          type: string
+        admin_password:
+          type: string
+        languages:
+          type: array
+          items:
+            type: string
+        llm_api_key:
+          type: string
+        llm_provider:
+          $ref: '#/components/schemas/LlmProvider'
+        primary_language:
+          type: string
+        workspace_name:
+          type: string
+    SetupResponse:
+      type: object
+      required:
+      - workspace_id
+      - user_id
+      - setup_complete
+      properties:
+        setup_complete:
+          type: boolean
+        user_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+    TokenResponse:
+      type: object
+      required:
+      - access_token
+      - refresh_token
+      - expires_in
+      properties:
+        access_token:
+          type: string
+        expires_in:
+          type: integer
+          format: int64
+        refresh_token:
+          type: string
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 tags:
 - name: system
   description: Health and system metadata
+- name: setup
+  description: First-run installation wizard
+- name: auth
+  description: 'Authentication: login, refresh, logout, activate'
+- name: admin
+  description: Admin-only operations

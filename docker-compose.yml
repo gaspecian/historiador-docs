@@ -1,24 +1,30 @@
-# Historiador Doc — local dev / single-node deployment.
+# Historiador Doc — local dev infrastructure.
 #
-# Network topology (ADR-003):
-#   * postgres (5432) — internal, bound to 127.0.0.1 in dev only
-#   * vexfs    (7680) — internal, bound to 127.0.0.1 in dev only
-#   * api      (3001) — internal, bound to 127.0.0.1 in dev only
-#   * mcp      (3002) — EXTERNALLY EXPOSED, all interfaces
-#   * web      (3000) — added by Item 6 (stretch) once apps/web exists
+# Philosophy: docker-compose runs only the stateful/prebuilt services
+# (Postgres, Ollama, and optionally VexFS). The Rust binaries (api, mcp)
+# and the Next.js frontend (web) are meant to run on the host via
+# `cargo run` and `pnpm dev` so iteration is fast and failures show up
+# in a normal terminal instead of buried in container logs.
 #
-# Host port bindings are parameterized via HOST_PORT_* env vars so a
-# machine already running services on the defaults can override them
-# without editing this file. Container-internal ports are fixed — the
-# services talk to each other via the docker network using 5432/7680/3001.
+# For a production-style fully containerized run, use the `full` profile
+# (TODO: reintroduce api/mcp/web services under that profile when we
+# need it — see Dockerfile.rust, which is still present).
 #
-# Security invariants (ADR-003):
-#   * api  gets DATABASE_URL_READWRITE → role `historiador_api`
-#   * mcp  gets DATABASE_URL_READONLY  → role `historiador_mcp`
-#   The two variable names are distinct — accidental reuse is syntactically
-#   impossible. Enforcement at the DB layer comes from GRANTs in the 0001
-#   migration; role creation happens in docker/postgres/init/10-roles.sh on
-#   first boot.
+# Services started by `docker compose up -d` (default):
+#   * postgres (5432) — SQL store for workspaces, users, pages, chunks
+#   * ollama   (11434) — local Llama inference (llama3.2:1b pre-pulled)
+#
+# Services started by `docker compose --profile vector up -d`:
+#   * vexfs    (7680) — vector store; only needed once the chunker lands.
+#     Requires running `scripts/setup-vexfs.sh` once to vendor the code.
+#
+# Security invariants (ADR-003, enforced on the DB side by
+# docker/postgres/init/10-roles.sh):
+#   * role historiador_api has read/write on app tables
+#   * role historiador_mcp has SELECT only on a whitelisted subset
+#   The API binary uses DATABASE_URL_READWRITE; the MCP binary uses
+#   DATABASE_URL_READONLY. The two names are distinct so accidental
+#   reuse is syntactically impossible.
 
 name: historiador-doc
 
@@ -44,13 +50,42 @@ services:
       timeout: 5s
       retries: 10
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    # Serve, then pull the model in the background on first boot.
+    # `|| true` keeps the container alive even if the pull fails (no
+    # network, model renamed upstream) — the user can retry with
+    # `docker compose exec ollama ollama pull llama3.2:1b` later.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        /bin/ollama serve &
+        sleep 3
+        /bin/ollama pull ${OLLAMA_MODEL:-llama3.2:1b} || true
+        wait
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:${HOST_PORT_OLLAMA:-11434}:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   vexfs:
+    # Opt-in: `docker compose --profile vector up -d`.
     # VexFS has no published image. Run `scripts/setup-vexfs.sh` once to
     # clone the pinned commit into vendor/vexfs/ (the script sidesteps a
     # broken submodule reference in the upstream repo by passing
     # --no-recurse-submodules to git clone). Compose builds from the
     # local clone, NOT from a git URL, because buildkit's git fetcher
     # always initializes submodules and fails on the broken reference.
+    profiles: ["vector"]
     build:
       context: ./vendor/vexfs
     restart: unless-stopped
@@ -69,64 +104,7 @@ services:
       retries: 10
       start_period: 30s
 
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.rust
-      args:
-        BIN_NAME: api
-    restart: unless-stopped
-    environment:
-      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
-      DATABASE_URL_READWRITE: postgres://historiador_api:${POSTGRES_API_PASSWORD:-apipass}@postgres:5432/historiador
-      VEXFS_URL: http://vexfs:7680
-      API_PORT: "3001"
-      GIT_SHA: ${GIT_SHA:-unknown}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      vexfs:
-        condition: service_started
-    ports:
-      - "127.0.0.1:${HOST_PORT_API:-3001}:3001"
-
-  mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.rust
-      args:
-        BIN_NAME: mcp
-    restart: unless-stopped
-    environment:
-      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
-      # CRITICAL: readonly credential only. Never DATABASE_URL_READWRITE here.
-      DATABASE_URL_READONLY: postgres://historiador_mcp:${POSTGRES_MCP_PASSWORD:-mcppass}@postgres:5432/historiador
-      VEXFS_URL: http://vexfs:7680
-      MCP_PORT: "3002"
-      GIT_SHA: ${GIT_SHA:-unknown}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      # Wait for api so migrations have run before mcp opens its readonly pool.
-      api:
-        condition: service_started
-    ports:
-      - "${HOST_PORT_MCP:-3002}:3002"   # externally exposed per ADR-003
-
-  web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      NEXT_PUBLIC_API_INTERNAL_URL: http://api:3001
-    depends_on:
-      api:
-        condition: service_started
-    ports:
-      - "127.0.0.1:${HOST_PORT_WEB:-3000}:3000"
-
 volumes:
   postgres_data:
+  ollama_data:
   vexfs_data:

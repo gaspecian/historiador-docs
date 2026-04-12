@@ -35,51 +35,96 @@ O **servidor MCP tem zero acesso de escrita** ao Postgres e ao VexFS — garanti
 - [Docker Desktop](https://docs.docker.com/get-docker/) (ou Docker Engine + Compose v2)
 - [Rust toolchain](https://rustup.rs/) (canal `stable`)
 - [Node.js 20+](https://nodejs.org/) com [pnpm](https://pnpm.io/) (`corepack enable`)
-- [sqlx-cli](https://crates.io/crates/sqlx-cli) (`cargo install sqlx-cli`)
 - Git
 
-### Configuracao
+### 1. Infra (docker-compose)
+
+Docker Compose roda apenas a infra (Postgres + Ollama). API, MCP e frontend rodam na maquina host para iteracao rapida.
 
 ```bash
 # Clonar o repositorio
 git clone https://github.com/lspecian/historiador-doc.git
 cd historiador-doc
 
+# Criar o .env local a partir do exemplo
+cp .env.example .env
+# Em producao, SEMPRE sobrescreva JWT_SECRET e APP_ENCRYPTION_KEY:
+#   openssl rand -base64 32
+
+# Subir Postgres + Ollama (modelo llama3.2:1b baixa automaticamente)
+docker compose up -d
+```
+
+Na primeira execucao o Ollama baixa o modelo (~1.3 GB) em background. Acompanhe com `docker compose logs -f ollama`.
+
+### 2. Backend (cargo run)
+
+```bash
 # Instalar dependencias Node (turbo, openapi-typescript, etc.)
 pnpm install
 
-# Clonar e corrigir o VexFS (unica vez — nao existe imagem publicada upstream)
-scripts/setup-vexfs.sh
+# Rodar a API (le .env via dotenvy, aplica migrations no boot)
+cargo run -p historiador_api --bin api
 
-# Criar o .env local a partir do exemplo
-cp .env.example .env
-# Edite o .env se as portas padrao (3000, 3001, 3002, 5432, 7680) colidirem
-# com outros servicos na sua maquina — use as variaveis HOST_PORT_*.
-
-# Compilar e iniciar toda a stack
-docker compose up --build
+# Em outro terminal, se necessario:
+cargo run -p historiador_mcp --bin mcp
 ```
 
-Quando os cinco servicos estiverem saudaveis (`docker compose ps`):
+| Servico  | URL                         | Finalidade                            |
+|----------|-----------------------------|---------------------------------------|
+| api      | http://localhost:3001        | REST API + Swagger UI em `/docs/`     |
+| mcp      | http://localhost:3002        | Endpoint MCP (somente leitura)        |
+| postgres | localhost:5432               | Armazenamento relacional              |
+| ollama   | http://localhost:11434       | Inferencia local (Llama)              |
 
-| Servico  | URL                        | Finalidade                  |
-|----------|----------------------------|-----------------------------|
-| web      | http://localhost:3000      | Dashboard (Sprint 1: pagina de health check) |
-| api      | http://localhost:3001      | REST API                    |
-| mcp      | http://localhost:3002      | Endpoint MCP (exposto externamente) |
-| postgres | localhost:5432             | Armazenamento relacional    |
-| vexfs    | localhost:7680             | Vector store para embeddings de chunks |
+### 3. Frontend (pnpm dev)
 
-Verificacao:
 ```bash
-curl http://localhost:3001/health
-# {"status":"ok","version":"0.1.0","git_sha":"unknown"}
-
-curl http://localhost:3002/health
-# {"status":"ok","version":"0.1.0","service":"mcp"}
+cd apps/web
+pnpm dev          # Next.js hot reload em http://localhost:3000
 ```
 
-> **Nota:** substitua os numeros de porta pelos valores `HOST_PORT_*` se voce os alterou no `.env`.
+### 4. Primeiro uso: setup wizard
+
+Ate o wizard rodar, todos os endpoints (exceto `/health`, `/setup/init` e `/docs/`) retornam `423 Locked`.
+
+```bash
+# Inicializar com Ollama local:
+curl -X POST http://localhost:3001/setup/init \
+  -H 'content-type: application/json' \
+  -d '{
+    "admin_email": "admin@example.com",
+    "admin_password": "uma-senha-forte-aqui",
+    "workspace_name": "Docs da Minha Empresa",
+    "llm_provider": "ollama",
+    "llm_api_key": "http://localhost:11434",
+    "languages": ["pt-BR", "en-US"],
+    "primary_language": "pt-BR"
+  }'
+
+# Login
+ACCESS=$(curl -sX POST http://localhost:3001/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"uma-senha-forte-aqui"}' \
+  | jq -r .access_token)
+
+# Convidar outro usuario (v1 nao envia email — copie o activation_url)
+curl -X POST http://localhost:3001/admin/users/invite \
+  -H "authorization: Bearer $ACCESS" \
+  -H 'content-type: application/json' \
+  -d '{"email":"autor@example.com","role":"author"}'
+```
+
+**Provedores LLM suportados no setup:**
+
+| Provider | `llm_provider` | `llm_api_key` | Observacao |
+|----------|---------------|---------------|------------|
+| Ollama (local) | `"ollama"` | URL base, ex: `"http://localhost:11434"` | Probe: `GET /api/tags` |
+| OpenAI | `"openai"` | API key, ex: `"sk-..."` | Probe: `GET /v1/models` |
+| Anthropic | `"anthropic"` | API key, ex: `"sk-ant-..."` | Probe: `POST /v1/messages` |
+| Test (dev) | `"test"` | qualquer valor, ex: `"unused"` | Sem validacao — completa o setup sem nenhum LLM |
+
+Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev): `docker compose down -v`.
 
 ## Desenvolvimento
 
