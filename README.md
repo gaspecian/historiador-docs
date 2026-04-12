@@ -64,10 +64,10 @@ Na primeira execucao o Ollama baixa o modelo (~1.3 GB) em background. Acompanhe 
 pnpm install
 
 # Rodar a API (le .env via dotenvy, aplica migrations no boot)
-cargo run -p historiador_api
+cargo run -p historiador_api --bin api
 
 # Em outro terminal, se necessario:
-cargo run -p historiador_mcp
+cargo run -p historiador_mcp --bin mcp
 ```
 
 | Servico  | URL                         | Finalidade                            |
@@ -115,7 +115,14 @@ curl -X POST http://localhost:3001/admin/users/invite \
   -d '{"email":"autor@example.com","role":"author"}'
 ```
 
-> Para usar OpenAI ou Anthropic em vez de Ollama, passe `"llm_provider": "openai"` e `"llm_api_key": "sk-..."`.
+**Provedores LLM suportados no setup:**
+
+| Provider | `llm_provider` | `llm_api_key` | Observacao |
+|----------|---------------|---------------|------------|
+| Ollama (local) | `"ollama"` | URL base, ex: `"http://localhost:11434"` | Probe: `GET /api/tags` |
+| OpenAI | `"openai"` | API key, ex: `"sk-..."` | Probe: `GET /v1/models` |
+| Anthropic | `"anthropic"` | API key, ex: `"sk-ant-..."` | Probe: `POST /v1/messages` |
+| Test (dev) | `"test"` | qualquer valor, ex: `"unused"` | Sem validacao — completa o setup sem nenhum LLM |
 
 Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev): `docker compose down -v`.
 
