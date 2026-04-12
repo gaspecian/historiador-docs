@@ -18,6 +18,8 @@ path = "src/bin/gen-openapi.rs"
 
 [dependencies]
 historiador_db = { path = "../../crates/db" }
+historiador_chunker = { path = "../../crates/chunker" }
+historiador_llm = { path = "../../crates/llm" }
 
 tokio.workspace = true
 axum.workspace = true

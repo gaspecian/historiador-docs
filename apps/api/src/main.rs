@@ -9,7 +9,11 @@ use historiador_api::{
     setup::llm_probe::HttpLlmProbe,
     state::AppState,
 };
-use historiador_db::postgres::installation;
+use historiador_db::{
+    postgres::installation,
+    vector_store::InMemoryVectorStore,
+};
+use historiador_llm::StubEmbeddingClient;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -67,6 +71,8 @@ async fn main() -> anyhow::Result<()> {
         public_base_url,
         setup_complete,
         llm_probe: Arc::new(HttpLlmProbe::default()),
+        vector_store: Arc::new(InMemoryVectorStore::new()),
+        embedding_client: Arc::new(StubEmbeddingClient::default()),
     });
 
     let app = app::build_router(state);
