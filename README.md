@@ -84,9 +84,20 @@ cd apps/web
 pnpm dev          # Next.js hot reload em http://localhost:3000
 ```
 
-### 4. Primeiro uso: setup wizard
+### 4. Primeiro uso: setup wizard (UI)
 
-Ate o wizard rodar, todos os endpoints (exceto `/health`, `/setup/init` e `/docs/`) retornam `423 Locked`.
+Ate o wizard rodar, todos os endpoints (exceto `/health`, `/setup/init`, `/setup/probe` e `/docs/`) retornam `423 Locked`.
+
+1. Abra `http://localhost:3000` no navegador — voce sera redirecionado para `/setup`
+2. Siga os passos do wizard:
+   - **Workspace**: nome do seu espaco de documentacao
+   - **LLM**: selecione o provedor e insira a API key (use "Test Connection" para validar)
+   - **Idiomas**: escolha o idioma principal e idiomas adicionais
+   - **Admin**: email e senha (minimo 12 caracteres)
+   - **Resumo**: revise e clique "Complete Setup"
+3. Apos o setup, voce e redirecionado automaticamente para o dashboard
+
+**Alternativa via API (para automacao):**
 
 ```bash
 # Inicializar com Ollama local:
@@ -125,6 +136,33 @@ curl -X POST http://localhost:3001/admin/users/invite \
 | Test (dev) | `"test"` | qualquer valor, ex: `"unused"` | Sem validacao — completa o setup sem nenhum LLM |
 
 Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev): `docker compose down -v`.
+
+### 5. Conectar Claude Desktop ao endpoint MCP
+
+1. No dashboard, va em **Admin** > **MCP Server** e clique "Regenerate Token"
+2. Copie o token e a URL do endpoint MCP (ex: `http://localhost:3002/query`)
+3. No Claude Desktop, abra Settings > MCP Servers e adicione:
+
+```json
+{
+  "mcpServers": {
+    "historiador": {
+      "url": "http://localhost:3002/query",
+      "token": "<seu-bearer-token>"
+    }
+  }
+}
+```
+
+4. Agora o Claude pode consultar sua documentacao diretamente via MCP.
+
+### Limitacoes conhecidas (Alpha)
+
+> **VexFS integration in progress** — os chunks persistem apenas enquanto o container esta rodando. Reiniciar o container limpa o vector store in-memory. Dados relacionais (paginas, usuarios, collections) persistem normalmente no Postgres.
+
+- Sem envio de email: links de ativacao de convite devem ser compartilhados manualmente
+- Sem historico de versao de paginas: edicoes sobrescrevem a versao atual
+- Sem suporte a embeddings via Ollama: se usar Ollama como provedor LLM, embeddings usam stub
 
 ## Desenvolvimento
 

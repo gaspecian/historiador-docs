@@ -1,28 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function Home() {
-  const [health, setHealth] = useState<string>("loading\u2026");
+  const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((j) => setHealth(JSON.stringify(j, null, 2)))
-      .catch((e) => setHealth(`error: ${e.message}`));
-  }, []);
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.replace("/login");
+      return;
+    }
+
+    // Check if the backend is set up
+    fetch("/api/health", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.status === 423) {
+          router.replace("/setup");
+        } else {
+          router.replace("/dashboard/pages");
+        }
+      })
+      .catch(() => {
+        router.replace("/dashboard/pages");
+      });
+  }, [router]);
 
   return (
-    <main className="p-10 font-mono text-sm">
-      <h1 className="text-xl font-bold mb-4">
-        Historiador Doc — Sprint 1 check
-      </h1>
-      <p className="mb-2">
-        GET /api/health (proxied to the Axum API via Next.js rewrite):
-      </p>
-      <pre className="bg-zinc-100 dark:bg-zinc-900 p-4 rounded">
-        {health}
-      </pre>
+    <main className="flex min-h-screen items-center justify-center">
+      <Spinner />
     </main>
   );
 }
