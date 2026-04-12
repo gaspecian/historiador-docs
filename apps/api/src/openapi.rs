@@ -1,7 +1,7 @@
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-use crate::{admin, auth, collections, health, pages, setup};
+use crate::{admin, auth, collections, editor, health, pages, setup};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -22,6 +22,8 @@ use crate::{admin, auth, collections, health, pages, setup};
         pages::handlers::update_page,
         pages::handlers::publish_page,
         pages::handlers::draft_page,
+        editor::handlers::draft,
+        editor::handlers::iterate,
     ),
     components(schemas(
         health::HealthResponse,
@@ -45,6 +47,10 @@ use crate::{admin, auth, collections, health, pages, setup};
         pages::handlers::PublishResponse,
         historiador_db::postgres::pages::PageStatus,
         historiador_db::postgres::collections::Collection,
+        editor::handlers::DraftRequest,
+        editor::handlers::DraftResponse,
+        editor::handlers::IterateRequest,
+        editor::handlers::IterateResponse,
     )),
     modifiers(&BearerAuth),
     info(
@@ -59,6 +65,7 @@ use crate::{admin, auth, collections, health, pages, setup};
         (name = "admin",  description = "Admin-only operations"),
         (name = "collections", description = "Collection management"),
         (name = "pages",  description = "Page authoring and publishing"),
+        (name = "editor", description = "AI-assisted document drafting"),
     )
 )]
 pub struct ApiDoc;

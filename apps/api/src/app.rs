@@ -23,6 +23,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/pages", routes::pages_router())
         .nest("/collections", routes::collections_router())
         .nest("/admin", routes::admin_router())
+        .nest("/editor", routes::editor_router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             setup_gate,
