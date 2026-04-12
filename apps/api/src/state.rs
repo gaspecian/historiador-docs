@@ -5,6 +5,8 @@ use sqlx::PgPool;
 
 use crate::crypto::Cipher;
 use crate::setup::llm_probe::LlmProbe;
+use historiador_db::vector_store::VectorStore;
+use historiador_llm::EmbeddingClient;
 
 /// Shared application state. Every route handler receives this via
 /// `State<Arc<AppState>>`.
@@ -22,4 +24,8 @@ pub struct AppState {
     /// LLM probe — a trait object so the e2e test can swap in a
     /// stub that never hits the network.
     pub llm_probe: Arc<dyn LlmProbe>,
+    /// Vector store for chunk embeddings (in-memory stub in Sprint 3).
+    pub vector_store: Arc<dyn VectorStore>,
+    /// Embedding client for generating text embeddings (stub in Sprint 3).
+    pub embedding_client: Arc<dyn EmbeddingClient>,
 }

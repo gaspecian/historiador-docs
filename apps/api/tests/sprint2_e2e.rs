@@ -24,6 +24,8 @@ use historiador_api::{
     setup::llm_probe::StubProbe,
     state::AppState,
 };
+use historiador_db::vector_store::InMemoryVectorStore;
+use historiador_llm::StubEmbeddingClient;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -39,6 +41,8 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
         public_base_url: "http://localhost:3000".into(),
         setup_complete: AtomicBool::new(false),
         llm_probe: Arc::new(StubProbe),
+        vector_store: Arc::new(InMemoryVectorStore::new()),
+        embedding_client: Arc::new(StubEmbeddingClient::default()),
     })
 }
 
