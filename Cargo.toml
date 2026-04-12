@@ -61,6 +61,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 
+# --- llm providers (Sprint 4) ---
+async-openai = "0.27"
+
 # --- auth & setup (Sprint 2) ---
 argon2 = "0.5"
 jsonwebtoken = "9"

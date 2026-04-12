@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::admin;
 use crate::auth;
 use crate::collections;
+use crate::editor;
 use crate::pages;
 use crate::setup;
 use crate::state::AppState;
@@ -42,4 +43,10 @@ pub fn collections_router() -> Router<Arc<AppState>> {
 
 pub fn admin_router() -> Router<Arc<AppState>> {
     Router::new().route("/users/invite", post(admin::users::invite))
+}
+
+pub fn editor_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/draft", post(editor::handlers::draft))
+        .route("/iterate", post(editor::handlers::iterate))
 }
