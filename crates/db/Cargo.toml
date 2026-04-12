@@ -20,3 +20,7 @@ thiserror.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+
+# --- auth (Sprint 2) ---
+argon2.workspace = true
+utoipa.workspace = true
