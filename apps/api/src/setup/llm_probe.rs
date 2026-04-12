@@ -16,6 +16,15 @@ use serde::{Deserialize, Serialize};
 pub enum LlmProvider {
     OpenAi,
     Anthropic,
+    /// Local Llama (and friends) served via Ollama. For this provider
+    /// the setup wizard's `llm_api_key` field carries the Ollama base
+    /// URL (e.g. `http://localhost:11434`) rather than an API key —
+    /// Ollama is typically unauthenticated.
+    Ollama,
+    /// No-op provider for local dev. The probe always succeeds and
+    /// the `llm_api_key` value is ignored. Lets you complete setup
+    /// without any LLM service running.
+    Test,
 }
 
 impl LlmProvider {
@@ -23,6 +32,8 @@ impl LlmProvider {
         match self {
             LlmProvider::OpenAi => "openai",
             LlmProvider::Anthropic => "anthropic",
+            LlmProvider::Ollama => "ollama",
+            LlmProvider::Test => "test",
         }
     }
 }
@@ -93,6 +104,34 @@ impl LlmProbe for HttpLlmProbe {
                         resp.status().as_u16()
                     );
                 }
+                Ok(())
+            }
+            LlmProvider::Ollama => {
+                // For Ollama the "api_key" field carries the base URL
+                // of a reachable Ollama server. We probe `GET /api/tags`
+                // — unauthenticated, cheap, and fails fast if the
+                // server is unreachable or not actually Ollama.
+                let base = api_key.trim().trim_end_matches('/');
+                if base.is_empty() {
+                    anyhow::bail!("ollama base URL is empty");
+                }
+                if !(base.starts_with("http://") || base.starts_with("https://")) {
+                    anyhow::bail!(
+                        "ollama base URL must start with http:// or https:// (got {base:?})"
+                    );
+                }
+                let url = format!("{base}/api/tags");
+                let resp = self.client.get(&url).send().await?;
+                if !resp.status().is_success() {
+                    anyhow::bail!(
+                        "ollama unreachable at {base} (status {})",
+                        resp.status().as_u16()
+                    );
+                }
+                Ok(())
+            }
+            LlmProvider::Test => {
+                tracing::info!("test provider — probe skipped");
                 Ok(())
             }
         }

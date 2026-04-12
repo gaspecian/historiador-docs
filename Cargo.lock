@@ -1024,6 +1024,7 @@ dependencies = [
  "axum-extra",
  "base64",
  "chrono",
+ "dotenvy",
  "historiador_db",
  "jsonwebtoken",
  "rand 0.8.5",
@@ -1090,6 +1091,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "dotenvy",
  "historiador_db",
  "serde",
  "serde_json",

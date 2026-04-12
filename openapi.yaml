@@ -200,6 +200,7 @@ components:
       enum:
       - openai
       - anthropic
+      - ollama
     LoginRequest:
       type: object
       required:
