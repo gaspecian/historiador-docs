@@ -94,7 +94,105 @@ impl From<PageVersion> for PageVersionResponse {
     }
 }
 
+// ---- query params ----
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct ListPagesQuery {
+    pub collection_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct SearchPagesQuery {
+    pub q: String,
+}
+
 // ---- handlers ----
+
+#[utoipa::path(
+    get,
+    path = "/pages",
+    params(ListPagesQuery),
+    responses(
+        (status = 200, description = "pages list", body = Vec<PageResponse>),
+        (status = 401, description = "unauthorized"),
+    ),
+    security(("bearer" = [])),
+    tag = "pages"
+)]
+pub async fn list_pages(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    axum::extract::Query(params): axum::extract::Query<ListPagesQuery>,
+) -> Result<Json<Vec<PageResponse>>, ApiError> {
+    require_role(&auth, Role::Viewer)?;
+
+    let pages_list = pages::list_by_collection(&state.pool, auth.workspace_id, params.collection_id)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    let mut results = Vec::with_capacity(pages_list.len());
+    for page in pages_list {
+        let versions = page_versions::find_by_page(&state.pool, page.id)
+            .await
+            .map_err(ApiError::Internal)?;
+        results.push(PageResponse {
+            id: page.id,
+            workspace_id: page.workspace_id,
+            collection_id: page.collection_id,
+            slug: page.slug,
+            status: page.status,
+            created_by: page.created_by,
+            versions: versions.into_iter().map(Into::into).collect(),
+            created_at: page.created_at.to_rfc3339(),
+            updated_at: page.updated_at.to_rfc3339(),
+        });
+    }
+
+    Ok(Json(results))
+}
+
+#[utoipa::path(
+    get,
+    path = "/pages/search",
+    params(SearchPagesQuery),
+    responses(
+        (status = 200, description = "search results", body = Vec<PageResponse>),
+        (status = 401, description = "unauthorized"),
+    ),
+    security(("bearer" = [])),
+    tag = "pages"
+)]
+pub async fn search_pages(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    axum::extract::Query(params): axum::extract::Query<SearchPagesQuery>,
+) -> Result<Json<Vec<PageResponse>>, ApiError> {
+    require_role(&auth, Role::Viewer)?;
+
+    let pages_list = pages::search(&state.pool, auth.workspace_id, &params.q)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    let mut results = Vec::with_capacity(pages_list.len());
+    for page in pages_list {
+        let versions = page_versions::find_by_page(&state.pool, page.id)
+            .await
+            .map_err(ApiError::Internal)?;
+        results.push(PageResponse {
+            id: page.id,
+            workspace_id: page.workspace_id,
+            collection_id: page.collection_id,
+            slug: page.slug,
+            status: page.status,
+            created_by: page.created_by,
+            versions: versions.into_iter().map(Into::into).collect(),
+            created_at: page.created_at.to_rfc3339(),
+            updated_at: page.updated_at.to_rfc3339(),
+        });
+    }
+
+    Ok(Json(results))
+}
 
 #[utoipa::path(
     post,

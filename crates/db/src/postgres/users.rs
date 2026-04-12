@@ -139,6 +139,42 @@ pub async fn find_by_invite_token_hash(
     Ok(row)
 }
 
+/// List all users in a workspace, ordered by creation date.
+pub async fn list_by_workspace(
+    pool: &PgPool,
+    workspace_id: Uuid,
+) -> anyhow::Result<Vec<User>> {
+    let rows = sqlx::query_as::<_, User>(
+        "SELECT id, workspace_id, email, password_hash, role, active, \
+                invite_token_hash, invite_expires_at \
+           FROM users \
+          WHERE workspace_id = $1 \
+          ORDER BY created_at",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Deactivate a user by setting `active = FALSE`. Returns the number
+/// of rows affected (1 if found, 0 if not).
+pub async fn deactivate(
+    pool: &PgPool,
+    user_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        "UPDATE users SET active = FALSE \
+         WHERE id = $1 AND workspace_id = $2",
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 /// Complete the invite flow: set a password, clear the invite token,
 /// activate the user. Runs inside a transaction so the CHECK
 /// constraint (`password XOR invite_token`) is never violated.

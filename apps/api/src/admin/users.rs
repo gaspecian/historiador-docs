@@ -7,7 +7,11 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::{DateTime, Duration, Utc};
 use historiador_db::postgres::users::{self, Role};
 use serde::{Deserialize, Serialize};
@@ -96,4 +100,82 @@ pub async fn invite(
         activation_url,
         expires_at,
     }))
+}
+
+// ---- list / deactivate ----
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct UserResponse {
+    pub id: Uuid,
+    pub email: String,
+    pub role: Role,
+    pub active: bool,
+    /// `true` if the user has not yet activated their account.
+    pub pending: bool,
+}
+
+#[utoipa::path(
+    get,
+    path = "/admin/users",
+    responses(
+        (status = 200, description = "user list", body = Vec<UserResponse>),
+        (status = 401, description = "unauthenticated"),
+        (status = 403, description = "caller is not admin"),
+    ),
+    tag = "admin",
+    security(("bearer" = []))
+)]
+pub async fn list_users(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+) -> Result<Json<Vec<UserResponse>>, ApiError> {
+    require_role(&auth, Role::Admin)?;
+
+    let rows = users::list_by_workspace(&state.pool, auth.workspace_id)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    let results: Vec<UserResponse> = rows
+        .into_iter()
+        .map(|u| UserResponse {
+            id: u.id,
+            email: u.email,
+            role: u.role,
+            active: u.active,
+            pending: u.password_hash.is_none(),
+        })
+        .collect();
+
+    Ok(Json(results))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/admin/users/{id}/deactivate",
+    params(("id" = Uuid, Path, description = "User ID")),
+    responses(
+        (status = 204, description = "user deactivated"),
+        (status = 401, description = "unauthenticated"),
+        (status = 403, description = "caller is not admin"),
+        (status = 404, description = "user not found"),
+    ),
+    tag = "admin",
+    security(("bearer" = []))
+)]
+pub async fn deactivate_user(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    require_role(&auth, Role::Admin)?;
+
+    let affected = users::deactivate(&state.pool, user_id, auth.workspace_id)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    if affected == 0 {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }

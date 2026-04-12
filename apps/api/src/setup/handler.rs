@@ -175,6 +175,46 @@ pub async fn init(
     }))
 }
 
+// ---- probe (test connection without completing setup) ----
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct ProbeRequest {
+    pub llm_provider: LlmProvider,
+    #[serde(default)]
+    pub llm_api_key: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ProbeResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/setup/probe",
+    request_body = ProbeRequest,
+    responses(
+        (status = 200, description = "probe result", body = ProbeResponse),
+    ),
+    tag = "setup"
+)]
+pub async fn probe(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ProbeRequest>,
+) -> Result<Json<ProbeResponse>, ApiError> {
+    match state.llm_probe.probe(body.llm_provider, &body.llm_api_key).await {
+        Ok(()) => Ok(Json(ProbeResponse {
+            success: true,
+            message: "connection successful".into(),
+        })),
+        Err(e) => Ok(Json(ProbeResponse {
+            success: false,
+            message: format!("{e}"),
+        })),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
