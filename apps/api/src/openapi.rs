@@ -1,7 +1,7 @@
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-use crate::{admin, auth, health, setup};
+use crate::{admin, auth, collections, health, pages, setup};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -13,6 +13,15 @@ use crate::{admin, auth, health, setup};
         auth::handlers::logout,
         auth::handlers::activate,
         admin::users::invite,
+        collections::handlers::create_collection,
+        collections::handlers::list_collections,
+        collections::handlers::update_collection,
+        collections::handlers::delete_collection,
+        pages::handlers::create_page,
+        pages::handlers::get_page,
+        pages::handlers::update_page,
+        pages::handlers::publish_page,
+        pages::handlers::draft_page,
     ),
     components(schemas(
         health::HealthResponse,
@@ -26,6 +35,16 @@ use crate::{admin, auth, health, setup};
         auth::handlers::ActivateRequest,
         admin::users::InviteRequest,
         admin::users::InviteResponse,
+        collections::handlers::CreateCollectionRequest,
+        collections::handlers::UpdateCollectionRequest,
+        collections::handlers::CollectionResponse,
+        pages::handlers::CreatePageRequest,
+        pages::handlers::UpdatePageRequest,
+        pages::handlers::PageResponse,
+        pages::handlers::PageVersionResponse,
+        pages::handlers::PublishResponse,
+        historiador_db::postgres::pages::PageStatus,
+        historiador_db::postgres::collections::Collection,
     )),
     modifiers(&BearerAuth),
     info(
@@ -38,6 +57,8 @@ use crate::{admin, auth, health, setup};
         (name = "setup",  description = "First-run installation wizard"),
         (name = "auth",   description = "Authentication: login, refresh, logout, activate"),
         (name = "admin",  description = "Admin-only operations"),
+        (name = "collections", description = "Collection management"),
+        (name = "pages",  description = "Page authoring and publishing"),
     )
 )]
 pub struct ApiDoc;

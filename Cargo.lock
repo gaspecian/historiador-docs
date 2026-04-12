@@ -1025,7 +1025,9 @@ dependencies = [
  "base64",
  "chrono",
  "dotenvy",
+ "historiador_chunker",
  "historiador_db",
+ "historiador_llm",
  "jsonwebtoken",
  "rand 0.8.5",
  "regex",
@@ -1083,6 +1085,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

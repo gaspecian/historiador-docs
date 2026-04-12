@@ -6,7 +6,11 @@
 //! intended to be composed inside a transactional workflow (setup,
 //! invite activation); those taking `&PgPool` are standalone queries.
 
+pub mod chunks;
+pub mod collections;
 pub mod installation;
+pub mod page_versions;
+pub mod pages;
 pub mod sessions;
 pub mod users;
 pub mod workspaces;
