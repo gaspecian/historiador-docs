@@ -13,7 +13,12 @@ use historiador_db::{
     postgres::installation,
     vector_store::InMemoryVectorStore,
 };
-use historiador_llm::StubEmbeddingClient;
+use historiador_llm::{
+    StubEmbeddingClient, StubTextGenerationClient,
+    OpenAiEmbeddingClient, OpenAiTextGenerationClient,
+    AnthropicTextGenerationClient,
+    EmbeddingClient, TextGenerationClient,
+};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -63,6 +68,45 @@ async fn main() -> anyhow::Result<()> {
     let setup_complete = AtomicBool::new(install.setup_complete);
     tracing::info!(setup_complete = install.setup_complete, "installation loaded");
 
+    // Build LLM clients from env vars. If LLM_PROVIDER + LLM_API_KEY are
+    // set, use real providers; otherwise fall back to stubs (safe for dev).
+    let llm_provider = std::env::var("LLM_PROVIDER").unwrap_or_default();
+    let llm_api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
+
+    let (embedding_client, text_generation_client): (
+        Arc<dyn EmbeddingClient>,
+        Arc<dyn TextGenerationClient>,
+    ) = match llm_provider.as_str() {
+        "openai" if !llm_api_key.is_empty() => {
+            tracing::info!("LLM provider: OpenAI");
+            (
+                Arc::new(OpenAiEmbeddingClient::new(&llm_api_key)),
+                Arc::new(OpenAiTextGenerationClient::new(&llm_api_key)),
+            )
+        }
+        "anthropic" if !llm_api_key.is_empty() => {
+            // Anthropic has no embedding API — embeddings stay on stub
+            // (or use EMBEDDING_API_KEY for OpenAI embeddings).
+            tracing::info!("LLM provider: Anthropic (embeddings: stub)");
+            let emb: Arc<dyn EmbeddingClient> =
+                match std::env::var("EMBEDDING_API_KEY") {
+                    Ok(key) if !key.is_empty() => Arc::new(OpenAiEmbeddingClient::new(&key)),
+                    _ => Arc::new(StubEmbeddingClient::default()),
+                };
+            (
+                emb,
+                Arc::new(AnthropicTextGenerationClient::new(&llm_api_key)),
+            )
+        }
+        _ => {
+            tracing::info!("LLM provider: stub (no LLM_PROVIDER set)");
+            (
+                Arc::new(StubEmbeddingClient::default()),
+                Arc::new(StubTextGenerationClient),
+            )
+        }
+    };
+
     let state = Arc::new(AppState {
         pool,
         git_sha,
@@ -72,7 +116,8 @@ async fn main() -> anyhow::Result<()> {
         setup_complete,
         llm_probe: Arc::new(HttpLlmProbe::default()),
         vector_store: Arc::new(InMemoryVectorStore::new()),
-        embedding_client: Arc::new(StubEmbeddingClient::default()),
+        embedding_client,
+        text_generation_client,
     });
 
     let app = app::build_router(state);

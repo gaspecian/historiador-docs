@@ -9,6 +9,7 @@ pub mod admin;
 pub mod auth;
 pub mod collections;
 pub mod crypto;
+pub mod editor;
 pub mod error;
 pub mod health;
 pub mod middleware;

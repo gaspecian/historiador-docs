@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use crate::crypto::Cipher;
 use crate::setup::llm_probe::LlmProbe;
 use historiador_db::vector_store::VectorStore;
-use historiador_llm::EmbeddingClient;
+use historiador_llm::{EmbeddingClient, TextGenerationClient};
 
 /// Shared application state. Every route handler receives this via
 /// `State<Arc<AppState>>`.
@@ -28,4 +28,6 @@ pub struct AppState {
     pub vector_store: Arc<dyn VectorStore>,
     /// Embedding client for generating text embeddings (stub in Sprint 3).
     pub embedding_client: Arc<dyn EmbeddingClient>,
+    /// Text generation client for the AI editor (stub unless LLM_PROVIDER is set).
+    pub text_generation_client: Arc<dyn TextGenerationClient>,
 }
