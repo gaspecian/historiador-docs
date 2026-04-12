@@ -1,4 +1,5 @@
-use utoipa::OpenApi;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 
 use crate::{admin, auth, health, setup};
 
@@ -26,6 +27,7 @@ use crate::{admin, auth, health, setup};
         admin::users::InviteRequest,
         admin::users::InviteResponse,
     )),
+    modifiers(&BearerAuth),
     info(
         title = "Historiador Doc API",
         version = "0.1.0",
@@ -39,3 +41,22 @@ use crate::{admin, auth, health, setup};
     )
 )]
 pub struct ApiDoc;
+
+/// Registers the "bearer" security scheme so Swagger UI shows the
+/// "Authorize" button. Paste the access_token from POST /auth/login.
+struct BearerAuth;
+
+impl Modify for BearerAuth {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "bearer",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+}

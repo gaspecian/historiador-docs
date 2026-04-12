@@ -146,7 +146,7 @@ export interface components {
             user_id: string;
         };
         /** @enum {string} */
-        LlmProvider: "openai" | "anthropic" | "ollama";
+        LlmProvider: "openai" | "anthropic" | "ollama" | "test";
         LoginRequest: {
             email: string;
             password: string;

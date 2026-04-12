@@ -47,7 +47,8 @@ pub struct InviteResponse {
         (status = 403, description = "caller is not admin"),
         (status = 409, description = "email already in use"),
     ),
-    tag = "admin"
+    tag = "admin",
+    security(("bearer" = []))
 )]
 pub async fn invite(
     State(state): State<Arc<AppState>>,
