@@ -97,6 +97,27 @@ pub async fn update_status(
     Ok(row)
 }
 
+/// Search pages by title (ILIKE on `page_versions.title`), scoped to a
+/// workspace. Returns matching pages ordered by relevance (title match).
+pub async fn search(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    query: &str,
+) -> anyhow::Result<Vec<Page>> {
+    let pattern = format!("%{query}%");
+    let rows = sqlx::query_as::<_, Page>(
+        "SELECT DISTINCT p.* FROM pages p \
+         JOIN page_versions pv ON pv.page_id = p.id \
+         WHERE p.workspace_id = $1 AND pv.title ILIKE $2 \
+         ORDER BY p.updated_at DESC",
+    )
+    .bind(workspace_id)
+    .bind(&pattern)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// List pages in a collection (or at the workspace root if collection_id
 /// is None), ordered by creation date.
 pub async fn list_by_collection(

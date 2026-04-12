@@ -1,7 +1,21 @@
 //! Queries against the `workspaces` table.
 
-use sqlx::{Postgres, Transaction};
+use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, utoipa::ToSchema)]
+pub struct Workspace {
+    pub id: Uuid,
+    pub name: String,
+    pub languages: Vec<String>,
+    pub primary_language: String,
+    pub llm_provider: String,
+    pub llm_api_key_encrypted: Option<String>,
+    pub mcp_bearer_token_hash: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 pub struct NewWorkspace<'a> {
     pub name: &'a str,
@@ -35,4 +49,30 @@ pub async fn insert(
     .fetch_one(&mut **tx)
     .await?;
     Ok(id)
+}
+
+/// Find a workspace by id.
+pub async fn find_by_id(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<Workspace>> {
+    let row = sqlx::query_as::<_, Workspace>("SELECT * FROM workspaces WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row)
+}
+
+/// Update the MCP bearer token hash. Returns the number of rows
+/// affected (1 if found, 0 if not).
+pub async fn update_mcp_token(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    new_token_hash: &str,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        "UPDATE workspaces SET mcp_bearer_token_hash = $2 WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .bind(new_token_hash)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
