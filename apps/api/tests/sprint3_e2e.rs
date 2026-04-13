@@ -12,12 +12,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use historiador_api::{
-    app,
-    crypto::Cipher,
-    setup::llm_probe::StubProbe,
-    state::AppState,
-};
+use historiador_api::{app, crypto::Cipher, setup::llm_probe::StubProbe, state::AppState};
 use historiador_db::vector_store::InMemoryVectorStore;
 use historiador_llm::{StubEmbeddingClient, StubTextGenerationClient};
 use reqwest::StatusCode;

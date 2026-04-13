@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import type { LlmProvider, ProbeResponse, SetupResponse } from "@/lib/types";
+import type { LlmProvider, ProbeResponse, SetupResponse } from "@historiador/types";
 
 type Step = "workspace" | "llm" | "languages" | "admin" | "summary";
 const STEPS: Step[] = ["workspace", "llm", "languages", "admin", "summary"];

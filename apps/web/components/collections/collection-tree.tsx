@@ -1,6 +1,6 @@
 "use client";
 
-import type { TreeNode } from "@/lib/types";
+import type { TreeNode } from "@historiador/types";
 import { Spinner } from "@/components/ui/spinner";
 import { CollectionTreeNode } from "./collection-tree-node";
 

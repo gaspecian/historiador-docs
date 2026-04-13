@@ -11,8 +11,8 @@ use async_openai::{
 };
 use async_trait::async_trait;
 
-use crate::{Embedding, EmbeddingClient, LlmError};
 use crate::text_generation::TextGenerationClient;
+use crate::{Embedding, EmbeddingClient, LlmError};
 
 /// OpenAI embedding client using `text-embedding-3-small` (1536 dims).
 pub struct OpenAiEmbeddingClient {

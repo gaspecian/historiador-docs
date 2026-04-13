@@ -11,12 +11,17 @@ interface BadgeProps {
   variant?: keyof typeof variants;
   children: React.ReactNode;
   className?: string;
+  title?: string;
+  onClick?: () => void;
 }
 
-export function Badge({ variant = "neutral", children, className = "" }: BadgeProps) {
+export function Badge({ variant = "neutral", children, className = "", title, onClick }: BadgeProps) {
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${variants[variant]} ${className}`}
+      title={title}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
     >
       {children}
     </span>

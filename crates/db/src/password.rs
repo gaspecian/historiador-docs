@@ -4,7 +4,9 @@
 //! user activation (invite flow), and login. The MCP server does not
 //! authenticate users and must never depend on this module.
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng};
+use argon2::password_hash::{
+    rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+};
 use argon2::Argon2;
 
 /// Hash a plaintext password with Argon2id and a random salt.

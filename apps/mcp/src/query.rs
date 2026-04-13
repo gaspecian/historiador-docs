@@ -6,10 +6,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use historiador_db::{
-    postgres::mcp_queries,
-    vector_store::SearchFilters,
-};
+use historiador_db::{postgres::mcp_queries, vector_store::SearchFilters};
 
 use crate::state::McpState;
 
@@ -28,6 +25,8 @@ pub struct QueryRequest {
 #[derive(Debug, Serialize)]
 pub struct QueryResponse {
     pub chunks: Vec<ChunkResult>,
+    pub total_results: usize,
+    pub language_filter_applied: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +46,7 @@ pub async fn handler(
     Json(body): Json<QueryRequest>,
 ) -> Result<Json<QueryResponse>, StatusCode> {
     let top_k = body.top_k.unwrap_or(5).min(20);
+    let language_filter_applied = body.language.is_some();
 
     // 1. Generate query embedding.
     let embeddings = state
@@ -60,7 +60,13 @@ pub async fn handler(
 
     let query_vector = match embeddings.first() {
         Some(e) => &e.vector,
-        None => return Ok(Json(QueryResponse { chunks: vec![] })),
+        None => {
+            return Ok(Json(QueryResponse {
+                chunks: vec![],
+                total_results: 0,
+                language_filter_applied,
+            }))
+        }
     };
 
     // 2. Search the vector store.
@@ -79,7 +85,11 @@ pub async fn handler(
         })?;
 
     if chunk_refs.is_empty() {
-        return Ok(Json(QueryResponse { chunks: vec![] }));
+        return Ok(Json(QueryResponse {
+            chunks: vec![],
+            total_results: 0,
+            language_filter_applied,
+        }));
     }
 
     // 3. Collect page_version_ids for metadata enrichment.
@@ -96,7 +106,7 @@ pub async fn handler(
         })?;
 
     // 4. Merge vector results with metadata.
-    let chunks = chunk_refs
+    let chunks: Vec<ChunkResult> = chunk_refs
         .into_iter()
         .map(|cr| {
             let pv_id = Uuid::parse_str(&cr.page_version_id).ok();
@@ -106,14 +116,17 @@ pub async fn handler(
                 content: cr.content,
                 heading_path: cr.heading_path,
                 page_title: meta.map(|m| m.page_title.clone()).unwrap_or_default(),
-                collection_path: meta
-                    .map(|m| m.collection_path.clone())
-                    .unwrap_or_default(),
+                collection_path: meta.map(|m| m.collection_path.clone()).unwrap_or_default(),
                 score: cr.score,
                 language: cr.language,
             }
         })
         .collect();
 
-    Ok(Json(QueryResponse { chunks }))
+    let total_results = chunks.len();
+    Ok(Json(QueryResponse {
+        chunks,
+        total_results,
+        language_filter_applied,
+    }))
 }

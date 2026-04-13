@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::LlmError;
 use crate::text_generation::TextGenerationClient;
+use crate::LlmError;
 
 /// Anthropic text generation client using the Messages API.
 pub struct AnthropicTextGenerationClient {

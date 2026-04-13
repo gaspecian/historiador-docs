@@ -140,10 +140,7 @@ pub async fn find_by_invite_token_hash(
 }
 
 /// List all users in a workspace, ordered by creation date.
-pub async fn list_by_workspace(
-    pool: &PgPool,
-    workspace_id: Uuid,
-) -> anyhow::Result<Vec<User>> {
+pub async fn list_by_workspace(pool: &PgPool, workspace_id: Uuid) -> anyhow::Result<Vec<User>> {
     let rows = sqlx::query_as::<_, User>(
         "SELECT id, workspace_id, email, password_hash, role, active, \
                 invite_token_hash, invite_expires_at \
@@ -159,11 +156,7 @@ pub async fn list_by_workspace(
 
 /// Deactivate a user by setting `active = FALSE`. Returns the number
 /// of rows affected (1 if found, 0 if not).
-pub async fn deactivate(
-    pool: &PgPool,
-    user_id: Uuid,
-    workspace_id: Uuid,
-) -> anyhow::Result<u64> {
+pub async fn deactivate(pool: &PgPool, user_id: Uuid, workspace_id: Uuid) -> anyhow::Result<u64> {
     let result = sqlx::query(
         "UPDATE users SET active = FALSE \
          WHERE id = $1 AND workspace_id = $2",

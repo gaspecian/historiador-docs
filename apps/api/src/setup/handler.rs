@@ -152,10 +152,9 @@ pub async fn init(
     .await
     .map_err(ApiError::Internal)?;
 
-    let user_id =
-        users::insert_admin(&mut tx, workspace_id, &body.admin_email, &password_hash)
-            .await
-            .map_err(ApiError::Internal)?;
+    let user_id = users::insert_admin(&mut tx, workspace_id, &body.admin_email, &password_hash)
+        .await
+        .map_err(ApiError::Internal)?;
 
     installation::mark_complete(&mut tx)
         .await
@@ -203,7 +202,11 @@ pub async fn probe(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ProbeRequest>,
 ) -> Result<Json<ProbeResponse>, ApiError> {
-    match state.llm_probe.probe(body.llm_provider, &body.llm_api_key).await {
+    match state
+        .llm_probe
+        .probe(body.llm_provider, &body.llm_api_key)
+        .await
+    {
         Ok(()) => Ok(Json(ProbeResponse {
             success: true,
             message: "connection successful".into(),

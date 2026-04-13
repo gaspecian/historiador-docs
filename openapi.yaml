@@ -7,6 +7,26 @@ info:
     identifier: AGPL-3.0-or-later
   version: 0.1.0
 paths:
+  /admin/users:
+    get:
+      tags:
+      - admin
+      operationId: list_users
+      responses:
+        '200':
+          description: user list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+      security:
+      - bearer: []
   /admin/users/invite:
     post:
       tags:
@@ -33,6 +53,68 @@ paths:
           description: caller is not admin
         '409':
           description: email already in use
+      security:
+      - bearer: []
+  /admin/users/{id}/deactivate:
+    patch:
+      tags:
+      - admin
+      operationId: deactivate_user
+      parameters:
+      - name: id
+        in: path
+        description: User ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: user deactivated
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+        '404':
+          description: user not found
+      security:
+      - bearer: []
+  /admin/workspace:
+    get:
+      tags:
+      - admin
+      operationId: get_workspace
+      responses:
+        '200':
+          description: workspace config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+        '404':
+          description: workspace not found
+      security:
+      - bearer: []
+  /admin/workspace/regenerate-token:
+    post:
+      tags:
+      - admin
+      operationId: regenerate_token
+      responses:
+        '200':
+          description: new token generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegenerateTokenResponse'
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
       security:
       - bearer: []
   /auth/activate:
@@ -109,6 +191,164 @@ paths:
                 $ref: '#/components/schemas/TokenResponse'
         '401':
           description: invalid or expired refresh token
+  /collections:
+    get:
+      tags:
+      - collections
+      operationId: list_collections
+      responses:
+        '200':
+          description: list of collections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CollectionResponse'
+        '401':
+          description: unauthorized
+      security:
+      - bearer: []
+    post:
+      tags:
+      - collections
+      operationId: create_collection
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollectionRequest'
+        required: true
+      responses:
+        '201':
+          description: collection created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '409':
+          description: slug conflict
+      security:
+      - bearer: []
+  /collections/{id}:
+    delete:
+      tags:
+      - collections
+      operationId: delete_collection
+      parameters:
+      - name: id
+        in: path
+        description: Collection ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: collection deleted
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+      security:
+      - bearer: []
+    patch:
+      tags:
+      - collections
+      operationId: update_collection
+      parameters:
+      - name: id
+        in: path
+        description: Collection ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCollectionRequest'
+        required: true
+      responses:
+        '200':
+          description: collection updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+        '409':
+          description: slug conflict
+      security:
+      - bearer: []
+  /editor/draft:
+    post:
+      tags:
+      - editor
+      operationId: draft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftRequest'
+        required: true
+      responses:
+        '200':
+          description: AI-generated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DraftResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+      security:
+      - bearer: []
+  /editor/iterate:
+    post:
+      tags:
+      - editor
+      operationId: iterate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IterateRequest'
+        required: true
+      responses:
+        '200':
+          description: updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IterateResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+      security:
+      - bearer: []
   /health:
     get:
       tags:
@@ -121,6 +361,227 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /pages:
+    get:
+      tags:
+      - pages
+      operationId: list_pages
+      parameters:
+      - name: collection_id
+        in: query
+        required: false
+        schema:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      responses:
+        '200':
+          description: pages list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PageResponse'
+        '401':
+          description: unauthorized
+      security:
+      - bearer: []
+    post:
+      tags:
+      - pages
+      operationId: create_page
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePageRequest'
+        required: true
+      responses:
+        '201':
+          description: page created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '409':
+          description: slug conflict
+      security:
+      - bearer: []
+  /pages/search:
+    get:
+      tags:
+      - pages
+      operationId: search_pages
+      parameters:
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PageResponse'
+        '401':
+          description: unauthorized
+      security:
+      - bearer: []
+  /pages/{id}:
+    get:
+      tags:
+      - pages
+      operationId: get_page
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: page with all versions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '401':
+          description: unauthorized
+        '404':
+          description: not found
+      security:
+      - bearer: []
+    patch:
+      tags:
+      - pages
+      operationId: update_page
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePageRequest'
+        required: true
+      responses:
+        '200':
+          description: page updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '400':
+          description: validation error or page is published
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/draft:
+    post:
+      tags:
+      - pages
+      operationId: draft_page
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: reverted to draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/publish:
+    post:
+      tags:
+      - pages
+      operationId: publish_page
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '202':
+          description: publish accepted, chunking in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishResponse'
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/versions:
+    get:
+      tags:
+      - pages
+      operationId: get_page_versions
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: page versions with completeness metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageVersionsResponse'
+        '401':
+          description: unauthorized
+        '404':
+          description: not found
+      security:
+      - bearer: []
   /setup/init:
     post:
       tags:
@@ -143,6 +604,24 @@ paths:
           description: validation error or LLM key rejected
         '409':
           description: setup already complete
+  /setup/probe:
+    post:
+      tags:
+      - setup
+      operationId: probe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProbeRequest'
+        required: true
+      responses:
+        '200':
+          description: probe result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
 components:
   schemas:
     ActivateRequest:
@@ -154,6 +633,125 @@ components:
         invite_token:
           type: string
         password:
+          type: string
+    Collection:
+      type: object
+      required:
+      - id
+      - workspace_id
+      - name
+      - slug
+      - sort_order
+      - created_at
+      - updated_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        parent_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        slug:
+          type: string
+        sort_order:
+          type: integer
+          format: int32
+        updated_at:
+          type: string
+          format: date-time
+        workspace_id:
+          type: string
+          format: uuid
+    CollectionResponse:
+      type: object
+      required:
+      - id
+      - workspace_id
+      - name
+      - slug
+      - sort_order
+      - created_at
+      - updated_at
+      properties:
+        created_at:
+          type: string
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        parent_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        slug:
+          type: string
+        sort_order:
+          type: integer
+          format: int32
+        updated_at:
+          type: string
+        workspace_id:
+          type: string
+          format: uuid
+    CreateCollectionRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        parent_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+    CreatePageRequest:
+      type: object
+      required:
+      - title
+      - content_markdown
+      - language
+      properties:
+        collection_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        content_markdown:
+          type: string
+        language:
+          type: string
+          description: BCP 47 language tag (e.g., "en-US", "pt-BR").
+        title:
+          type: string
+    DraftRequest:
+      type: object
+      required:
+      - brief
+      properties:
+        brief:
+          type: string
+          description: Natural language description of the document to create.
+        language:
+          type:
+          - string
+          - 'null'
+          description: Optional BCP 47 language tag for the output language.
+    DraftResponse:
+      type: object
+      required:
+      - content_markdown
+      properties:
+        content_markdown:
           type: string
     HealthResponse:
       type: object
@@ -197,6 +795,25 @@ components:
         user_id:
           type: string
           format: uuid
+    IterateRequest:
+      type: object
+      required:
+      - current_draft
+      - instruction
+      properties:
+        current_draft:
+          type: string
+          description: The current draft markdown to refine.
+        instruction:
+          type: string
+          description: Follow-up instruction describing what to change.
+    IterateResponse:
+      type: object
+      required:
+      - content_markdown
+      properties:
+        content_markdown:
+          type: string
     LlmProvider:
       type: string
       enum:
@@ -221,6 +838,143 @@ components:
       properties:
         refresh_token:
           type: string
+    PageResponse:
+      type: object
+      required:
+      - id
+      - workspace_id
+      - slug
+      - status
+      - versions
+      - created_at
+      - updated_at
+      properties:
+        collection_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        created_at:
+          type: string
+        created_by:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/PageStatus'
+        updated_at:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageVersionResponse'
+        workspace_id:
+          type: string
+          format: uuid
+    PageStatus:
+      type: string
+      enum:
+      - draft
+      - published
+    PageVersionResponse:
+      type: object
+      required:
+      - id
+      - language
+      - title
+      - content_markdown
+      - status
+      - created_at
+      - updated_at
+      properties:
+        author_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        content_markdown:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+          format: uuid
+        language:
+          type: string
+        status:
+          $ref: '#/components/schemas/PageStatus'
+        title:
+          type: string
+        updated_at:
+          type: string
+    PageVersionsResponse:
+      type: object
+      required:
+      - page_id
+      - workspace_languages
+      - primary_language
+      - versions
+      - missing_languages
+      - complete
+      properties:
+        complete:
+          type: boolean
+        missing_languages:
+          type: array
+          items:
+            type: string
+        page_id:
+          type: string
+          format: uuid
+        primary_language:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageVersionResponse'
+        workspace_languages:
+          type: array
+          items:
+            type: string
+    ProbeRequest:
+      type: object
+      required:
+      - llm_provider
+      properties:
+        llm_api_key:
+          type: string
+        llm_provider:
+          $ref: '#/components/schemas/LlmProvider'
+    ProbeResponse:
+      type: object
+      required:
+      - success
+      - message
+      properties:
+        message:
+          type: string
+        success:
+          type: boolean
+    PublishResponse:
+      type: object
+      required:
+      - page_id
+      - status
+      - message
+      properties:
+        message:
+          type: string
+        page_id:
+          type: string
+          format: uuid
+        status:
+          type: string
     RefreshRequest:
       type: object
       required:
@@ -228,6 +982,16 @@ components:
       properties:
         refresh_token:
           type: string
+    RegenerateTokenResponse:
+      type: object
+      required:
+      - bearer_token
+      properties:
+        bearer_token:
+          type: string
+          description: |-
+            The new bearer token in plaintext. This is the only time it
+            will be visible — the server stores only the sha256 hash.
     Role:
       type: string
       enum:
@@ -290,6 +1054,88 @@ components:
           format: int64
         refresh_token:
           type: string
+    UpdateCollectionRequest:
+      type: object
+      properties:
+        name:
+          type:
+          - string
+          - 'null'
+        parent_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: |-
+            Set to `null` to move to root, or a UUID to move under a parent.
+            Omit the field entirely to leave unchanged.
+    UpdatePageRequest:
+      type: object
+      properties:
+        content_markdown:
+          type:
+          - string
+          - 'null'
+        language:
+          type:
+          - string
+          - 'null'
+          description: BCP 47 language tag. Defaults to the version's current language.
+        title:
+          type:
+          - string
+          - 'null'
+    UserResponse:
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - active
+      - pending
+      properties:
+        active:
+          type: boolean
+        email:
+          type: string
+        id:
+          type: string
+          format: uuid
+        pending:
+          type: boolean
+          description: '`true` if the user has not yet activated their account.'
+        role:
+          $ref: '#/components/schemas/Role'
+    WorkspaceResponse:
+      type: object
+      required:
+      - id
+      - name
+      - languages
+      - primary_language
+      - llm_provider
+      - mcp_endpoint_url
+      - has_mcp_token
+      properties:
+        has_mcp_token:
+          type: boolean
+          description: Whether a bearer token has been configured.
+        id:
+          type: string
+          format: uuid
+        languages:
+          type: array
+          items:
+            type: string
+        llm_provider:
+          type: string
+        mcp_endpoint_url:
+          type: string
+          description: The MCP endpoint URL (constructed from config).
+        name:
+          type: string
+        primary_language:
+          type: string
   securitySchemes:
     bearer:
       type: http
@@ -304,3 +1150,9 @@ tags:
   description: 'Authentication: login, refresh, logout, activate'
 - name: admin
   description: Admin-only operations
+- name: collections
+  description: Collection management
+- name: pages
+  description: Page authoring and publishing
+- name: editor
+  description: AI-assisted document drafting

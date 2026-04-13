@@ -225,9 +225,7 @@ fn split_sections_into_chunks(sections: Vec<Section>, config: &ChunkConfig) -> V
                 }
 
                 // Would adding this block exceed the limit?
-                if current_tokens > 0
-                    && current_tokens + block.token_count > config.max_tokens
-                {
+                if current_tokens > 0 && current_tokens + block.token_count > config.max_tokens {
                     // Flush the current accumulator.
                     chunks.push(Chunk {
                         heading_path: section.heading_path.clone(),
@@ -418,7 +416,11 @@ Third paragraph adding yet more content to test splitting behavior.
         let config = small_config();
         let chunks = chunk_markdown(md, &config).unwrap();
         // Should produce multiple chunks, all with the same heading_path.
-        assert!(chunks.len() > 1, "expected multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {}",
+            chunks.len()
+        );
         for chunk in &chunks {
             assert_eq!(chunk.heading_path, vec!["Big Section"]);
         }
@@ -436,8 +438,14 @@ Third paragraph adding yet more content to test splitting behavior.
         let config = small_config();
         let chunks = chunk_markdown(&code_lines, &config).unwrap();
         // Find the chunk containing the code block.
-        let code_chunk = chunks.iter().find(|c| c.content.contains("line 0")).unwrap();
-        assert!(code_chunk.oversized, "code block chunk should be marked oversized");
+        let code_chunk = chunks
+            .iter()
+            .find(|c| c.content.contains("line 0"))
+            .unwrap();
+        assert!(
+            code_chunk.oversized,
+            "code block chunk should be marked oversized"
+        );
         // The code block should not be split.
         assert!(code_chunk.content.contains("line 49"));
     }

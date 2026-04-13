@@ -110,7 +110,9 @@ pub async fn update(
         set_clauses.join(", ")
     );
 
-    let mut query = sqlx::query_as::<_, Collection>(&sql).bind(id).bind(workspace_id);
+    let mut query = sqlx::query_as::<_, Collection>(&sql)
+        .bind(id)
+        .bind(workspace_id);
 
     if let Some(n) = name {
         query = query.bind(n);
@@ -128,16 +130,11 @@ pub async fn update(
 
 /// Delete a collection and all its children/pages (via ON DELETE CASCADE).
 /// Returns the number of deleted rows (1 if found, 0 if not).
-pub async fn delete_cascade(
-    pool: &PgPool,
-    id: Uuid,
-    workspace_id: Uuid,
-) -> anyhow::Result<u64> {
-    let result =
-        sqlx::query("DELETE FROM collections WHERE id = $1 AND workspace_id = $2")
-            .bind(id)
-            .bind(workspace_id)
-            .execute(pool)
-            .await?;
+pub async fn delete_cascade(pool: &PgPool, id: Uuid, workspace_id: Uuid) -> anyhow::Result<u64> {
+    let result = sqlx::query("DELETE FROM collections WHERE id = $1 AND workspace_id = $2")
+        .bind(id)
+        .bind(workspace_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }

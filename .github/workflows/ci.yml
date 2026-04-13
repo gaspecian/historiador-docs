@@ -54,13 +54,13 @@ jobs:
       - name: pnpm install
         run: pnpm install --frozen-lockfile
 
-      # Sprint 1 ships no TS workspace members yet (apps/web and
-      # packages/types arrive in stretch items 6 and 7). `pnpm lint` and
-      # `pnpm build` both run via Turborepo and are no-ops when no
-      # workspace matches the filter. Keeping the step wired up so Item
-      # 6/7 turn green without a CI edit.
+      - name: Check OpenAPI types freshness
+        run: |
+          pnpm build:types
+          git diff --exit-code packages/types/generated/index.ts
+
       - name: pnpm lint
-        run: pnpm lint || echo "no ts workspace members yet"
+        run: pnpm lint
 
   docker-build:
     name: Docker images (smoke build, no push)

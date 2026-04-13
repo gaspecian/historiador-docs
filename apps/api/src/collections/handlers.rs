@@ -212,10 +212,9 @@ pub async fn delete_collection(
 ) -> Result<StatusCode, ApiError> {
     require_role(&auth, Role::Author)?;
 
-    let deleted =
-        collections::delete_cascade(&state.pool, id, auth.workspace_id)
-            .await
-            .map_err(ApiError::Internal)?;
+    let deleted = collections::delete_cascade(&state.pool, id, auth.workspace_id)
+        .await
+        .map_err(ApiError::Internal)?;
 
     if deleted == 0 {
         return Err(ApiError::NotFound);
