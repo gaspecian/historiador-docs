@@ -117,9 +117,12 @@ pub async fn login(
     if !user.active {
         return Err(ApiError::Unauthorized);
     }
-    let stored_hash = user.password_hash.as_deref().ok_or(ApiError::Unauthorized)?;
-    let matches = password::verify(&body.password, stored_hash)
-        .map_err(|_| ApiError::Unauthorized)?;
+    let stored_hash = user
+        .password_hash
+        .as_deref()
+        .ok_or(ApiError::Unauthorized)?;
+    let matches =
+        password::verify(&body.password, stored_hash).map_err(|_| ApiError::Unauthorized)?;
     if !matches {
         return Err(ApiError::Unauthorized);
     }
@@ -223,11 +226,17 @@ pub async fn activate(
 
     let password_hash = password::hash(&body.password).map_err(ApiError::Internal)?;
 
-    let mut tx = state.pool.begin().await.map_err(|e| ApiError::Internal(e.into()))?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| ApiError::Internal(e.into()))?;
     users::activate(&mut tx, user.id, &password_hash)
         .await
         .map_err(ApiError::Internal)?;
-    tx.commit().await.map_err(|e| ApiError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::Internal(e.into()))?;
 
     Ok(StatusCode::NO_CONTENT)
 }

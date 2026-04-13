@@ -3,7 +3,7 @@
 // - Intercepts 401: attempts one token refresh, retries the request
 // - Intercepts 423: redirects to /setup (first-run)
 
-import type { TokenResponse } from "./types";
+import type { TokenResponse } from "@historiador/types";
 
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;

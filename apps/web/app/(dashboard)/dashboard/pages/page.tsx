@@ -9,7 +9,7 @@ import { SearchBar } from "@/components/pages/search-bar";
 import { EditorPanel } from "@/components/editor/editor-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { WorkspaceResponse } from "@/lib/types";
+import type { WorkspaceResponse } from "@historiador/types";
 
 export default function PagesPage() {
   const router = useRouter();

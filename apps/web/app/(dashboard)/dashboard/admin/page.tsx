@@ -9,7 +9,7 @@ import { InviteUserForm } from "@/components/admin/invite-user-form";
 import { McpSettings } from "@/components/admin/mcp-settings";
 import { WorkspaceConfig } from "@/components/admin/workspace-config";
 import { Spinner } from "@/components/ui/spinner";
-import type { UserResponse, WorkspaceResponse } from "@/lib/types";
+import type { UserResponse, WorkspaceResponse } from "@historiador/types";
 
 export default function AdminPage() {
   const router = useRouter();

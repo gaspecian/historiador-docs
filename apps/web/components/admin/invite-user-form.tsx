@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { CopyButton } from "@/components/ui/copy-button";
-import type { InviteResponse, Role } from "@/lib/types";
+import type { InviteResponse, Role } from "@historiador/types";
 
 interface Props {
   onInvited: () => void;

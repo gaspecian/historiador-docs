@@ -4,7 +4,7 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { UserResponse } from "@/lib/types";
+import type { UserResponse } from "@historiador/types";
 
 interface Props {
   users: UserResponse[];

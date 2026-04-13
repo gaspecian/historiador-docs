@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "./api";
-import type { PageResponse } from "./types";
+import type { PageResponse } from "@historiador/types";
 
 export function usePages(collectionId: string | null) {
   const [pages, setPages] = useState<PageResponse[]>([]);

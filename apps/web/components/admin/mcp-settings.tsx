@@ -4,7 +4,7 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
-import type { RegenerateTokenResponse, WorkspaceResponse } from "@/lib/types";
+import type { RegenerateTokenResponse, WorkspaceResponse } from "@historiador/types";
 
 interface Props {
   workspace: WorkspaceResponse;

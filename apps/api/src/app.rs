@@ -11,9 +11,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{
-    health, middleware::setup_gate::setup_gate, openapi::ApiDoc, routes, state::AppState,
-};
+use crate::{health, middleware::setup_gate::setup_gate, openapi::ApiDoc, routes, state::AppState};
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     let api_routes = Router::new()
@@ -24,10 +22,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/collections", routes::collections_router())
         .nest("/admin", routes::admin_router())
         .nest("/editor", routes::editor_router())
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            setup_gate,
-        ))
+        .layer(middleware::from_fn_with_state(state.clone(), setup_gate))
         .with_state(state);
 
     // Swagger UI at /docs, OpenAPI JSON at /api-docs/openapi.json.

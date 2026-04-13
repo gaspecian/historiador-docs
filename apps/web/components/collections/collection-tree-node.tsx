@@ -1,6 +1,6 @@
 "use client";
 
-import type { TreeNode } from "@/lib/types";
+import type { TreeNode } from "@historiador/types";
 
 interface Props {
   node: TreeNode;

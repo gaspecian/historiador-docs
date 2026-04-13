@@ -10,7 +10,11 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{middleware, routing::{get, post}, Router};
+use axum::{
+    middleware,
+    routing::{get, post},
+    Router,
+};
 use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use tokio::signal;
@@ -45,11 +49,10 @@ async fn main() -> anyhow::Result<()> {
         .context("MCP_PORT must be a valid u16")?;
 
     // Bearer token for MCP auth — required in production.
-    let bearer_token = std::env::var("MCP_BEARER_TOKEN")
-        .unwrap_or_else(|_| {
-            tracing::warn!("MCP_BEARER_TOKEN not set — using default dev token");
-            "dev-mcp-token".to_string()
-        });
+    let bearer_token = std::env::var("MCP_BEARER_TOKEN").unwrap_or_else(|_| {
+        tracing::warn!("MCP_BEARER_TOKEN not set — using default dev token");
+        "dev-mcp-token".to_string()
+    });
     let bearer_token_hash: [u8; 32] = Sha256::digest(bearer_token.as_bytes()).into();
 
     // Build embedding client from env.
@@ -94,12 +97,13 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Routes: /health is public, /query requires bearer token.
-    let authed_routes = Router::new()
-        .route("/query", post(query::handler))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::bearer_auth,
-        ));
+    let authed_routes =
+        Router::new()
+            .route("/query", post(query::handler))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::bearer_auth,
+            ));
 
     let app = Router::new()
         .route("/health", get(health::handler))

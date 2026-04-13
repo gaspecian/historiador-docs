@@ -91,12 +91,10 @@ pub async fn update_status_all(
     page_id: Uuid,
     status: PageStatus,
 ) -> anyhow::Result<u64> {
-    let result = sqlx::query(
-        "UPDATE page_versions SET status = $2 WHERE page_id = $1",
-    )
-    .bind(page_id)
-    .bind(status)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("UPDATE page_versions SET status = $2 WHERE page_id = $1")
+        .bind(page_id)
+        .bind(status)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }

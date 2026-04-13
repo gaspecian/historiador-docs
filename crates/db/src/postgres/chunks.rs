@@ -33,10 +33,7 @@ pub struct NewChunk {
 }
 
 /// Insert a batch of chunks. Returns the inserted rows.
-pub async fn insert_batch(
-    pool: &PgPool,
-    chunks: &[NewChunk],
-) -> anyhow::Result<Vec<ChunkRow>> {
+pub async fn insert_batch(pool: &PgPool, chunks: &[NewChunk]) -> anyhow::Result<Vec<ChunkRow>> {
     let mut rows = Vec::with_capacity(chunks.len());
     for chunk in chunks {
         let row = sqlx::query_as::<_, ChunkRow>(
@@ -61,15 +58,11 @@ pub async fn insert_batch(
 }
 
 /// Delete all chunks for a page version. Returns the number of deleted rows.
-pub async fn delete_by_page_version(
-    pool: &PgPool,
-    page_version_id: Uuid,
-) -> anyhow::Result<u64> {
-    let result =
-        sqlx::query("DELETE FROM chunks WHERE page_version_id = $1")
-            .bind(page_version_id)
-            .execute(pool)
-            .await?;
+pub async fn delete_by_page_version(pool: &PgPool, page_version_id: Uuid) -> anyhow::Result<u64> {
+    let result = sqlx::query("DELETE FROM chunks WHERE page_version_id = $1")
+        .bind(page_version_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }
 
