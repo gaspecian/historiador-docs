@@ -66,13 +66,11 @@ pub async fn find_by_id(
     id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Page>> {
-    let row = sqlx::query_as::<_, Page>(
-        "SELECT * FROM pages WHERE id = $1 AND workspace_id = $2",
-    )
-    .bind(id)
-    .bind(workspace_id)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query_as::<_, Page>("SELECT * FROM pages WHERE id = $1 AND workspace_id = $2")
+        .bind(id)
+        .bind(workspace_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row)
 }
 
@@ -99,11 +97,7 @@ pub async fn update_status(
 
 /// Search pages by title (ILIKE on `page_versions.title`), scoped to a
 /// workspace. Returns matching pages ordered by relevance (title match).
-pub async fn search(
-    pool: &PgPool,
-    workspace_id: Uuid,
-    query: &str,
-) -> anyhow::Result<Vec<Page>> {
+pub async fn search(pool: &PgPool, workspace_id: Uuid, query: &str) -> anyhow::Result<Vec<Page>> {
     let pattern = format!("%{query}%");
     let rows = sqlx::query_as::<_, Page>(
         "SELECT DISTINCT p.* FROM pages p \

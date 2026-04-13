@@ -2,19 +2,46 @@
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { PublishConfirmModal } from "./publish-confirm-modal";
 import { Button } from "@/components/ui/button";
-import type { PageStatus } from "@/lib/types";
+import type { PageStatus } from "@historiador/types";
 
 interface Props {
   pageId: string;
   status: PageStatus;
+  workspaceLanguages?: string[];
+  versionLanguages?: string[];
   onToggled: () => void;
 }
 
-export function DraftPublishToggle({ pageId, status, onToggled }: Props) {
+export function DraftPublishToggle({
+  pageId,
+  status,
+  workspaceLanguages = [],
+  versionLanguages = [],
+  onToggled,
+}: Props) {
   const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
-  const handleToggle = async () => {
+  const missingLanguages = workspaceLanguages.filter(
+    (lang) => !versionLanguages.includes(lang),
+  );
+
+  const handleClick = () => {
+    if (status === "published") {
+      doToggle();
+      return;
+    }
+    if (missingLanguages.length > 0) {
+      setShowModal(true);
+    } else {
+      doToggle();
+    }
+  };
+
+  const doToggle = async () => {
+    setShowModal(false);
     setLoading(true);
     try {
       const endpoint = status === "draft" ? "publish" : "draft";
@@ -28,13 +55,21 @@ export function DraftPublishToggle({ pageId, status, onToggled }: Props) {
   };
 
   return (
-    <Button
-      variant={status === "draft" ? "primary" : "secondary"}
-      size="sm"
-      onClick={handleToggle}
-      disabled={loading}
-    >
-      {loading ? "..." : status === "draft" ? "Publish" : "Unpublish"}
-    </Button>
+    <>
+      <Button
+        variant={status === "draft" ? "primary" : "secondary"}
+        size="sm"
+        onClick={handleClick}
+        disabled={loading}
+      >
+        {loading ? "..." : status === "draft" ? "Publish" : "Unpublish"}
+      </Button>
+      <PublishConfirmModal
+        open={showModal}
+        missingLanguages={missingLanguages}
+        onConfirm={doToggle}
+        onCancel={() => setShowModal(false)}
+      />
+    </>
   );
 }

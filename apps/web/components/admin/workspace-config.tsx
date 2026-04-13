@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import type { WorkspaceResponse } from "@/lib/types";
+import type { WorkspaceResponse } from "@historiador/types";
 
 interface Props {
   workspace: WorkspaceResponse;

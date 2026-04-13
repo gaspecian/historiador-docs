@@ -67,12 +67,10 @@ pub async fn update_mcp_token(
     workspace_id: Uuid,
     new_token_hash: &str,
 ) -> anyhow::Result<u64> {
-    let result = sqlx::query(
-        "UPDATE workspaces SET mcp_bearer_token_hash = $2 WHERE id = $1",
-    )
-    .bind(workspace_id)
-    .bind(new_token_hash)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("UPDATE workspaces SET mcp_bearer_token_hash = $2 WHERE id = $1")
+        .bind(workspace_id)
+        .bind(new_token_hash)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }

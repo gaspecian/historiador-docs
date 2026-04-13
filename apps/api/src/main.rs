@@ -3,21 +3,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use anyhow::Context;
-use historiador_api::{
-    app,
-    crypto::Cipher,
-    setup::llm_probe::HttpLlmProbe,
-    state::AppState,
-};
-use historiador_db::{
-    postgres::installation,
-    vector_store::InMemoryVectorStore,
-};
+use historiador_api::{app, crypto::Cipher, setup::llm_probe::HttpLlmProbe, state::AppState};
+use historiador_db::{postgres::installation, vector_store::InMemoryVectorStore};
 use historiador_llm::{
-    StubEmbeddingClient, StubTextGenerationClient,
-    OpenAiEmbeddingClient, OpenAiTextGenerationClient,
-    AnthropicTextGenerationClient,
-    EmbeddingClient, TextGenerationClient,
+    AnthropicTextGenerationClient, EmbeddingClient, OpenAiEmbeddingClient,
+    OpenAiTextGenerationClient, StubEmbeddingClient, StubTextGenerationClient,
+    TextGenerationClient,
 };
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -66,7 +57,10 @@ async fn main() -> anyhow::Result<()> {
     // Seed the setup-complete flag from the installation row.
     let install = installation::get(&pool).await?;
     let setup_complete = AtomicBool::new(install.setup_complete);
-    tracing::info!(setup_complete = install.setup_complete, "installation loaded");
+    tracing::info!(
+        setup_complete = install.setup_complete,
+        "installation loaded"
+    );
 
     // Build LLM clients from env vars. If LLM_PROVIDER + LLM_API_KEY are
     // set, use real providers; otherwise fall back to stubs (safe for dev).
@@ -88,11 +82,10 @@ async fn main() -> anyhow::Result<()> {
             // Anthropic has no embedding API — embeddings stay on stub
             // (or use EMBEDDING_API_KEY for OpenAI embeddings).
             tracing::info!("LLM provider: Anthropic (embeddings: stub)");
-            let emb: Arc<dyn EmbeddingClient> =
-                match std::env::var("EMBEDDING_API_KEY") {
-                    Ok(key) if !key.is_empty() => Arc::new(OpenAiEmbeddingClient::new(&key)),
-                    _ => Arc::new(StubEmbeddingClient::default()),
-                };
+            let emb: Arc<dyn EmbeddingClient> = match std::env::var("EMBEDDING_API_KEY") {
+                Ok(key) if !key.is_empty() => Arc::new(OpenAiEmbeddingClient::new(&key)),
+                _ => Arc::new(StubEmbeddingClient::default()),
+            };
             (
                 emb,
                 Arc::new(AnthropicTextGenerationClient::new(&llm_api_key)),

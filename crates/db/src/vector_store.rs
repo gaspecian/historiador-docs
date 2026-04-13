@@ -91,10 +91,7 @@ pub trait VectorStore: Send + Sync {
     ) -> Result<Vec<ChunkRef>, VectorStoreError>;
 
     /// Delete all chunk embeddings for a page_version.
-    async fn delete_by_page_version(
-        &self,
-        page_version_id: &str,
-    ) -> Result<u64, VectorStoreError>;
+    async fn delete_by_page_version(&self, page_version_id: &str) -> Result<u64, VectorStoreError>;
 }
 
 // ---- InMemoryVectorStore ----
@@ -131,12 +128,14 @@ impl VectorStore for InMemoryVectorStore {
         &self,
         chunks: Vec<ChunkEmbedding>,
     ) -> Result<Vec<String>, VectorStoreError> {
-        let mut store = self.store.write().map_err(|e| {
-            VectorStoreError::Internal(format!("lock poisoned: {e}"))
-        })?;
-        let mut counter = self.counter.write().map_err(|e| {
-            VectorStoreError::Internal(format!("lock poisoned: {e}"))
-        })?;
+        let mut store = self
+            .store
+            .write()
+            .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
+        let mut counter = self
+            .counter
+            .write()
+            .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
 
         let mut refs = Vec::with_capacity(chunks.len());
         for chunk in chunks {
@@ -154,9 +153,10 @@ impl VectorStore for InMemoryVectorStore {
         filters: SearchFilters,
         k: usize,
     ) -> Result<Vec<ChunkRef>, VectorStoreError> {
-        let store = self.store.read().map_err(|e| {
-            VectorStoreError::Internal(format!("lock poisoned: {e}"))
-        })?;
+        let store = self
+            .store
+            .read()
+            .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
 
         let mut scored: Vec<(String, &ChunkEmbedding, f32)> = store
             .iter()
@@ -198,13 +198,11 @@ impl VectorStore for InMemoryVectorStore {
         Ok(results)
     }
 
-    async fn delete_by_page_version(
-        &self,
-        page_version_id: &str,
-    ) -> Result<u64, VectorStoreError> {
-        let mut store = self.store.write().map_err(|e| {
-            VectorStoreError::Internal(format!("lock poisoned: {e}"))
-        })?;
+    async fn delete_by_page_version(&self, page_version_id: &str) -> Result<u64, VectorStoreError> {
+        let mut store = self
+            .store
+            .write()
+            .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
         let before = store.len();
         store.retain(|_, chunk| chunk.page_version_id != page_version_id);
         Ok((before - store.len()) as u64)

@@ -11,6 +11,7 @@ use historiador_db::postgres::{
     page_versions::{self, PageVersion},
     pages::{self, PageStatus},
     users::Role,
+    workspaces,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -126,9 +127,10 @@ pub async fn list_pages(
 ) -> Result<Json<Vec<PageResponse>>, ApiError> {
     require_role(&auth, Role::Viewer)?;
 
-    let pages_list = pages::list_by_collection(&state.pool, auth.workspace_id, params.collection_id)
-        .await
-        .map_err(ApiError::Internal)?;
+    let pages_list =
+        pages::list_by_collection(&state.pool, auth.workspace_id, params.collection_id)
+            .await
+            .map_err(ApiError::Internal)?;
 
     let mut results = Vec::with_capacity(pages_list.len());
     for page in pages_list {
@@ -230,7 +232,9 @@ pub async fn create_page(
     .map_err(|e| {
         let msg = e.to_string();
         if msg.contains("duplicate key") || msg.contains("unique constraint") {
-            ApiError::Conflict(format!("page with slug '{slug}' already exists in this collection"))
+            ApiError::Conflict(format!(
+                "page with slug '{slug}' already exists in this collection"
+            ))
         } else {
             ApiError::Internal(e)
         }
@@ -422,9 +426,14 @@ pub async fn publish_page(
         .ok_or(ApiError::NotFound)?;
 
     // Synchronously update status.
-    pages::update_status(&state.pool, page.id, auth.workspace_id, PageStatus::Published)
-        .await
-        .map_err(ApiError::Internal)?;
+    pages::update_status(
+        &state.pool,
+        page.id,
+        auth.workspace_id,
+        PageStatus::Published,
+    )
+    .await
+    .map_err(ApiError::Internal)?;
     page_versions::update_status_all(&state.pool, page.id, PageStatus::Published)
         .await
         .map_err(ApiError::Internal)?;
@@ -537,4 +546,69 @@ pub async fn draft_page(
     };
 
     Ok(Json(resp))
+}
+
+// ---- language completeness ----
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct PageVersionsResponse {
+    pub page_id: Uuid,
+    pub workspace_languages: Vec<String>,
+    pub primary_language: String,
+    pub versions: Vec<PageVersionResponse>,
+    pub missing_languages: Vec<String>,
+    pub complete: bool,
+}
+
+#[utoipa::path(
+    get,
+    path = "/pages/{id}/versions",
+    params(("id" = Uuid, Path, description = "Page ID")),
+    responses(
+        (status = 200, description = "page versions with completeness metadata", body = PageVersionsResponse),
+        (status = 401, description = "unauthorized"),
+        (status = 404, description = "not found"),
+    ),
+    security(("bearer" = [])),
+    tag = "pages"
+)]
+pub async fn get_page_versions(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<PageVersionsResponse>, ApiError> {
+    require_role(&auth, Role::Viewer)?;
+
+    let page = pages::find_by_id(&state.pool, id, auth.workspace_id)
+        .await
+        .map_err(ApiError::Internal)?
+        .ok_or(ApiError::NotFound)?;
+
+    let ws = workspaces::find_by_id(&state.pool, auth.workspace_id)
+        .await
+        .map_err(ApiError::Internal)?
+        .ok_or(ApiError::NotFound)?;
+
+    let versions = page_versions::find_by_page(&state.pool, page.id)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    let existing_langs: std::collections::HashSet<&str> =
+        versions.iter().map(|v| v.language.as_str()).collect();
+    let missing_languages: Vec<String> = ws
+        .languages
+        .iter()
+        .filter(|lang| !existing_langs.contains(lang.as_str()))
+        .cloned()
+        .collect();
+    let complete = missing_languages.is_empty();
+
+    Ok(Json(PageVersionsResponse {
+        page_id: page.id,
+        workspace_languages: ws.languages,
+        primary_language: ws.primary_language,
+        versions: versions.into_iter().map(Into::into).collect(),
+        missing_languages,
+        complete,
+    }))
 }

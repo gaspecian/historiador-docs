@@ -1,24 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { EditorPanel } from "@/components/editor/editor-panel";
+import { LanguageTabs } from "@/components/pages/language-tabs";
+import { PublishConfirmModal } from "@/components/pages/publish-confirm-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import type { PageResponse, WorkspaceResponse } from "@/lib/types";
+import type { PageResponse, WorkspaceResponse } from "@historiador/types";
 
 export default function PageDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const pageId = params.id as string;
 
   const [page, setPage] = useState<PageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null);
   const [workspaceLanguages, setWorkspaceLanguages] = useState<string[]>([]);
+  const [primaryLanguage, setPrimaryLanguage] = useState<string>("en");
   const [saving, setSaving] = useState(false);
+  const [showPublishModal, setShowPublishModal] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -26,13 +31,22 @@ export default function PageDetailPage() {
       apiFetch<WorkspaceResponse>("/admin/workspace").catch(() => null),
     ]).then(([pageData, ws]) => {
       setPage(pageData);
-      if (ws) setWorkspaceLanguages(ws.languages);
-      if (pageData.versions.length > 0) {
+      if (ws) {
+        setWorkspaceLanguages(ws.languages);
+        setPrimaryLanguage(ws.primary_language);
+      }
+      // Use ?lang= query param if provided, otherwise default to first version's language
+      const langParam = searchParams.get("lang");
+      if (langParam && ws?.languages.includes(langParam)) {
+        setActiveLanguage(langParam);
+      } else if (pageData.versions.length > 0) {
         setActiveLanguage(pageData.versions[0].language);
+      } else if (ws) {
+        setActiveLanguage(ws.primary_language);
       }
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [pageId]);
+  }, [pageId, searchParams]);
 
   if (loading) {
     return (
@@ -47,6 +61,8 @@ export default function PageDetailPage() {
   }
 
   const activeVersion = page.versions.find((v) => v.language === activeLanguage);
+  const isMissingLanguage = activeLanguage && !activeVersion;
+  const primaryVersion = page.versions.find((v) => v.language === primaryLanguage);
 
   const handleSave = async (markdown: string) => {
     setSaving(true);
@@ -54,7 +70,7 @@ export default function PageDetailPage() {
       await apiFetch(`/pages/${pageId}`, {
         method: "PATCH",
         body: JSON.stringify({
-          title: activeVersion?.title,
+          title: activeVersion?.title || primaryVersion?.title || "Untitled",
           content_markdown: markdown,
           language: activeLanguage,
         }),
@@ -69,7 +85,26 @@ export default function PageDetailPage() {
     }
   };
 
-  const handleToggleStatus = async () => {
+  const missingLanguages = workspaceLanguages.filter(
+    (lang) => !page.versions.some((v) => v.language === lang),
+  );
+
+  const handlePublishClick = () => {
+    if (page.status === "published") {
+      // Unpublish — no check needed
+      doToggleStatus();
+      return;
+    }
+    // Publishing — check completeness
+    if (missingLanguages.length > 0) {
+      setShowPublishModal(true);
+    } else {
+      doToggleStatus();
+    }
+  };
+
+  const doToggleStatus = async () => {
+    setShowPublishModal(false);
     const endpoint = page.status === "draft" ? "publish" : "draft";
     await apiFetch(`/pages/${pageId}/${endpoint}`, { method: "POST" });
     const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
@@ -84,7 +119,7 @@ export default function PageDetailPage() {
             &larr; Back
           </Button>
           <h1 className="text-lg font-semibold">
-            {activeVersion?.title || page.slug}
+            {activeVersion?.title || primaryVersion?.title || page.slug}
           </h1>
           <Badge variant={page.status === "published" ? "success" : "warning"}>
             {page.status}
@@ -94,7 +129,7 @@ export default function PageDetailPage() {
           <Button
             variant={page.status === "draft" ? "primary" : "secondary"}
             size="sm"
-            onClick={handleToggleStatus}
+            onClick={handlePublishClick}
           >
             {page.status === "draft" ? "Publish" : "Unpublish"}
           </Button>
@@ -102,32 +137,45 @@ export default function PageDetailPage() {
       </div>
 
       {/* Language tabs */}
-      {page.versions.length > 1 && (
-        <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-          {page.versions.map((v) => (
-            <button
-              key={v.language}
-              onClick={() => setActiveLanguage(v.language)}
-              className={`px-3 py-1.5 text-sm border-b-2 transition-colors ${
-                v.language === activeLanguage
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-zinc-500 hover:text-zinc-700"
-              }`}
-            >
-              {v.language}
-            </button>
-          ))}
-        </div>
-      )}
+      <LanguageTabs
+        workspaceLanguages={workspaceLanguages}
+        versions={page.versions}
+        activeLanguage={activeLanguage}
+        onSelect={setActiveLanguage}
+      />
 
-      {/* Content preview */}
-      {activeVersion && (
+      {/* Content preview or missing-language prompt */}
+      {isMissingLanguage ? (
+        <div className="border border-amber-200 dark:border-amber-800 rounded p-6 text-center space-y-3 bg-amber-50 dark:bg-amber-900/20">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            No <strong>{activeLanguage}</strong> version exists yet.
+          </p>
+          <div className="flex justify-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleSave("")}
+            >
+              Create blank version
+            </Button>
+            {primaryVersion && activeLanguage !== primaryLanguage && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleSave(primaryVersion.content_markdown)}
+              >
+                Copy from {primaryLanguage}
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : activeVersion ? (
         <div className="border border-zinc-200 dark:border-zinc-700 rounded p-4">
           <pre className="whitespace-pre-wrap break-words font-mono text-sm">
             {activeVersion.content_markdown}
           </pre>
         </div>
-      )}
+      ) : null}
 
       {/* Editor */}
       <div className="border border-zinc-200 dark:border-zinc-700 rounded p-4">
@@ -139,6 +187,13 @@ export default function PageDetailPage() {
         />
         {saving && <p className="text-xs text-zinc-500 mt-2">Saving...</p>}
       </div>
+
+      <PublishConfirmModal
+        open={showPublishModal}
+        missingLanguages={missingLanguages}
+        onConfirm={doToggleStatus}
+        onCancel={() => setShowPublishModal(false)}
+      />
     </div>
   );
 }

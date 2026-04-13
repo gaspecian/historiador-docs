@@ -6,8 +6,8 @@
 
 use async_trait::async_trait;
 
-use crate::{Embedding, EmbeddingClient, LlmError};
 use crate::text_generation::TextGenerationClient;
+use crate::{Embedding, EmbeddingClient, LlmError};
 
 /// Stub embedding client that returns zero vectors. Used when no real
 /// LLM provider is configured (e.g., provider = "test") or during

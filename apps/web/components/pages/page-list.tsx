@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { DraftPublishToggle } from "./draft-publish-toggle";
 import { LanguageBadges } from "./language-badges";
-import type { PageResponse } from "@/lib/types";
+import type { PageResponse } from "@historiador/types";
 
 interface Props {
   pages: PageResponse[];
@@ -15,6 +16,12 @@ interface Props {
 }
 
 export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Props) {
+  const router = useRouter();
+
+  const handleMissingLanguageClick = (pageId: string, lang: string) => {
+    router.push(`/dashboard/pages/${pageId}?lang=${lang}`);
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-8">
@@ -74,6 +81,8 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
                   <LanguageBadges
                     versions={page.versions}
                     workspaceLanguages={workspaceLanguages}
+                    pageId={page.id}
+                    onMissingClick={handleMissingLanguageClick}
                   />
                 </td>
                 <td className="px-4 py-2 text-zinc-500">
@@ -83,6 +92,8 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
                   <DraftPublishToggle
                     pageId={page.id}
                     status={page.status}
+                    workspaceLanguages={workspaceLanguages}
+                    versionLanguages={page.versions.map((v) => v.language)}
                     onToggled={onRefresh}
                   />
                 </td>

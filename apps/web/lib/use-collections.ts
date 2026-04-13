@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "./api";
-import type { Collection, TreeNode } from "./types";
+import type { Collection, TreeNode } from "@historiador/types";
 
 function buildTree(collections: Collection[]): TreeNode[] {
   const childrenMap = new Map<string | null, Collection[]>();

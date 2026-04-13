@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { JwtPayload, Role, TokenResponse } from "./types";
+import type { JwtPayload, Role, TokenResponse } from "@historiador/types";
 
 interface AuthUser {
   id: string;
