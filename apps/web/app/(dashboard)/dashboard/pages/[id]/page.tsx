@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { EditorPanel } from "@/components/editor/editor-panel";
 import { LanguageTabs } from "@/components/pages/language-tabs";
 import { PublishConfirmModal } from "@/components/pages/publish-confirm-modal";
+import { VersionHistoryPanel } from "@/components/pages/version-history-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -24,6 +25,7 @@ export default function PageDetailPage() {
   const [primaryLanguage, setPrimaryLanguage] = useState<string>("en");
   const [saving, setSaving] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -127,6 +129,14 @@ export default function PageDetailPage() {
         </div>
         <div className="flex gap-2">
           <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowHistory(true)}
+            title="Version history"
+          >
+            History
+          </Button>
+          <Button
             variant={page.status === "draft" ? "primary" : "secondary"}
             size="sm"
             onClick={handlePublishClick}
@@ -193,6 +203,17 @@ export default function PageDetailPage() {
         missingLanguages={missingLanguages}
         onConfirm={doToggleStatus}
         onCancel={() => setShowPublishModal(false)}
+      />
+
+      <VersionHistoryPanel
+        pageId={pageId}
+        language={activeLanguage || primaryLanguage}
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        onRestore={async () => {
+          const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
+          setPage(updated);
+        }}
       />
     </div>
   );

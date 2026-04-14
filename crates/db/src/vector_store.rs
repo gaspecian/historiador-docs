@@ -276,6 +276,48 @@ impl VectorStore for HttpVexfsClient {
     }
 }
 
+// ---- ChronikVectorStore (Sprint 7, ADR-007) ----
+
+/// Vector store backed by Chronik-Stream's HNSW index on the
+/// `published-pages` topic. Replaces `InMemoryVectorStore` and
+/// `HttpVexfsClient` as the production implementation.
+pub struct ChronikVectorStore {
+    client: crate::chronik::ChronikClient,
+}
+
+impl ChronikVectorStore {
+    pub fn new(client: crate::chronik::ChronikClient) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl VectorStore for ChronikVectorStore {
+    async fn health(&self) -> Result<bool, VectorStoreError> {
+        self.client.search_health().await
+    }
+
+    async fn upsert_chunks(
+        &self,
+        chunks: Vec<ChunkEmbedding>,
+    ) -> Result<Vec<String>, VectorStoreError> {
+        self.client.upsert_chunks(chunks).await
+    }
+
+    async fn search(
+        &self,
+        query_embedding: &[f32],
+        filters: SearchFilters,
+        k: usize,
+    ) -> Result<Vec<ChunkRef>, VectorStoreError> {
+        self.client.vector_search(query_embedding, filters, k).await
+    }
+
+    async fn delete_by_page_version(&self, page_version_id: &str) -> Result<u64, VectorStoreError> {
+        self.client.delete_by_page_version(page_version_id).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

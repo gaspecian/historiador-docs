@@ -80,6 +80,22 @@ pub async fn draft(
         .await
         .map_err(|e| anyhow::anyhow!("LLM error: {e}"))?;
 
+    // Durable conversation history (editor-conversations topic).
+    if let Some(ref chronik) = state.chronik {
+        chronik.produce_event_fire_and_forget(
+            historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
+            auth.user_id.to_string(),
+            serde_json::json!({
+                "type": "draft",
+                "user_id": auth.user_id,
+                "brief": body.brief,
+                "language": body.language,
+                "response_length": content_markdown.len(),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }),
+        );
+    }
+
     Ok(Json(DraftResponse { content_markdown }))
 }
 
@@ -115,6 +131,21 @@ pub async fn iterate(
         .generate_text(prompts::ITERATE_SYSTEM_PROMPT, &user_prompt)
         .await
         .map_err(|e| anyhow::anyhow!("LLM error: {e}"))?;
+
+    // Durable conversation history (editor-conversations topic).
+    if let Some(ref chronik) = state.chronik {
+        chronik.produce_event_fire_and_forget(
+            historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
+            auth.user_id.to_string(),
+            serde_json::json!({
+                "type": "iterate",
+                "user_id": auth.user_id,
+                "instruction": body.instruction,
+                "response_length": content_markdown.len(),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }),
+        );
+    }
 
     Ok(Json(IterateResponse { content_markdown }))
 }

@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/admin/analytics/mcp-queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_mcp_analytics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -292,6 +308,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_version_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/history/{history_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_version_history_item"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/history/{history_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{id}/publish": {
         parameters: {
             query?: never;
@@ -407,6 +471,11 @@ export interface components {
             language: string;
             title: string;
         };
+        DayCountDto: {
+            /** Format: int64 */
+            count: number;
+            date: string;
+        };
         DraftRequest: {
             /** @description Natural language description of the document to create. */
             brief: string;
@@ -454,6 +523,19 @@ export interface components {
         };
         LogoutRequest: {
             refresh_token: string;
+        };
+        /**
+         * @description Response DTO for the analytics endpoint. Mirrors the Chronik
+         *     `McpQueryStats` but with `utoipa::ToSchema` for OpenAPI generation.
+         */
+        McpAnalyticsResponse: {
+            /** Format: int32 */
+            period_days: number;
+            queries_by_day: components["schemas"]["DayCountDto"][];
+            top_queries: components["schemas"]["QueryFrequencyDto"][];
+            /** Format: int64 */
+            total_queries: number;
+            zero_result_queries: components["schemas"]["ZeroResultSummaryDto"];
         };
         PageResponse: {
             /** Format: uuid */
@@ -506,6 +588,11 @@ export interface components {
             /** Format: uuid */
             page_id: string;
             status: string;
+        };
+        QueryFrequencyDto: {
+            /** Format: int64 */
+            count: number;
+            query_text: string;
         };
         RefreshRequest: {
             refresh_token: string;
@@ -565,6 +652,45 @@ export interface components {
             pending: boolean;
             role: components["schemas"]["Role"];
         };
+        VersionHistoryDetailResponse: {
+            /** Format: uuid */
+            author_id?: string | null;
+            content_markdown: string;
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            is_published: boolean;
+            language: string;
+            /** Format: uuid */
+            page_id: string;
+            title: string;
+            /** Format: int32 */
+            version_number: number;
+        };
+        VersionHistoryListResponse: {
+            language: string;
+            /** Format: int64 */
+            page: number;
+            /** Format: uuid */
+            page_id: string;
+            /** Format: int64 */
+            per_page: number;
+            /** Format: int64 */
+            total: number;
+            versions: components["schemas"]["VersionHistorySummary"][];
+        };
+        VersionHistorySummary: {
+            /** Format: uuid */
+            author_id?: string | null;
+            content_preview: string;
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            is_published: boolean;
+            title: string;
+            /** Format: int32 */
+            version_number: number;
+        };
         WorkspaceResponse: {
             /** @description Whether a bearer token has been configured. */
             has_mcp_token: boolean;
@@ -577,6 +703,17 @@ export interface components {
             name: string;
             primary_language: string;
         };
+        ZeroResultQueryDto: {
+            /** Format: int64 */
+            count: number;
+            last_seen: string;
+            query_text: string;
+        };
+        ZeroResultSummaryDto: {
+            /** Format: int64 */
+            count: number;
+            queries: components["schemas"]["ZeroResultQueryDto"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -586,6 +723,50 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_mcp_analytics: {
+        parameters: {
+            query?: {
+                /** @description Number of days to look back (default 7, max 30). */
+                days?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MCP query analytics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpAnalyticsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Chronik not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_users: {
         parameters: {
             query?: never;
@@ -1431,6 +1612,142 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PageResponse"];
                 };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_version_history: {
+        parameters: {
+            query: {
+                /** @description BCP 47 language tag (required). */
+                language: string;
+                /** @description Page number (1-indexed, default 1). */
+                page?: number | null;
+                /** @description Items per page (default 20, max 50). */
+                per_page?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Page ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description paginated version history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionHistoryListResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_version_history_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Page ID */
+                id: string;
+                /** @description Version history entry ID */
+                history_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description full version content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionHistoryDetailResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restore_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Page ID */
+                id: string;
+                /** @description Version history entry ID */
+                history_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description restored as draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+            /** @description page is published */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description unauthorized */
             401: {

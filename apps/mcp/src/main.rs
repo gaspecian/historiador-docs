@@ -21,7 +21,10 @@ use tokio::signal;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use historiador_db::vector_store::InMemoryVectorStore;
+use historiador_db::{
+    chronik::{ChronikClient, ChronikConfig},
+    vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
+};
 use historiador_llm::{EmbeddingClient, OpenAiEmbeddingClient, StubEmbeddingClient};
 
 mod auth;
@@ -89,11 +92,52 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to connect to postgres as readonly role")?;
 
+    // Build vector store: Chronik if configured, else in-memory fallback.
+    let chronik_url = std::env::var("CHRONIK_SQL_URL").ok();
+    let vector_store: Arc<dyn VectorStore> = match &chronik_url {
+        Some(url) if !url.is_empty() => {
+            let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
+            match ChronikClient::new(ChronikConfig {
+                base_url: url.clone(),
+                search_base_url: search_url,
+            }) {
+                Ok(client) => {
+                    tracing::info!("MCP vector store: Chronik-Stream");
+                    Arc::new(ChronikVectorStore::new(client))
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to init Chronik — falling back to in-memory");
+                    Arc::new(InMemoryVectorStore::new())
+                }
+            }
+        }
+        _ => {
+            tracing::info!("MCP vector store: in-memory (CHRONIK_SQL_URL not set)");
+            Arc::new(InMemoryVectorStore::new())
+        }
+    };
+
+    // Load workspace_id (v1 is single-workspace).
+    let workspace_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| {
+            tracing::warn!("no workspace found — MCP query logging will use nil UUID");
+            uuid::Uuid::nil()
+        });
+
+    let internal_api_url =
+        std::env::var("API_INTERNAL_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
+
     let state = Arc::new(McpState {
         pool,
-        vector_store: Arc::new(InMemoryVectorStore::new()),
+        vector_store,
         embedding_client,
         bearer_token_hash,
+        internal_api_url,
+        workspace_id,
     });
 
     // Routes: /health is public, /query requires bearer token.

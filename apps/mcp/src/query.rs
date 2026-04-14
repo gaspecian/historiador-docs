@@ -45,6 +45,7 @@ pub async fn handler(
     State(state): State<Arc<McpState>>,
     Json(body): Json<QueryRequest>,
 ) -> Result<Json<QueryResponse>, StatusCode> {
+    let start = std::time::Instant::now();
     let top_k = body.top_k.unwrap_or(5).min(20);
     let language_filter_applied = body.language.is_some();
 
@@ -124,6 +125,29 @@ pub async fn handler(
         .collect();
 
     let total_results = chunks.len();
+    let response_time_ms = start.elapsed().as_millis() as i32;
+
+    // Fire-and-forget: log query to API for Chronik ingestion (ADR-003:
+    // MCP stays read-only, logging is proxied through the API).
+    let api_url = state.internal_api_url.clone();
+    let workspace_id = state.workspace_id;
+    let query_text = body.query.clone();
+    let result_count = total_results as i32;
+    let top_score = chunks.first().map(|c| c.score);
+    tokio::spawn(async move {
+        let _ = reqwest::Client::new()
+            .post(format!("{api_url}/internal/mcp-log"))
+            .json(&serde_json::json!({
+                "query_text": query_text,
+                "workspace_id": workspace_id,
+                "result_count": result_count,
+                "top_chunk_score": top_score,
+                "response_time_ms": response_time_ms,
+            }))
+            .send()
+            .await;
+    });
+
     Ok(Json(QueryResponse {
         chunks,
         total_results,

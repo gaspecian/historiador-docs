@@ -38,6 +38,18 @@ export type UpdatePageRequest = components["schemas"]["UpdatePageRequest"];
 export type UserResponse = components["schemas"]["UserResponse"];
 export type WorkspaceResponse = components["schemas"]["WorkspaceResponse"];
 
+// Sprint 7: version history types
+export type VersionHistoryListResponse = components["schemas"]["VersionHistoryListResponse"];
+export type VersionHistorySummary = components["schemas"]["VersionHistorySummary"];
+export type VersionHistoryDetailResponse = components["schemas"]["VersionHistoryDetailResponse"];
+
+// Sprint 7: MCP analytics types
+export type McpAnalyticsResponse = components["schemas"]["McpAnalyticsResponse"];
+export type DayCountDto = components["schemas"]["DayCountDto"];
+export type QueryFrequencyDto = components["schemas"]["QueryFrequencyDto"];
+export type ZeroResultSummaryDto = components["schemas"]["ZeroResultSummaryDto"];
+export type ZeroResultQueryDto = components["schemas"]["ZeroResultQueryDto"];
+
 // Backwards-compatible alias: frontend uses "PageVersion" but the
 // Rust DTO is named PageVersionResponse.
 export type PageVersion = components["schemas"]["PageVersionResponse"];

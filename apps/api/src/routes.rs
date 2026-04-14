@@ -41,6 +41,15 @@ pub fn pages_router() -> Router<Arc<AppState>> {
             get(pages::handlers::get_page).patch(pages::handlers::update_page),
         )
         .route("/:id/versions", get(pages::handlers::get_page_versions))
+        .route("/:id/history", get(pages::handlers::list_version_history))
+        .route(
+            "/:id/history/:history_id",
+            get(pages::handlers::get_version_history_item),
+        )
+        .route(
+            "/:id/history/:history_id/restore",
+            post(pages::handlers::restore_version),
+        )
         .route("/:id/publish", post(pages::handlers::publish_page))
         .route("/:id/draft", post(pages::handlers::draft_page))
 }
@@ -72,6 +81,16 @@ pub fn admin_router() -> Router<Arc<AppState>> {
             "/workspace/regenerate-token",
             post(admin::workspace::regenerate_token),
         )
+        .route(
+            "/analytics/mcp-queries",
+            get(admin::analytics::get_mcp_analytics),
+        )
+}
+
+/// Internal endpoints — no JWT auth, protected by network topology.
+/// These are NOT nested under `/admin` and NOT behind the setup gate.
+pub fn internal_router() -> Router<Arc<AppState>> {
+    Router::new().route("/mcp-log", post(admin::analytics::log_mcp_query))
 }
 
 pub fn editor_router() -> Router<Arc<AppState>> {

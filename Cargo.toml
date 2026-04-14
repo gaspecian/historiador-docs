@@ -24,7 +24,7 @@ axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors"] }
 
-# --- http client (VexFS stub + future LLM calls) ---
+# --- http client ---
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # --- database ---

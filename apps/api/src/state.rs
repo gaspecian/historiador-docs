@@ -5,6 +5,7 @@ use sqlx::PgPool;
 
 use crate::crypto::Cipher;
 use crate::setup::llm_probe::LlmProbe;
+use historiador_db::chronik::ChronikClient;
 use historiador_db::vector_store::VectorStore;
 use historiador_llm::{EmbeddingClient, TextGenerationClient};
 
@@ -24,10 +25,12 @@ pub struct AppState {
     /// LLM probe — a trait object so the e2e test can swap in a
     /// stub that never hits the network.
     pub llm_probe: Arc<dyn LlmProbe>,
-    /// Vector store for chunk embeddings (in-memory stub in Sprint 3).
+    /// Vector store for chunk embeddings (Chronik HNSW in Sprint 7).
     pub vector_store: Arc<dyn VectorStore>,
     /// Embedding client for generating text embeddings (stub in Sprint 3).
     pub embedding_client: Arc<dyn EmbeddingClient>,
     /// Text generation client for the AI editor (stub unless LLM_PROVIDER is set).
     pub text_generation_client: Arc<dyn TextGenerationClient>,
+    /// Chronik-Stream client for event production and analytics queries (Sprint 7).
+    pub chronik: Option<ChronikClient>,
 }

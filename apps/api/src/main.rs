@@ -4,7 +4,11 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use historiador_api::{app, crypto::Cipher, setup::llm_probe::HttpLlmProbe, state::AppState};
-use historiador_db::{postgres::installation, vector_store::InMemoryVectorStore};
+use historiador_db::{
+    chronik::{ChronikClient, ChronikConfig},
+    postgres::installation,
+    vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
+};
 use historiador_llm::{
     AnthropicTextGenerationClient, EmbeddingClient, OpenAiEmbeddingClient,
     OpenAiTextGenerationClient, StubEmbeddingClient, StubTextGenerationClient,
@@ -100,6 +104,33 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Build Chronik client if configured; fall back to InMemoryVectorStore.
+    let chronik_url = std::env::var("CHRONIK_SQL_URL").ok();
+    let (vector_store, chronik): (Arc<dyn VectorStore>, Option<ChronikClient>) = match chronik_url {
+        Some(url) if !url.is_empty() => {
+            let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
+
+            match ChronikClient::new(ChronikConfig {
+                base_url: url,
+                search_base_url: search_url,
+            }) {
+                Ok(client) => {
+                    tracing::info!("vector store: Chronik-Stream");
+                    let vs = Arc::new(ChronikVectorStore::new(client.clone()));
+                    (vs, Some(client))
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to init Chronik — falling back to in-memory");
+                    (Arc::new(InMemoryVectorStore::new()), None)
+                }
+            }
+        }
+        _ => {
+            tracing::info!("vector store: in-memory (CHRONIK_SQL_URL not set)");
+            (Arc::new(InMemoryVectorStore::new()), None)
+        }
+    };
+
     let state = Arc::new(AppState {
         pool,
         git_sha,
@@ -108,9 +139,10 @@ async fn main() -> anyhow::Result<()> {
         public_base_url,
         setup_complete,
         llm_probe: Arc::new(HttpLlmProbe::default()),
-        vector_store: Arc::new(InMemoryVectorStore::new()),
+        vector_store,
         embedding_client,
         text_generation_client,
+        chronik,
     });
 
     let app = app::build_router(state);

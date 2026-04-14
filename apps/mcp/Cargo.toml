@@ -28,3 +28,5 @@ async-trait.workspace = true
 uuid.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
+reqwest.workspace = true
+chrono.workspace = true

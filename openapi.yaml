@@ -7,6 +7,36 @@ info:
     identifier: AGPL-3.0-or-later
   version: 0.1.0
 paths:
+  /admin/analytics/mcp-queries:
+    get:
+      tags:
+      - admin
+      operationId: get_mcp_analytics
+      parameters:
+      - name: days
+        in: query
+        description: Number of days to look back (default 7, max 30).
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      responses:
+        '200':
+          description: MCP query analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAnalyticsResponse'
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '503':
+          description: Chronik not configured
+      security:
+      - bearer: []
   /admin/users:
     get:
       tags:
@@ -528,6 +558,126 @@ paths:
           description: not found
       security:
       - bearer: []
+  /pages/{id}/history:
+    get:
+      tags:
+      - pages
+      operationId: list_version_history
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: BCP 47 language tag (required).
+        required: true
+        schema:
+          type: string
+      - name: page
+        in: query
+        description: Page number (1-indexed, default 1).
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+      - name: per_page
+        in: query
+        description: Items per page (default 20, max 50).
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+      responses:
+        '200':
+          description: paginated version history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionHistoryListResponse'
+        '401':
+          description: unauthorized
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/history/{history_id}:
+    get:
+      tags:
+      - pages
+      operationId: get_version_history_item
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: history_id
+        in: path
+        description: Version history entry ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: full version content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionHistoryDetailResponse'
+        '401':
+          description: unauthorized
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/history/{history_id}/restore:
+    post:
+      tags:
+      - pages
+      operationId: restore_version
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: history_id
+        in: path
+        description: Version history entry ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: restored as draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '400':
+          description: page is published
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+      security:
+      - bearer: []
   /pages/{id}/publish:
     post:
       tags:
@@ -733,6 +883,17 @@ components:
           description: BCP 47 language tag (e.g., "en-US", "pt-BR").
         title:
           type: string
+    DayCountDto:
+      type: object
+      required:
+      - date
+      - count
+      properties:
+        count:
+          type: integer
+          format: int64
+        date:
+          type: string
     DraftRequest:
       type: object
       required:
@@ -838,6 +999,34 @@ components:
       properties:
         refresh_token:
           type: string
+    McpAnalyticsResponse:
+      type: object
+      description: |-
+        Response DTO for the analytics endpoint. Mirrors the Chronik
+        `McpQueryStats` but with `utoipa::ToSchema` for OpenAPI generation.
+      required:
+      - period_days
+      - total_queries
+      - queries_by_day
+      - top_queries
+      - zero_result_queries
+      properties:
+        period_days:
+          type: integer
+          format: int32
+        queries_by_day:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayCountDto'
+        top_queries:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryFrequencyDto'
+        total_queries:
+          type: integer
+          format: int64
+        zero_result_queries:
+          $ref: '#/components/schemas/ZeroResultSummaryDto'
     PageResponse:
       type: object
       required:
@@ -975,6 +1164,17 @@ components:
           format: uuid
         status:
           type: string
+    QueryFrequencyDto:
+      type: object
+      required:
+      - query_text
+      - count
+      properties:
+        count:
+          type: integer
+          format: int64
+        query_text:
+          type: string
     RefreshRequest:
       type: object
       required:
@@ -1106,6 +1306,99 @@ components:
           description: '`true` if the user has not yet activated their account.'
         role:
           $ref: '#/components/schemas/Role'
+    VersionHistoryDetailResponse:
+      type: object
+      required:
+      - id
+      - page_id
+      - language
+      - version_number
+      - title
+      - content_markdown
+      - is_published
+      - created_at
+      properties:
+        author_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        content_markdown:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+          format: uuid
+        is_published:
+          type: boolean
+        language:
+          type: string
+        page_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        version_number:
+          type: integer
+          format: int32
+    VersionHistoryListResponse:
+      type: object
+      required:
+      - page_id
+      - language
+      - versions
+      - total
+      - page
+      - per_page
+      properties:
+        language:
+          type: string
+        page:
+          type: integer
+          format: int64
+        page_id:
+          type: string
+          format: uuid
+        per_page:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionHistorySummary'
+    VersionHistorySummary:
+      type: object
+      required:
+      - id
+      - version_number
+      - title
+      - content_preview
+      - is_published
+      - created_at
+      properties:
+        author_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        content_preview:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+          format: uuid
+        is_published:
+          type: boolean
+        title:
+          type: string
+        version_number:
+          type: integer
+          format: int32
     WorkspaceResponse:
       type: object
       required:
@@ -1136,6 +1429,33 @@ components:
           type: string
         primary_language:
           type: string
+    ZeroResultQueryDto:
+      type: object
+      required:
+      - query_text
+      - count
+      - last_seen
+      properties:
+        count:
+          type: integer
+          format: int64
+        last_seen:
+          type: string
+        query_text:
+          type: string
+    ZeroResultSummaryDto:
+      type: object
+      required:
+      - count
+      - queries
+      properties:
+        count:
+          type: integer
+          format: int64
+        queries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZeroResultQueryDto'
   securitySchemes:
     bearer:
       type: http

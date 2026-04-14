@@ -1,8 +1,8 @@
 # Historiador Doc — local dev infrastructure.
 #
 # Philosophy: docker-compose runs only the stateful/prebuilt services
-# (Postgres, Ollama, and optionally VexFS). The Rust binaries (api, mcp)
-# and the Next.js frontend (web) are meant to run on the host via
+# (Postgres, Ollama, Chronik-Stream). The Rust binaries (api, mcp) and
+# the Next.js frontend (web) are meant to run on the host via
 # `cargo run` and `pnpm dev` so iteration is fast and failures show up
 # in a normal terminal instead of buried in container logs.
 #
@@ -11,12 +11,10 @@
 # need it — see Dockerfile.rust, which is still present).
 #
 # Services started by `docker compose up -d` (default):
-#   * postgres (5432) — SQL store for workspaces, users, pages, chunks
+#   * postgres (5432)  — SQL store for workspaces, users, pages, chunks
 #   * ollama   (11434) — local Llama inference (llama3.2:1b pre-pulled)
-#
-# Services started by `docker compose --profile vector up -d`:
-#   * vexfs    (7680) — vector store; only needed once the chunker lands.
-#     Requires running `scripts/setup-vexfs.sh` once to vendor the code.
+#   * chronik  (9092 Kafka, 6092 SQL REST) — event streaming, vector
+#     search, full-text search, and SQL analytics (ADR-007)
 #
 # Security invariants (ADR-003, enforced on the DB side by
 # docker/postgres/init/10-roles.sh):
@@ -77,34 +75,34 @@ services:
       retries: 10
       start_period: 15s
 
-  vexfs:
-    # Opt-in: `docker compose --profile vector up -d`.
-    # VexFS has no published image. Run `scripts/setup-vexfs.sh` once to
-    # clone the pinned commit into vendor/vexfs/ (the script sidesteps a
-    # broken submodule reference in the upstream repo by passing
-    # --no-recurse-submodules to git clone). Compose builds from the
-    # local clone, NOT from a git URL, because buildkit's git fetcher
-    # always initializes submodules and fails on the broken reference.
-    profiles: ["vector"]
-    build:
-      context: ./vendor/vexfs
+  chronik:
+    # Chronik-Stream — unified event streaming, vector search, full-text
+    # search, and SQL analytics (ADR-007). Replaces VexFS (ADR-001).
+    # Ports: 9092 (Kafka-compatible), 6092 (DataFusion SQL REST API).
+    image: ghcr.io/lspecian/chronik-stream:${CHRONIK_VERSION:-latest}
     restart: unless-stopped
     environment:
       RUST_LOG: info
-      VEXFS_PORT: "7680"
-      VEXFS_DATA_DIR: /app/data
+      CHRONIK_DATA_DIR: /var/lib/chronik
+      # Topic configurations with per-topic capability flags.
+      CHRONIK_TOPICS: >-
+        published-pages:vector,fulltext;
+        mcp-queries:sql;
+        editor-conversations:stream;
+        page-events:stream,sql
     volumes:
-      - vexfs_data:/app/data
+      - chronik_data:/var/lib/chronik
     ports:
-      - "127.0.0.1:${HOST_PORT_VEXFS:-7680}:7680"
+      - "127.0.0.1:${HOST_PORT_CHRONIK_KAFKA:-9092}:9092"
+      - "127.0.0.1:${HOST_PORT_CHRONIK_SQL:-6092}:6092"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:7680/api/v1/version"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:6092/health"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 15s
 
 volumes:
   postgres_data:
   ollama_data:
-  vexfs_data:
+  chronik_data:

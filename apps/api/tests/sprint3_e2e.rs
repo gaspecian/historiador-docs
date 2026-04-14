@@ -32,6 +32,7 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
         vector_store: Arc::new(InMemoryVectorStore::new()),
         embedding_client: Arc::new(StubEmbeddingClient::default()),
         text_generation_client: Arc::new(StubTextGenerationClient),
+        chronik: None,
     })
 }
 

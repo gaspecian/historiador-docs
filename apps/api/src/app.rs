@@ -23,6 +23,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/admin", routes::admin_router())
         .nest("/editor", routes::editor_router())
         .layer(middleware::from_fn_with_state(state.clone(), setup_gate))
+        // Internal routes — no setup gate, no JWT auth. Protected by
+        // network topology (localhost/Docker only).
+        .nest("/internal", routes::internal_router())
         .with_state(state);
 
     // Swagger UI at /docs, OpenAPI JSON at /api-docs/openapi.json.
