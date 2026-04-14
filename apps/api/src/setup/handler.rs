@@ -45,6 +45,16 @@ pub struct SetupRequest {
     #[validate(length(min = 1, max = 512))]
     pub llm_api_key: String,
 
+    /// Model used for AI text generation (chat / editor). Optional for
+    /// cloud providers (falls back to sensible defaults); required for
+    /// Ollama because models are user-managed local pulls.
+    #[validate(length(min = 1, max = 128))]
+    pub generation_model: Option<String>,
+
+    /// Model used for chunk embeddings during publish.
+    #[validate(length(min = 1, max = 128))]
+    pub embedding_model: Option<String>,
+
     #[validate(length(min = 1, max = 16))]
     pub languages: Vec<String>,
 
@@ -67,6 +77,27 @@ fn is_valid_bcp47(tag: &str) -> bool {
     // setup runs at most once; a local construction is fine.
     let re = Regex::new(r"^[a-z]{2,3}(-[A-Z]{2})?$").unwrap();
     re.is_match(tag)
+}
+
+/// Provider-appropriate default generation model when the client omits one.
+pub fn default_generation_model(provider: LlmProvider) -> &'static str {
+    match provider {
+        LlmProvider::OpenAi => "gpt-4o-mini",
+        LlmProvider::Anthropic => "claude-haiku-4-5-20251001",
+        LlmProvider::Ollama => "llama3.1:8b",
+        LlmProvider::Test => "stub",
+    }
+}
+
+/// Provider-appropriate default embedding model when the client omits one.
+pub fn default_embedding_model(provider: LlmProvider) -> &'static str {
+    match provider {
+        // Anthropic has no embedding API; production uses an OpenAI
+        // fallback with this model, so the default reflects that.
+        LlmProvider::OpenAi | LlmProvider::Anthropic => "text-embedding-3-small",
+        LlmProvider::Ollama => "nomic-embed-text",
+        LlmProvider::Test => "stub",
+    }
 }
 
 fn validate_languages(languages: &[String], primary: &str) -> Result<(), ApiError> {
@@ -124,13 +155,31 @@ pub async fn init(
         .await
         .map_err(|e| ApiError::Validation(format!("LLM key rejected: {e}")))?;
 
-    // 4. Secrets we persist: hash the admin password, encrypt the
-    //    LLM key. Both are pure CPU work, no await.
+    // 4. Secrets we persist: hash the admin password, encrypt the LLM
+    //    key (only for cloud providers — Ollama's "api_key" field is
+    //    actually a base URL and is stored in the clear).
     let password_hash = password::hash(&body.admin_password).map_err(ApiError::Internal)?;
-    let encrypted_key = state
-        .cipher
-        .encrypt(&body.llm_api_key)
-        .map_err(ApiError::Internal)?;
+
+    let (encrypted_key, base_url): (Option<String>, Option<String>) = match body.llm_provider {
+        LlmProvider::Ollama => (None, Some(body.llm_api_key.trim().to_string())),
+        LlmProvider::Test => (None, None),
+        LlmProvider::OpenAi | LlmProvider::Anthropic => {
+            let encrypted = state
+                .cipher
+                .encrypt(&body.llm_api_key)
+                .map_err(ApiError::Internal)?;
+            (Some(encrypted), None)
+        }
+    };
+
+    let generation_model = body
+        .generation_model
+        .clone()
+        .unwrap_or_else(|| default_generation_model(body.llm_provider).to_string());
+    let embedding_model = body
+        .embedding_model
+        .clone()
+        .unwrap_or_else(|| default_embedding_model(body.llm_provider).to_string());
 
     // 5. Transactional insert.
     let mut tx = state
@@ -146,7 +195,10 @@ pub async fn init(
             languages: &body.languages,
             primary_language: &body.primary_language,
             llm_provider: body.llm_provider.as_db_str(),
-            llm_api_key_encrypted: &encrypted_key,
+            llm_api_key_encrypted: encrypted_key.as_deref(),
+            llm_base_url: base_url.as_deref(),
+            generation_model: &generation_model,
+            embedding_model: &embedding_model,
         },
     )
     .await
@@ -216,6 +268,57 @@ pub async fn probe(
             message: format!("{e}"),
         })),
     }
+}
+
+// ---- list Ollama models ----
+
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
+pub struct OllamaModelsRequest {
+    /// Base URL of a reachable Ollama server (e.g. `http://localhost:11434`).
+    #[validate(url)]
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct OllamaModelEntry {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct OllamaModelsResponse {
+    pub models: Vec<OllamaModelEntry>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/setup/ollama-models",
+    request_body = OllamaModelsRequest,
+    responses(
+        (status = 200, description = "available models", body = OllamaModelsResponse),
+        (status = 400, description = "invalid URL or Ollama unreachable"),
+    ),
+    tag = "setup"
+)]
+pub async fn ollama_models(
+    Json(body): Json<OllamaModelsRequest>,
+) -> Result<Json<OllamaModelsResponse>, ApiError> {
+    body.validate()
+        .map_err(|e| ApiError::Validation(e.to_string()))?;
+
+    let tags = historiador_llm::list_ollama_models(&body.base_url)
+        .await
+        .map_err(|e| ApiError::Validation(format!("Ollama unreachable: {e}")))?;
+
+    Ok(Json(OllamaModelsResponse {
+        models: tags
+            .into_iter()
+            .map(|t| OllamaModelEntry {
+                name: t.name,
+                size_bytes: t.size,
+            })
+            .collect(),
+    }))
 }
 
 #[cfg(test)]

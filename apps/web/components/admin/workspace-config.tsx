@@ -20,6 +20,14 @@ export function WorkspaceConfig({ workspace }: Props) {
           <p className="capitalize">{workspace.llm_provider}</p>
         </div>
         <div>
+          <span className="font-medium text-zinc-600 dark:text-zinc-400">Generation model</span>
+          <p className="font-mono text-xs">{workspace.generation_model}</p>
+        </div>
+        <div>
+          <span className="font-medium text-zinc-600 dark:text-zinc-400">Embedding model</span>
+          <p className="font-mono text-xs">{workspace.embedding_model}</p>
+        </div>
+        <div>
           <span className="font-medium text-zinc-600 dark:text-zinc-400">Primary language</span>
           <p>
             <Badge variant="success">{workspace.primary_language}</Badge>

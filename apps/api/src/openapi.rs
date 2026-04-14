@@ -1,7 +1,7 @@
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-use crate::{admin, auth, collections, editor, health, pages, setup};
+use crate::{admin, auth, collections, editor, export, health, pages, setup};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -9,6 +9,7 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         health::handler,
         setup::handler::init,
         setup::handler::probe,
+        setup::handler::ollama_models,
         auth::handlers::login,
         auth::handlers::refresh,
         auth::handlers::logout,
@@ -18,6 +19,8 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         admin::users::deactivate_user,
         admin::workspace::get_workspace,
         admin::workspace::regenerate_token,
+        admin::workspace::update_llm_config,
+        admin::workspace::reindex,
         collections::handlers::create_collection,
         collections::handlers::list_collections,
         collections::handlers::update_collection,
@@ -36,6 +39,8 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         admin::analytics::get_mcp_analytics,
         editor::handlers::draft,
         editor::handlers::iterate,
+        export::handlers::export_workspace,
+        export::handlers::export_page,
     ),
     components(schemas(
         health::HealthResponse,
@@ -43,6 +48,9 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         setup::handler::SetupResponse,
         setup::handler::ProbeRequest,
         setup::handler::ProbeResponse,
+        setup::handler::OllamaModelsRequest,
+        setup::handler::OllamaModelsResponse,
+        setup::handler::OllamaModelEntry,
         setup::llm_probe::LlmProvider,
         auth::handlers::LoginRequest,
         auth::handlers::TokenResponse,
@@ -54,6 +62,9 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         admin::users::UserResponse,
         admin::workspace::WorkspaceResponse,
         admin::workspace::RegenerateTokenResponse,
+        admin::workspace::LlmPatchRequest,
+        admin::workspace::LlmPatchResponse,
+        admin::workspace::ReindexResponse,
         collections::handlers::CreateCollectionRequest,
         collections::handlers::UpdateCollectionRequest,
         collections::handlers::CollectionResponse,
@@ -74,9 +85,7 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         admin::analytics::ZeroResultSummaryDto,
         admin::analytics::ZeroResultQueryDto,
         editor::handlers::DraftRequest,
-        editor::handlers::DraftResponse,
         editor::handlers::IterateRequest,
-        editor::handlers::IterateResponse,
     )),
     modifiers(&BearerAuth),
     info(
@@ -92,6 +101,7 @@ use crate::{admin, auth, collections, editor, health, pages, setup};
         (name = "collections", description = "Collection management"),
         (name = "pages",  description = "Page authoring and publishing"),
         (name = "editor", description = "AI-assisted document drafting"),
+        (name = "export", description = "Markdown export"),
     )
 )]
 pub struct ApiDoc;

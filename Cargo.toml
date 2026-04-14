@@ -17,7 +17,10 @@ rust-version = "1.82"
 [workspace.dependencies]
 # --- async runtime ---
 tokio = { version = "1.40", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 async-trait = "0.1"
+futures = "0.3"
+async-stream = "0.3"
 
 # --- web framework ---
 axum = { version = "0.7", features = ["macros"] }
@@ -55,6 +58,9 @@ utoipa-swagger-ui = { version = "8", features = ["axum"] }
 
 # --- markdown (Sprint 2 chunker) ---
 comrak = "0.29"
+
+# --- export (Sprint 8 markdown zip) ---
+async_zip = { version = "0.0.17", features = ["tokio", "deflate"] }
 
 # --- misc ---
 uuid = { version = "1", features = ["v4", "serde"] }

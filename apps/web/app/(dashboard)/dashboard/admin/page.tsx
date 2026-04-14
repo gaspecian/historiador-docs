@@ -9,6 +9,8 @@ import { InviteUserForm } from "@/components/admin/invite-user-form";
 import { McpSettings } from "@/components/admin/mcp-settings";
 import { McpAnalytics } from "@/components/admin/mcp-analytics";
 import { WorkspaceConfig } from "@/components/admin/workspace-config";
+import { LlmSettingsForm } from "@/components/admin/llm-settings-form";
+import { ExportSection } from "@/components/admin/export-section";
 import { Spinner } from "@/components/ui/spinner";
 import type { UserResponse, WorkspaceResponse } from "@historiador/types";
 
@@ -83,6 +85,22 @@ export default function AdminPage() {
           Workspace Configuration
         </h2>
         <WorkspaceConfig workspace={workspace} />
+      </section>
+
+      {/* LLM Settings */}
+      <section className="space-y-4">
+        <h2 className="text-md font-medium border-b border-zinc-200 dark:border-zinc-700 pb-2">
+          LLM Settings
+        </h2>
+        <LlmSettingsForm workspace={workspace} onSaved={fetchData} />
+      </section>
+
+      {/* Export */}
+      <section className="space-y-4">
+        <h2 className="text-md font-medium border-b border-zinc-200 dark:border-zinc-700 pb-2">
+          Export
+        </h2>
+        <ExportSection />
       </section>
 
       {/* MCP Analytics */}

@@ -5,8 +5,9 @@
 //! the full pipeline without hitting a real LLM.
 
 use async_trait::async_trait;
+use futures::stream;
 
-use crate::text_generation::TextGenerationClient;
+use crate::text_generation::{TextGenerationClient, TextStream};
 use crate::{Embedding, EmbeddingClient, LlmError};
 
 /// Stub embedding client that returns zero vectors. Used when no real
@@ -44,14 +45,15 @@ pub struct StubTextGenerationClient;
 
 #[async_trait]
 impl TextGenerationClient for StubTextGenerationClient {
-    async fn generate_text(
+    async fn generate_text_stream(
         &self,
         _system_prompt: &str,
         user_prompt: &str,
-    ) -> Result<String, LlmError> {
-        Ok(format!(
+    ) -> Result<TextStream, LlmError> {
+        let full = format!(
             "## Overview\n\n{user_prompt}\n\n## Details\n\nThis is a stub response for testing.\n"
-        ))
+        );
+        Ok(Box::pin(stream::once(async move { Ok(full) })))
     }
 }
 
@@ -92,5 +94,20 @@ mod tests {
         assert!(result.contains("## Overview"));
         assert!(result.contains("## Details"));
         assert!(result.contains("Write about APIs"));
+    }
+
+    #[tokio::test]
+    async fn stub_text_generation_stream_collects_to_same_string() {
+        use futures::StreamExt;
+
+        let client = StubTextGenerationClient;
+        let blocking = client.generate_text("sys", "topic").await.unwrap();
+
+        let mut stream = client.generate_text_stream("sys", "topic").await.unwrap();
+        let mut collected = String::new();
+        while let Some(chunk) = stream.next().await {
+            collected.push_str(&chunk.unwrap());
+        }
+        assert_eq!(blocking, collected);
     }
 }

@@ -30,6 +30,25 @@ const COMMON_LANGUAGES = [
   { value: "ko", label: "Korean (ko)" },
 ];
 
+const DEFAULT_GEN_MODEL: Record<LlmProvider, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-haiku-4-5-20251001",
+  ollama: "",
+  test: "stub",
+};
+
+const DEFAULT_EMBED_MODEL: Record<LlmProvider, string> = {
+  openai: "text-embedding-3-small",
+  anthropic: "text-embedding-3-small",
+  ollama: "",
+  test: "stub",
+};
+
+interface OllamaModelEntry {
+  name: string;
+  size_bytes: number;
+}
+
 export default function SetupPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -42,6 +61,9 @@ export default function SetupPage() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("openai");
   const [llmApiKey, setLlmApiKey] = useState("");
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
+  const [generationModel, setGenerationModel] = useState(DEFAULT_GEN_MODEL.openai);
+  const [embeddingModel, setEmbeddingModel] = useState(DEFAULT_EMBED_MODEL.openai);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelEntry[]>([]);
   const [primaryLanguage, setPrimaryLanguage] = useState("en");
   const [additionalLanguages, setAdditionalLanguages] = useState<string[]>([]);
   const [adminEmail, setAdminEmail] = useState("");
@@ -50,12 +72,32 @@ export default function SetupPage() {
 
   const currentIndex = STEPS.indexOf(step);
 
+  const handleProviderChange = (p: LlmProvider) => {
+    setLlmProvider(p);
+    setProbeResult(null);
+    setOllamaModels([]);
+    setGenerationModel(DEFAULT_GEN_MODEL[p]);
+    setEmbeddingModel(DEFAULT_EMBED_MODEL[p]);
+  };
+
   const canGoNext = (): boolean => {
     switch (step) {
       case "workspace":
         return workspaceName.trim().length > 0;
       case "llm":
-        return llmProvider === "test" || llmApiKey.trim().length > 0;
+        if (llmProvider === "test") return true;
+        if (!llmApiKey.trim()) return false;
+        if (llmProvider === "ollama") {
+          // Require a successful probe and both models picked.
+          return (
+            probeResult?.success === true &&
+            generationModel.trim().length > 0 &&
+            embeddingModel.trim().length > 0
+          );
+        }
+        return (
+          generationModel.trim().length > 0 && embeddingModel.trim().length > 0
+        );
       case "languages":
         return primaryLanguage.length > 0;
       case "admin":
@@ -84,6 +126,7 @@ export default function SetupPage() {
   const testConnection = async () => {
     setLoading(true);
     setProbeResult(null);
+    setOllamaModels([]);
     try {
       const res = await fetch("/api/setup/probe", {
         method: "POST",
@@ -92,6 +135,25 @@ export default function SetupPage() {
       });
       const data: ProbeResponse = await res.json();
       setProbeResult(data);
+
+      if (data.success && llmProvider === "ollama") {
+        const modelsRes = await fetch("/api/setup/ollama-models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base_url: llmApiKey }),
+        });
+        if (modelsRes.ok) {
+          const body: { models: OllamaModelEntry[] } = await modelsRes.json();
+          setOllamaModels(body.models);
+          if (body.models.length > 0) {
+            setGenerationModel(body.models[0].name);
+            const embedHint = body.models.find((m) =>
+              /embed|nomic|mxbai|bge/i.test(m.name),
+            );
+            setEmbeddingModel((embedHint ?? body.models[0]).name);
+          }
+        }
+      }
     } catch (err) {
       setProbeResult({ success: false, message: err instanceof Error ? err.message : "Connection failed" });
     } finally {
@@ -115,6 +177,8 @@ export default function SetupPage() {
           workspace_name: workspaceName,
           llm_provider: llmProvider,
           llm_api_key: llmProvider === "test" ? "test" : llmApiKey,
+          generation_model: generationModel || undefined,
+          embedding_model: embeddingModel || undefined,
           languages,
           primary_language: primaryLanguage,
         }),
@@ -142,6 +206,11 @@ export default function SetupPage() {
       prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang],
     );
   };
+
+  const ollamaModelOptions = ollamaModels.map((m) => ({
+    value: m.name,
+    label: `${m.name} (${(m.size_bytes / 1e9).toFixed(1)} GB)`,
+  }));
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
@@ -191,10 +260,7 @@ export default function SetupPage() {
                 label="Provider"
                 options={PROVIDER_OPTIONS}
                 value={llmProvider}
-                onChange={(e) => {
-                  setLlmProvider(e.target.value as LlmProvider);
-                  setProbeResult(null);
-                }}
+                onChange={(e) => handleProviderChange(e.target.value as LlmProvider)}
               />
               {llmProvider !== "test" && (
                 <>
@@ -205,6 +271,7 @@ export default function SetupPage() {
                     onChange={(e) => {
                       setLlmApiKey(e.target.value);
                       setProbeResult(null);
+                      if (llmProvider === "ollama") setOllamaModels([]);
                     }}
                     placeholder={
                       llmProvider === "ollama"
@@ -223,6 +290,43 @@ export default function SetupPage() {
                     <p className={`text-sm ${probeResult.success ? "text-green-600" : "text-red-600"}`}>
                       {probeResult.success ? "Connection successful" : probeResult.message}
                     </p>
+                  )}
+
+                  {/* Model pickers */}
+                  {llmProvider === "ollama" && ollamaModels.length > 0 && (
+                    <>
+                      <Select
+                        label="Generation model"
+                        options={ollamaModelOptions}
+                        value={generationModel}
+                        onChange={(e) => setGenerationModel(e.target.value)}
+                      />
+                      <Select
+                        label="Embedding model"
+                        options={ollamaModelOptions}
+                        value={embeddingModel}
+                        onChange={(e) => setEmbeddingModel(e.target.value)}
+                      />
+                      <p className="text-xs text-zinc-500">
+                        Need more models? Run <code>ollama pull &lt;name&gt;</code> and test the connection again.
+                      </p>
+                    </>
+                  )}
+                  {llmProvider !== "ollama" && (
+                    <>
+                      <Input
+                        label="Generation model"
+                        value={generationModel}
+                        onChange={(e) => setGenerationModel(e.target.value)}
+                        placeholder={DEFAULT_GEN_MODEL[llmProvider]}
+                      />
+                      <Input
+                        label="Embedding model"
+                        value={embeddingModel}
+                        onChange={(e) => setEmbeddingModel(e.target.value)}
+                        placeholder={DEFAULT_EMBED_MODEL[llmProvider]}
+                      />
+                    </>
                   )}
                 </>
               )}
@@ -307,6 +411,12 @@ export default function SetupPage() {
               <div className="rounded border border-zinc-200 dark:border-zinc-700 p-4 space-y-2 text-sm">
                 <div><span className="font-medium">Workspace:</span> {workspaceName}</div>
                 <div><span className="font-medium">LLM Provider:</span> {llmProvider}</div>
+                {llmProvider !== "test" && (
+                  <>
+                    <div><span className="font-medium">Generation model:</span> {generationModel}</div>
+                    <div><span className="font-medium">Embedding model:</span> {embeddingModel}</div>
+                  </>
+                )}
                 <div><span className="font-medium">Primary language:</span> {primaryLanguage}</div>
                 {additionalLanguages.length > 0 && (
                   <div><span className="font-medium">Additional:</span> {additionalLanguages.join(", ")}</div>

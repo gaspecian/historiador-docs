@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiDownload, apiFetch } from "@/lib/api";
 import { EditorPanel } from "@/components/editor/editor-panel";
 import { LanguageTabs } from "@/components/pages/language-tabs";
 import { PublishConfirmModal } from "@/components/pages/publish-confirm-modal";
 import { VersionHistoryPanel } from "@/components/pages/version-history-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Spinner } from "@/components/ui/spinner";
 import type { PageResponse, WorkspaceResponse } from "@historiador/types";
 
@@ -143,6 +144,23 @@ export default function PageDetailPage() {
           >
             {page.status === "draft" ? "Publish" : "Unpublish"}
           </Button>
+          <Dropdown
+            trigger={<span aria-label="More actions">⋮</span>}
+            items={[
+              {
+                label: "Download as Markdown",
+                onClick: () => {
+                  const qs = activeLanguage
+                    ? `?language=${encodeURIComponent(activeLanguage)}`
+                    : "";
+                  apiDownload(`/pages/${pageId}/export${qs}`).catch(() => {
+                    /* alpha error handling */
+                  });
+                },
+                disabled: page.status !== "published" || !activeLanguage,
+              },
+            ]}
+          />
         </div>
       </div>
 

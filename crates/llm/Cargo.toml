@@ -16,4 +16,10 @@ thiserror.workspace = true
 async-trait.workspace = true
 async-openai.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+
+[features]
+ollama-tests = []

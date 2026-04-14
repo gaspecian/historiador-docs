@@ -11,6 +11,7 @@ pub mod collections;
 pub mod crypto;
 pub mod editor;
 pub mod error;
+pub mod export;
 pub mod health;
 pub mod middleware;
 pub mod openapi;

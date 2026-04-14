@@ -50,3 +50,7 @@ async-trait.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+tokio-util.workspace = true
+async_zip.workspace = true

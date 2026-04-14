@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiStream } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 interface Message {
@@ -15,25 +15,55 @@ interface Props {
   onSave?: (markdown: string) => void;
 }
 
+type DeltaEvent = { text: string };
+type ErrorEvent = { message: string };
+type DoneEvent = { length: number };
+type StreamPayload = DeltaEvent | ErrorEvent | DoneEvent;
+
+async function streamMarkdown(
+  path: string,
+  body: unknown,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
+  let buffer = "";
+  for await (const ev of apiStream<StreamPayload>(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })) {
+    if (ev.event === "delta" && "text" in ev.data) {
+      buffer += ev.data.text;
+      onChunk(ev.data.text);
+    } else if (ev.event === "error" && "message" in ev.data) {
+      throw new Error(ev.data.message);
+    } else if (ev.event === "done") {
+      break;
+    }
+  }
+  return buffer;
+}
+
 export function EditorPanel({ initialContent, language, onSave }: Props) {
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
   const [draft, setDraft] = useState(initialContent || "");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const [liveAssistant, setLiveAssistant] = useState("");
 
   const generateDraft = async () => {
-    if (!brief.trim() || loading) return;
-    setLoading(true);
+    if (!brief.trim() || streaming) return;
+    setStreaming(true);
+    setLiveAssistant("");
     setMessages((prev) => [...prev, { role: "user", content: brief }]);
 
     try {
-      const data = await apiFetch<{ content_markdown: string }>("/editor/draft", {
-        method: "POST",
-        body: JSON.stringify({ brief, language }),
-      });
-      setDraft(data.content_markdown);
-      setMessages((prev) => [...prev, { role: "assistant", content: data.content_markdown }]);
+      const full = await streamMarkdown(
+        "/editor/draft",
+        { brief, language },
+        (chunk) => setLiveAssistant((prev) => prev + chunk),
+      );
+      setDraft(full);
+      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       setBrief("");
     } catch (e) {
       setMessages((prev) => [
@@ -41,22 +71,25 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
         { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
       ]);
     } finally {
-      setLoading(false);
+      setStreaming(false);
+      setLiveAssistant("");
     }
   };
 
   const refineDraft = async () => {
-    if (!instruction.trim() || !draft || loading) return;
-    setLoading(true);
+    if (!instruction.trim() || !draft || streaming) return;
+    setStreaming(true);
+    setLiveAssistant("");
     setMessages((prev) => [...prev, { role: "user", content: `Refine: ${instruction}` }]);
 
     try {
-      const data = await apiFetch<{ content_markdown: string }>("/editor/iterate", {
-        method: "POST",
-        body: JSON.stringify({ current_draft: draft, instruction }),
-      });
-      setDraft(data.content_markdown);
-      setMessages((prev) => [...prev, { role: "assistant", content: data.content_markdown }]);
+      const full = await streamMarkdown(
+        "/editor/iterate",
+        { current_draft: draft, instruction },
+        (chunk) => setLiveAssistant((prev) => prev + chunk),
+      );
+      setDraft(full);
+      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       setInstruction("");
     } catch (e) {
       setMessages((prev) => [
@@ -64,14 +97,15 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
         { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
       ]);
     } finally {
-      setLoading(false);
+      setStreaming(false);
+      setLiveAssistant("");
     }
   };
 
   return (
     <div className="space-y-4">
       {/* Message history */}
-      {messages.length > 0 && (
+      {(messages.length > 0 || streaming) && (
         <div className="max-h-64 overflow-y-auto space-y-3">
           {messages.map((msg, i) => (
             <div
@@ -90,9 +124,17 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
               </pre>
             </div>
           ))}
-          {loading && (
-            <div className="p-3 rounded bg-zinc-100 dark:bg-zinc-900 text-zinc-500 text-sm">
-              Generating...
+          {streaming && (
+            <div className="p-3 rounded bg-zinc-100 dark:bg-zinc-900 text-sm">
+              <div className="text-xs text-zinc-500 mb-1">AI</div>
+              {liveAssistant ? (
+                <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                  {liveAssistant}
+                  <span className="animate-pulse">▍</span>
+                </pre>
+              ) : (
+                <span className="text-zinc-500">Generating…</span>
+              )}
             </div>
           )}
         </div>
@@ -111,7 +153,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
               if (e.key === "Enter" && e.metaKey) generateDraft();
             }}
           />
-          <Button onClick={generateDraft} disabled={loading || !brief.trim()}>
+          <Button onClick={generateDraft} disabled={streaming || !brief.trim()}>
             Generate Draft
           </Button>
         </div>
@@ -127,7 +169,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
                 if (e.key === "Enter") refineDraft();
               }}
             />
-            <Button onClick={refineDraft} disabled={loading || !instruction.trim()}>
+            <Button onClick={refineDraft} disabled={streaming || !instruction.trim()}>
               Refine
             </Button>
           </div>

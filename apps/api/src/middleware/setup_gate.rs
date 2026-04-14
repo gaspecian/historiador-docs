@@ -20,7 +20,10 @@ use crate::state::AppState;
 
 /// Paths that remain reachable while setup is incomplete.
 fn is_allowed_pre_setup(path: &str) -> bool {
-    matches!(path, "/health" | "/setup/init" | "/setup/probe")
+    matches!(
+        path,
+        "/health" | "/setup/init" | "/setup/probe" | "/setup/ollama-models"
+    )
 }
 
 pub async fn setup_gate(

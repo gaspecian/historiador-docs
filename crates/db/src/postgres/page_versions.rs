@@ -84,6 +84,26 @@ pub async fn find_by_page_and_language(
     Ok(row)
 }
 
+/// Fetch all published page versions for a workspace. Used by the
+/// re-index admin action so every chunkable row can be re-embedded
+/// with a new model.
+pub async fn find_all_published_in_workspace(
+    pool: &PgPool,
+    workspace_id: Uuid,
+) -> anyhow::Result<Vec<PageVersion>> {
+    let rows = sqlx::query_as::<_, PageVersion>(
+        "SELECT pv.* FROM page_versions pv \
+           JOIN pages p ON p.id = pv.page_id \
+          WHERE p.workspace_id = $1 \
+            AND pv.status = 'published' \
+          ORDER BY pv.updated_at DESC",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Update the status of all versions of a page at once. Returns the
 /// number of rows affected.
 pub async fn update_status_all(

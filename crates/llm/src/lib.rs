@@ -14,15 +14,17 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod anthropic;
+pub mod ollama;
 pub mod openai;
 pub mod stub;
 pub mod text_generation;
 
 // Re-export the most-used types at crate root for convenience.
 pub use anthropic::AnthropicTextGenerationClient;
+pub use ollama::{list_models as list_ollama_models, OllamaEmbeddingClient, OllamaTextClient};
 pub use openai::{OpenAiEmbeddingClient, OpenAiTextGenerationClient};
 pub use stub::{StubEmbeddingClient, StubTextGenerationClient};
-pub use text_generation::TextGenerationClient;
+pub use text_generation::{TextGenerationClient, TextStream};
 
 #[derive(Debug, Error)]
 pub enum LlmError {

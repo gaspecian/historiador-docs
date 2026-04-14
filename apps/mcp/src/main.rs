@@ -25,7 +25,9 @@ use historiador_db::{
     chronik::{ChronikClient, ChronikConfig},
     vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
 };
-use historiador_llm::{EmbeddingClient, OpenAiEmbeddingClient, StubEmbeddingClient};
+use historiador_llm::{
+    EmbeddingClient, OllamaEmbeddingClient, OpenAiEmbeddingClient, StubEmbeddingClient,
+};
 
 mod auth;
 mod health;
@@ -58,39 +60,61 @@ async fn main() -> anyhow::Result<()> {
     });
     let bearer_token_hash: [u8; 32] = Sha256::digest(bearer_token.as_bytes()).into();
 
-    // Build embedding client from env.
-    let llm_provider = std::env::var("LLM_PROVIDER").unwrap_or_default();
-    let llm_api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
-
-    let embedding_client: Arc<dyn EmbeddingClient> = match llm_provider.as_str() {
-        "openai" if !llm_api_key.is_empty() => {
-            tracing::info!("MCP embedding provider: OpenAI");
-            Arc::new(OpenAiEmbeddingClient::new(&llm_api_key))
-        }
-        "anthropic" => {
-            // Anthropic has no embedding API — check for EMBEDDING_API_KEY.
-            match std::env::var("EMBEDDING_API_KEY") {
-                Ok(key) if !key.is_empty() => {
-                    tracing::info!("MCP embedding provider: OpenAI (via EMBEDDING_API_KEY)");
-                    Arc::new(OpenAiEmbeddingClient::new(&key))
-                }
-                _ => {
-                    tracing::info!("MCP embedding provider: stub (Anthropic has no embedding API)");
-                    Arc::new(StubEmbeddingClient::default())
-                }
-            }
-        }
-        _ => {
-            tracing::info!("MCP embedding provider: stub");
-            Arc::new(StubEmbeddingClient::default())
-        }
-    };
-
     // Open the pool eagerly so credential failures surface at boot,
     // not on the first query. No migrations — see invariant above.
     let pool = historiador_db::connect(&database_url)
         .await
         .context("failed to connect to postgres as readonly role")?;
+
+    // Build embedding client. MCP reads the workspace row (read-only
+    // role covers `workspaces`) to pick up the chosen provider and
+    // embedding model. For cloud providers the encrypted key is not
+    // accessible from MCP (ADR-003), so we still need LLM_API_KEY /
+    // EMBEDDING_API_KEY in the environment for OpenAI / Anthropic. For
+    // Ollama, the base URL is stored in the clear and no env var is
+    // required.
+    let workspace_row = historiador_db::postgres::workspaces::find_singleton(&pool).await?;
+    let embedding_client: Arc<dyn EmbeddingClient> = match workspace_row.as_ref() {
+        Some(ws) if ws.llm_provider == "ollama" => {
+            let base = ws
+                .llm_base_url
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
+            tracing::info!(
+                base,
+                model = ws.embedding_model.as_str(),
+                "MCP embedding provider: Ollama"
+            );
+            Arc::new(OllamaEmbeddingClient::new(base, &ws.embedding_model))
+        }
+        Some(ws) if ws.llm_provider == "openai" || ws.llm_provider == "anthropic" => {
+            let key = std::env::var("EMBEDDING_API_KEY")
+                .ok()
+                .or_else(|| std::env::var("LLM_API_KEY").ok())
+                .unwrap_or_default();
+            if key.is_empty() {
+                tracing::warn!(
+                    provider = ws.llm_provider.as_str(),
+                    "no EMBEDDING_API_KEY / LLM_API_KEY set — MCP embedding falling back to stub"
+                );
+                Arc::new(StubEmbeddingClient::default())
+            } else {
+                tracing::info!(
+                    model = ws.embedding_model.as_str(),
+                    "MCP embedding provider: OpenAI"
+                );
+                Arc::new(OpenAiEmbeddingClient::with_model(
+                    &key,
+                    &ws.embedding_model,
+                    1536,
+                ))
+            }
+        }
+        _ => {
+            tracing::info!("MCP embedding provider: stub (setup not complete / test provider)");
+            Arc::new(StubEmbeddingClient::default())
+        }
+    };
 
     // Build vector store: Chronik if configured, else in-memory fallback.
     let chronik_url = std::env::var("CHRONIK_SQL_URL").ok();
@@ -117,16 +141,11 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Load workspace_id (v1 is single-workspace).
-    let workspace_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
-        .fetch_optional(&pool)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| {
-            tracing::warn!("no workspace found — MCP query logging will use nil UUID");
-            uuid::Uuid::nil()
-        });
+    // Reuse the workspace row loaded above for the embedding client.
+    let workspace_id = workspace_row.as_ref().map(|w| w.id).unwrap_or_else(|| {
+        tracing::warn!("no workspace found — MCP query logging will use nil UUID");
+        uuid::Uuid::nil()
+    });
 
     let internal_api_url =
         std::env::var("API_INTERNAL_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());

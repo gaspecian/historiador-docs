@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/workspace/llm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_llm_config"];
+        trace?: never;
+    };
     "/admin/workspace/regenerate-token": {
         parameters: {
             query?: never;
@@ -94,6 +110,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["regenerate_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/workspace/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reindex"];
         delete?: never;
         options?: never;
         head?: never;
@@ -228,6 +260,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_workspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -302,6 +350,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["draft_page"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_page"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -404,6 +468,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup/ollama-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ollama_models"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup/probe": {
         parameters: {
             query?: never;
@@ -482,9 +562,6 @@ export interface components {
             /** @description Optional BCP 47 language tag for the output language. */
             language?: string | null;
         };
-        DraftResponse: {
-            content_markdown: string;
-        };
         /**
          * @description Response body for `GET /health`. Exposed as an OpenAPI schema so
          *     stretch item 7 (openapi-typescript) can generate a matching
@@ -512,8 +589,34 @@ export interface components {
             /** @description Follow-up instruction describing what to change. */
             instruction: string;
         };
-        IterateResponse: {
-            content_markdown: string;
+        LlmPatchRequest: {
+            embedding_model: string;
+            generation_model: string;
+            /**
+             * @description API key for cloud providers or base URL for Ollama. Leave
+             *     empty to keep the existing secret (useful when editing only
+             *     the model names).
+             */
+            llm_api_key?: string;
+            llm_provider: components["schemas"]["LlmProvider"];
+        };
+        LlmPatchResponse: {
+            /** Format: int64 */
+            affected_page_versions: number;
+            /**
+             * @description When the embedding model changed and published chunks exist,
+             *     the admin must trigger a re-index — this field tells the UI
+             *     how many page versions are affected so it can show a confirm.
+             */
+            requires_reindex: boolean;
+            /**
+             * @description True when the generation model changed. The live AppState
+             *     clients keep the previous config until the API process is
+             *     restarted; the UI surfaces this so the admin can plan a
+             *     restart.
+             */
+            requires_restart: boolean;
+            success: boolean;
         };
         /** @enum {string} */
         LlmProvider: "openai" | "anthropic" | "ollama" | "test";
@@ -536,6 +639,18 @@ export interface components {
             /** Format: int64 */
             total_queries: number;
             zero_result_queries: components["schemas"]["ZeroResultSummaryDto"];
+        };
+        OllamaModelEntry: {
+            name: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        OllamaModelsRequest: {
+            /** @description Base URL of a reachable Ollama server (e.g. `http://localhost:11434`). */
+            base_url: string;
+        };
+        OllamaModelsResponse: {
+            models: components["schemas"]["OllamaModelEntry"][];
         };
         PageResponse: {
             /** Format: uuid */
@@ -604,11 +719,26 @@ export interface components {
              */
             bearer_token: string;
         };
+        ReindexResponse: {
+            /**
+             * Format: int64
+             * @description How many published page versions were scheduled for re-embedding.
+             */
+            scheduled: number;
+        };
         /** @enum {string} */
         Role: "admin" | "author" | "viewer";
         SetupRequest: {
             admin_email: string;
             admin_password: string;
+            /** @description Model used for chunk embeddings during publish. */
+            embedding_model?: string | null;
+            /**
+             * @description Model used for AI text generation (chat / editor). Optional for
+             *     cloud providers (falls back to sensible defaults); required for
+             *     Ollama because models are user-managed local pulls.
+             */
+            generation_model?: string | null;
             languages: string[];
             llm_api_key: string;
             llm_provider: components["schemas"]["LlmProvider"];
@@ -692,11 +822,14 @@ export interface components {
             version_number: number;
         };
         WorkspaceResponse: {
+            embedding_model: string;
+            generation_model: string;
             /** @description Whether a bearer token has been configured. */
             has_mcp_token: boolean;
             /** Format: uuid */
             id: string;
             languages: string[];
+            llm_base_url?: string | null;
             llm_provider: string;
             /** @description The MCP endpoint URL (constructed from config). */
             mcp_endpoint_url: string;
@@ -936,6 +1069,51 @@ export interface operations {
             };
         };
     };
+    update_llm_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description llm config updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmPatchResponse"];
+                };
+            };
+            /** @description validation / probe failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description caller is not admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     regenerate_token: {
         parameters: {
             query?: never;
@@ -952,6 +1130,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegenerateTokenResponse"];
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description caller is not admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reindex: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description re-indexing spawned */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReindexResponse"];
                 };
             };
             /** @description unauthenticated */
@@ -1293,13 +1505,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description AI-generated draft */
+            /** @description SSE stream of generated markdown; event types: `delta` (data: {"text": "..."}), `error` (data: {"message": "..."}), `done` (data: {"length": N}). Content-Type: text/event-stream. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftResponse"];
+                    "text/event-stream": unknown;
                 };
             };
             /** @description validation error */
@@ -1338,13 +1550,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description updated draft */
+            /** @description SSE stream of refined markdown; see /editor/draft for event shape. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IterateResponse"];
+                    "text/event-stream": unknown;
                 };
             };
             /** @description validation error */
@@ -1362,6 +1574,40 @@ export interface operations {
                 content?: never;
             };
             /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    export_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description zip of all published pages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": unknown;
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description caller is not admin */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1636,6 +1882,46 @@ export interface operations {
             };
         };
     };
+    export_page: {
+        parameters: {
+            query?: {
+                /** @description BCP 47 language tag; defaults to workspace primary */
+                language?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Page id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description markdown with YAML front-matter */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": unknown;
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description page or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_version_history: {
         parameters: {
             query: {
@@ -1884,6 +2170,37 @@ export interface operations {
             };
             /** @description setup already complete */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ollama_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OllamaModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description available models */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaModelsResponse"];
+                };
+            };
+            /** @description invalid URL or Ollama unreachable */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

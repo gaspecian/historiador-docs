@@ -10,8 +10,9 @@ use async_openai::{
     Client,
 };
 use async_trait::async_trait;
+use futures::StreamExt;
 
-use crate::text_generation::TextGenerationClient;
+use crate::text_generation::{TextGenerationClient, TextStream};
 use crate::{Embedding, EmbeddingClient, LlmError};
 
 /// OpenAI embedding client using `text-embedding-3-small` (1536 dims).
@@ -98,11 +99,11 @@ impl OpenAiTextGenerationClient {
 
 #[async_trait]
 impl TextGenerationClient for OpenAiTextGenerationClient {
-    async fn generate_text(
+    async fn generate_text_stream(
         &self,
         system_prompt: &str,
         user_prompt: &str,
-    ) -> Result<String, LlmError> {
+    ) -> Result<TextStream, LlmError> {
         let messages: Vec<ChatCompletionRequestMessage> = vec![
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(system_prompt)
@@ -128,21 +129,26 @@ impl TextGenerationClient for OpenAiTextGenerationClient {
                 message: format!("failed to build chat request: {e}"),
             })?;
 
-        let response = self
+        let upstream = self
             .client
             .chat()
-            .create(request)
+            .create_stream(request)
             .await
             .map_err(|e| LlmError::Api {
-                message: format!("OpenAI chat API error: {e}"),
+                message: format!("OpenAI stream init error: {e}"),
             })?;
 
-        let content = response
-            .choices
-            .first()
-            .and_then(|c| c.message.content.clone())
-            .unwrap_or_default();
+        let mapped = upstream.map(|item| match item {
+            Ok(resp) => Ok(resp
+                .choices
+                .first()
+                .and_then(|c| c.delta.content.clone())
+                .unwrap_or_default()),
+            Err(e) => Err(LlmError::Api {
+                message: format!("OpenAI stream error: {e}"),
+            }),
+        });
 
-        Ok(content)
+        Ok(Box::pin(mapped))
     }
 }

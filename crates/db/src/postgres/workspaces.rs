@@ -12,6 +12,9 @@ pub struct Workspace {
     pub primary_language: String,
     pub llm_provider: String,
     pub llm_api_key_encrypted: Option<String>,
+    pub llm_base_url: Option<String>,
+    pub generation_model: String,
+    pub embedding_model: String,
     pub mcp_bearer_token_hash: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -22,7 +25,10 @@ pub struct NewWorkspace<'a> {
     pub languages: &'a [String],
     pub primary_language: &'a str,
     pub llm_provider: &'a str,
-    pub llm_api_key_encrypted: &'a str,
+    pub llm_api_key_encrypted: Option<&'a str>,
+    pub llm_base_url: Option<&'a str>,
+    pub generation_model: &'a str,
+    pub embedding_model: &'a str,
 }
 
 /// Insert a workspace inside an open transaction, returning its id.
@@ -37,8 +43,9 @@ pub async fn insert(
 ) -> anyhow::Result<Uuid> {
     let (id,): (Uuid,) = sqlx::query_as(
         "INSERT INTO workspaces \
-           (name, languages, primary_language, llm_provider, llm_api_key_encrypted) \
-         VALUES ($1, $2, $3, $4, $5) \
+           (name, languages, primary_language, llm_provider, llm_api_key_encrypted, \
+            llm_base_url, generation_model, embedding_model) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
          RETURNING id",
     )
     .bind(w.name)
@@ -46,6 +53,9 @@ pub async fn insert(
     .bind(w.primary_language)
     .bind(w.llm_provider)
     .bind(w.llm_api_key_encrypted)
+    .bind(w.llm_base_url)
+    .bind(w.generation_model)
+    .bind(w.embedding_model)
     .fetch_one(&mut **tx)
     .await?;
     Ok(id)
@@ -57,6 +67,16 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<Worksp
         .bind(id)
         .fetch_optional(pool)
         .await?;
+    Ok(row)
+}
+
+/// Fetch the single workspace for this installation. Returns `None` if
+/// setup has not been run yet.
+pub async fn find_singleton(pool: &PgPool) -> anyhow::Result<Option<Workspace>> {
+    let row =
+        sqlx::query_as::<_, Workspace>("SELECT * FROM workspaces ORDER BY created_at LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
     Ok(row)
 }
 
@@ -72,5 +92,43 @@ pub async fn update_mcp_token(
         .bind(new_token_hash)
         .execute(pool)
         .await?;
+    Ok(result.rows_affected())
+}
+
+/// Fields the admin panel can mutate for LLM configuration.
+pub struct LlmConfigPatch<'a> {
+    pub llm_provider: &'a str,
+    pub llm_api_key_encrypted: Option<&'a str>,
+    pub llm_base_url: Option<&'a str>,
+    pub generation_model: &'a str,
+    pub embedding_model: &'a str,
+}
+
+/// Apply an LLM configuration update. Passing `None` for the encrypted
+/// key leaves the existing value untouched (useful when the admin edits
+/// the model but has not retyped the key).
+pub async fn update_llm_config(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    patch: LlmConfigPatch<'_>,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        "UPDATE workspaces \
+            SET llm_provider          = $2, \
+                llm_api_key_encrypted = COALESCE($3, llm_api_key_encrypted), \
+                llm_base_url          = $4, \
+                generation_model      = $5, \
+                embedding_model       = $6, \
+                updated_at            = now() \
+          WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .bind(patch.llm_provider)
+    .bind(patch.llm_api_key_encrypted)
+    .bind(patch.llm_base_url)
+    .bind(patch.generation_model)
+    .bind(patch.embedding_model)
+    .execute(pool)
+    .await?;
     Ok(result.rows_affected())
 }

@@ -129,6 +129,32 @@ paths:
           description: workspace not found
       security:
       - bearer: []
+  /admin/workspace/llm:
+    patch:
+      tags:
+      - admin
+      operationId: update_llm_config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmPatchRequest'
+        required: true
+      responses:
+        '200':
+          description: llm config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmPatchResponse'
+        '400':
+          description: validation / probe failed
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+      security:
+      - bearer: []
   /admin/workspace/regenerate-token:
     post:
       tags:
@@ -141,6 +167,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegenerateTokenResponse'
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+      security:
+      - bearer: []
+  /admin/workspace/reindex:
+    post:
+      tags:
+      - admin
+      operationId: reindex
+      responses:
+        '202':
+          description: re-indexing spawned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReindexResponse'
         '401':
           description: unauthenticated
         '403':
@@ -340,11 +384,9 @@ paths:
         required: true
       responses:
         '200':
-          description: AI-generated draft
+          description: 'SSE stream of generated markdown; event types: `delta` (data: {"text": "..."}), `error` (data: {"message": "..."}), `done` (data: {"length": N}). Content-Type: text/event-stream.'
           content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DraftResponse'
+            text/event-stream: {}
         '400':
           description: validation error
         '401':
@@ -366,17 +408,31 @@ paths:
         required: true
       responses:
         '200':
-          description: updated draft
+          description: SSE stream of refined markdown; see /editor/draft for event shape.
           content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IterateResponse'
+            text/event-stream: {}
         '400':
           description: validation error
         '401':
           description: unauthorized
         '403':
           description: forbidden
+      security:
+      - bearer: []
+  /export:
+    get:
+      tags:
+      - export
+      operationId: export_workspace
+      responses:
+        '200':
+          description: zip of all published pages
+          content:
+            application/zip: {}
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
       security:
       - bearer: []
   /health:
@@ -556,6 +612,36 @@ paths:
           description: forbidden
         '404':
           description: not found
+      security:
+      - bearer: []
+  /pages/{id}/export:
+    get:
+      tags:
+      - export
+      operationId: export_page
+      parameters:
+      - name: id
+        in: path
+        description: Page id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: BCP 47 language tag; defaults to workspace primary
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: markdown with YAML front-matter
+          content:
+            text/markdown: {}
+        '401':
+          description: unauthenticated
+        '404':
+          description: page or version not found
       security:
       - bearer: []
   /pages/{id}/history:
@@ -754,6 +840,26 @@ paths:
           description: validation error or LLM key rejected
         '409':
           description: setup already complete
+  /setup/ollama-models:
+    post:
+      tags:
+      - setup
+      operationId: ollama_models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OllamaModelsRequest'
+        required: true
+      responses:
+        '200':
+          description: available models
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OllamaModelsResponse'
+        '400':
+          description: invalid URL or Ollama unreachable
   /setup/probe:
     post:
       tags:
@@ -907,13 +1013,6 @@ components:
           - string
           - 'null'
           description: Optional BCP 47 language tag for the output language.
-    DraftResponse:
-      type: object
-      required:
-      - content_markdown
-      properties:
-        content_markdown:
-          type: string
     HealthResponse:
       type: object
       description: |-
@@ -968,13 +1067,51 @@ components:
         instruction:
           type: string
           description: Follow-up instruction describing what to change.
-    IterateResponse:
+    LlmPatchRequest:
       type: object
       required:
-      - content_markdown
+      - llm_provider
+      - generation_model
+      - embedding_model
       properties:
-        content_markdown:
+        embedding_model:
           type: string
+        generation_model:
+          type: string
+        llm_api_key:
+          type: string
+          description: |-
+            API key for cloud providers or base URL for Ollama. Leave
+            empty to keep the existing secret (useful when editing only
+            the model names).
+        llm_provider:
+          $ref: '#/components/schemas/LlmProvider'
+    LlmPatchResponse:
+      type: object
+      required:
+      - success
+      - requires_reindex
+      - affected_page_versions
+      - requires_restart
+      properties:
+        affected_page_versions:
+          type: integer
+          format: int64
+        requires_reindex:
+          type: boolean
+          description: |-
+            When the embedding model changed and published chunks exist,
+            the admin must trigger a re-index — this field tells the UI
+            how many page versions are affected so it can show a confirm.
+        requires_restart:
+          type: boolean
+          description: |-
+            True when the generation model changed. The live AppState
+            clients keep the previous config until the API process is
+            restarted; the UI surfaces this so the admin can plan a
+            restart.
+        success:
+          type: boolean
     LlmProvider:
       type: string
       enum:
@@ -1027,6 +1164,35 @@ components:
           format: int64
         zero_result_queries:
           $ref: '#/components/schemas/ZeroResultSummaryDto'
+    OllamaModelEntry:
+      type: object
+      required:
+      - name
+      - size_bytes
+      properties:
+        name:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+    OllamaModelsRequest:
+      type: object
+      required:
+      - base_url
+      properties:
+        base_url:
+          type: string
+          description: Base URL of a reachable Ollama server (e.g. `http://localhost:11434`).
+    OllamaModelsResponse:
+      type: object
+      required:
+      - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/OllamaModelEntry'
     PageResponse:
       type: object
       required:
@@ -1192,6 +1358,15 @@ components:
           description: |-
             The new bearer token in plaintext. This is the only time it
             will be visible — the server stores only the sha256 hash.
+    ReindexResponse:
+      type: object
+      required:
+      - scheduled
+      properties:
+        scheduled:
+          type: integer
+          format: int64
+          description: How many published page versions were scheduled for re-embedding.
     Role:
       type: string
       enum:
@@ -1213,6 +1388,19 @@ components:
           type: string
         admin_password:
           type: string
+        embedding_model:
+          type:
+          - string
+          - 'null'
+          description: Model used for chunk embeddings during publish.
+        generation_model:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Model used for AI text generation (chat / editor). Optional for
+            cloud providers (falls back to sensible defaults); required for
+            Ollama because models are user-managed local pulls.
         languages:
           type: array
           items:
@@ -1407,9 +1595,15 @@ components:
       - languages
       - primary_language
       - llm_provider
+      - generation_model
+      - embedding_model
       - mcp_endpoint_url
       - has_mcp_token
       properties:
+        embedding_model:
+          type: string
+        generation_model:
+          type: string
         has_mcp_token:
           type: boolean
           description: Whether a bearer token has been configured.
@@ -1420,6 +1614,10 @@ components:
           type: array
           items:
             type: string
+        llm_base_url:
+          type:
+          - string
+          - 'null'
         llm_provider:
           type: string
         mcp_endpoint_url:
@@ -1476,3 +1674,5 @@ tags:
   description: Page authoring and publishing
 - name: editor
   description: AI-assisted document drafting
+- name: export
+  description: Markdown export

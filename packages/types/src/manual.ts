@@ -13,6 +13,6 @@ export interface JwtPayload {
 }
 
 /** Recursive tree node built client-side from flat Collection records. */
-export interface TreeNode extends components["schemas"]["Collection"] {
+export type TreeNode = components["schemas"]["Collection"] & {
   children: TreeNode[];
-}
+};

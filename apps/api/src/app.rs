@@ -22,6 +22,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/collections", routes::collections_router())
         .nest("/admin", routes::admin_router())
         .nest("/editor", routes::editor_router())
+        .nest("/export", routes::export_router())
         .layer(middleware::from_fn_with_state(state.clone(), setup_gate))
         // Internal routes — no setup gate, no JWT auth. Protected by
         // network topology (localhost/Docker only).

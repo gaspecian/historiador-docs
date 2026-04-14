@@ -11,6 +11,7 @@ use crate::admin;
 use crate::auth;
 use crate::collections;
 use crate::editor;
+use crate::export;
 use crate::pages;
 use crate::setup;
 use crate::state::AppState;
@@ -27,6 +28,7 @@ pub fn setup_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/init", post(setup::handler::init))
         .route("/probe", post(setup::handler::probe))
+        .route("/ollama-models", post(setup::handler::ollama_models))
 }
 
 pub fn pages_router() -> Router<Arc<AppState>> {
@@ -52,6 +54,11 @@ pub fn pages_router() -> Router<Arc<AppState>> {
         )
         .route("/:id/publish", post(pages::handlers::publish_page))
         .route("/:id/draft", post(pages::handlers::draft_page))
+        .route("/:id/export", get(export::handlers::export_page))
+}
+
+pub fn export_router() -> Router<Arc<AppState>> {
+    Router::new().route("/", get(export::handlers::export_workspace))
 }
 
 pub fn collections_router() -> Router<Arc<AppState>> {
@@ -81,6 +88,8 @@ pub fn admin_router() -> Router<Arc<AppState>> {
             "/workspace/regenerate-token",
             post(admin::workspace::regenerate_token),
         )
+        .route("/workspace/llm", patch(admin::workspace::update_llm_config))
+        .route("/workspace/reindex", post(admin::workspace::reindex))
         .route(
             "/analytics/mcp-queries",
             get(admin::analytics::get_mcp_analytics),
