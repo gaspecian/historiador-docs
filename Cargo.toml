@@ -73,7 +73,7 @@ async-openai = "0.27"
 # --- auth & setup (Sprint 2) ---
 argon2 = "0.5"
 jsonwebtoken = "9"
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 aes-gcm = "0.10"
 base64 = "0.22"

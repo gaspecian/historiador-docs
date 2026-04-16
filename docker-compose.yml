@@ -79,8 +79,42 @@ services:
     # Chronik-Stream — unified event streaming, vector search, full-text
     # search, and SQL analytics (ADR-007). Replaces VexFS (ADR-001).
     # Ports: 9092 (Kafka-compatible), 6092 (DataFusion SQL REST API).
-    image: ghcr.io/lspecian/chronik-stream:${CHRONIK_VERSION:-latest}
+    #
+    # CLI note: the :latest image (v2.4.1) renamed the CLI from
+    #   chronik-server --bind-addr 0.0.0.0 standalone
+    # to
+    #   chronik-server start --bind 0.0.0.0
+    # We override `command:` so the compose file does not rely on the
+    # image's default CMD, which still carries the old flags.
+    #
+    # Known issue (2026-04-14): v2.4.1 runs as uid 1001 but the named
+    # volume's root directory is owned by uid 0, so stage-1 startup
+    # fails with "Permission denied" while creating /var/lib/chronik
+    # subdirectories. Pin CHRONIK_VERSION to a working tag, or use a
+    # host bind-mount with `chown 1001:1001`, until upstream ships an
+    # image that either runs as root + drops privileges after chown
+    # or declares a properly-owned VOLUME.
+    image: ghcr.io/lspecian/chronik-stream:${CHRONIK_VERSION:-2.4.1}
     restart: unless-stopped
+    # Two local-dev workarounds (both harmless for dev, NOT for prod):
+    #
+    # 1. `user: "0:0"` — v2.2+ does not fix up the named volume's
+    #    ownership on first boot, so its uid-1001 chronik user cannot
+    #    create /var/lib/chronik/segments. Running as root sidesteps
+    #    this until upstream ships an init entrypoint or a pre-chowned
+    #    VOLUME directive.
+    #
+    # 2. `security_opt: seccomp:unconfined` — Chronik's WAL path uses
+    #    `io_uring` for 10x faster group commits. Docker's default
+    #    seccomp profile blocks io_uring syscalls (controversial since
+    #    CVE-2022-0185 and friends). Unconfined opens the full syscall
+    #    table; acceptable for dev, but production should rely on a
+    #    kernel that ships a permissive io_uring seccomp policy, or
+    #    set CHRONIK_WAL_PROFILE to disable io_uring.
+    user: "0:0"
+    security_opt:
+      - seccomp:unconfined
+    command: ["start", "--bind", "0.0.0.0", "--data-dir", "/var/lib/chronik"]
     environment:
       RUST_LOG: info
       CHRONIK_DATA_DIR: /var/lib/chronik
