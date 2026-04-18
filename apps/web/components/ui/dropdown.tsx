@@ -39,7 +39,7 @@ export function Dropdown({ trigger, items, align = "right" }: Props) {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex items-center justify-center rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        className="inline-flex items-center justify-center rounded-md p-1 text-text-secondary hover:bg-surface-hover"
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -48,7 +48,7 @@ export function Dropdown({ trigger, items, align = "right" }: Props) {
       {open && (
         <div
           role="menu"
-          className={`absolute top-full mt-1 ${align === "right" ? "right-0" : "left-0"} z-50 min-w-[11rem] rounded border border-zinc-200 bg-white py-1 shadow-md dark:border-zinc-700 dark:bg-zinc-900`}
+          className={`absolute top-full mt-1 ${align === "right" ? "right-0" : "left-0"} z-50 min-w-[11rem] rounded-md border border-surface-border bg-surface-canvas py-1 shadow-md`}
         >
           {items.map((item, idx) => (
             <button
@@ -59,7 +59,7 @@ export function Dropdown({ trigger, items, align = "right" }: Props) {
                 setOpen(false);
                 item.onClick();
               }}
-              className="block w-full px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              className="block w-full px-3 py-1.5 text-left text-sm text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {item.label}
             </button>

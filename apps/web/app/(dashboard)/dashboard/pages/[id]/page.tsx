@@ -60,7 +60,7 @@ export default function PageDetailPage() {
   }
 
   if (!page) {
-    return <div className="text-center py-8 text-zinc-500">Page not found</div>;
+    return <div className="text-center py-8 text-text-tertiary">Page not found</div>;
   }
 
   const activeVersion = page.versions.find((v) => v.language === activeLanguage);
@@ -115,7 +115,7 @@ export default function PageDetailPage() {
   };
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="px-10 py-7 max-w-4xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/pages")}>
@@ -174,8 +174,8 @@ export default function PageDetailPage() {
 
       {/* Content preview or missing-language prompt */}
       {isMissingLanguage ? (
-        <div className="border border-amber-200 dark:border-amber-800 rounded p-6 text-center space-y-3 bg-amber-50 dark:bg-amber-900/20">
-          <p className="text-sm text-amber-800 dark:text-amber-200">
+        <div className="border border-amber-200 rounded p-6 text-center space-y-3 bg-amber-50">
+          <p className="text-sm text-amber-800">
             No <strong>{activeLanguage}</strong> version exists yet.
           </p>
           <div className="flex justify-center gap-3">
@@ -198,7 +198,7 @@ export default function PageDetailPage() {
           </div>
         </div>
       ) : activeVersion ? (
-        <div className="border border-zinc-200 dark:border-zinc-700 rounded p-4">
+        <div className="border border-surface-border rounded p-4">
           <pre className="whitespace-pre-wrap break-words font-mono text-sm">
             {activeVersion.content_markdown}
           </pre>
@@ -206,14 +206,14 @@ export default function PageDetailPage() {
       ) : null}
 
       {/* Editor */}
-      <div className="border border-zinc-200 dark:border-zinc-700 rounded p-4">
+      <div className="border border-surface-border rounded p-4">
         <h2 className="text-sm font-medium mb-3">AI Editor</h2>
         <EditorPanel
           initialContent={activeVersion?.content_markdown}
           language={activeLanguage || undefined}
           onSave={handleSave}
         />
-        {saving && <p className="text-xs text-zinc-500 mt-2">Saving...</p>}
+        {saving && <p className="text-xs text-text-tertiary mt-2">Saving...</p>}
       </div>
 
       <PublishConfirmModal

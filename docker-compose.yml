@@ -68,6 +68,19 @@ services:
       - ollama_data:/root/.ollama
     ports:
       - "127.0.0.1:${HOST_PORT_OLLAMA:-11434}:11434"
+    # GPU acceleration via the NVIDIA Container Toolkit. Requires the
+    # host to have the NVIDIA driver and `nvidia-container-toolkit`
+    # installed; on WSL2, ensure the driver is exposed via the Windows
+    # host's NVIDIA driver and `nvidia-smi` works inside the distro.
+    # To run CPU-only, set OLLAMA_GPU_COUNT=0 (the reservation becomes
+    # a no-op when count is 0) or comment out the `deploy` block below.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${OLLAMA_GPU_COUNT:-all}
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
       interval: 10s

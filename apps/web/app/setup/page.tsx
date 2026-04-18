@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import type { LlmProvider, ProbeResponse, SetupResponse } from "@historiador/types";
+import type { LlmProvider, ProbeResponse } from "@historiador/types";
 
 type Step = "workspace" | "llm" | "languages" | "admin" | "summary";
 const STEPS: Step[] = ["workspace", "llm", "languages", "admin", "summary"];
@@ -61,8 +61,12 @@ export default function SetupPage() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("openai");
   const [llmApiKey, setLlmApiKey] = useState("");
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
-  const [generationModel, setGenerationModel] = useState(DEFAULT_GEN_MODEL.openai);
-  const [embeddingModel, setEmbeddingModel] = useState(DEFAULT_EMBED_MODEL.openai);
+  const [generationModel, setGenerationModel] = useState(
+    DEFAULT_GEN_MODEL.openai,
+  );
+  const [embeddingModel, setEmbeddingModel] = useState(
+    DEFAULT_EMBED_MODEL.openai,
+  );
   const [ollamaModels, setOllamaModels] = useState<OllamaModelEntry[]>([]);
   const [primaryLanguage, setPrimaryLanguage] = useState("en");
   const [additionalLanguages, setAdditionalLanguages] = useState<string[]>([]);
@@ -131,7 +135,10 @@ export default function SetupPage() {
       const res = await fetch("/api/setup/probe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ llm_provider: llmProvider, llm_api_key: llmApiKey }),
+        body: JSON.stringify({
+          llm_provider: llmProvider,
+          llm_api_key: llmApiKey,
+        }),
       });
       const data: ProbeResponse = await res.json();
       setProbeResult(data);
@@ -155,7 +162,10 @@ export default function SetupPage() {
         }
       }
     } catch (err) {
-      setProbeResult({ success: false, message: err instanceof Error ? err.message : "Connection failed" });
+      setProbeResult({
+        success: false,
+        message: err instanceof Error ? err.message : "Connection failed",
+      });
     } finally {
       setLoading(false);
     }
@@ -165,7 +175,10 @@ export default function SetupPage() {
     setError("");
     setLoading(true);
 
-    const languages = [primaryLanguage, ...additionalLanguages.filter((l) => l !== primaryLanguage)];
+    const languages = [
+      primaryLanguage,
+      ...additionalLanguages.filter((l) => l !== primaryLanguage),
+    ];
 
     try {
       const res = await fetch("/api/setup/init", {
@@ -189,7 +202,7 @@ export default function SetupPage() {
         throw new Error(body.message || "Setup failed");
       }
 
-      const _data: SetupResponse = await res.json();
+      await res.json();
 
       // Auto-login with the admin credentials
       await login(adminEmail, adminPassword);
@@ -213,22 +226,82 @@ export default function SetupPage() {
   }));
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">Historiador Doc Setup</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Step {currentIndex + 1} of {STEPS.length}
-          </p>
-          {/* Progress bar */}
-          <div className="mt-3 flex gap-1">
-            {STEPS.map((s, i) => (
-              <div
-                key={s}
-                className={`h-1 flex-1 rounded ${i <= currentIndex ? "bg-blue-600" : "bg-zinc-200 dark:bg-zinc-700"}`}
-              />
-            ))}
-          </div>
+    <main className="grid h-screen grid-cols-1 md:grid-cols-2">
+      <aside className="relative hidden flex-col gap-6 bg-primary-600 p-10 text-white md:flex">
+        <div
+          className="flex items-center gap-2.5"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontStyle: "italic",
+            fontSize: 22,
+          }}
+        >
+          <svg
+            width={24}
+            height={24}
+            viewBox="0 0 32 32"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16 7 V25" />
+            <path d="M16 7 C 12 5, 8 5, 4.5 6 V 24 C 8 23, 12 23, 16 25" />
+            <path d="M16 7 C 20 5, 24 5, 27.5 6 V 24 C 24 23, 20 23, 16 25" />
+            <path d="M22 10 L 26 14" />
+          </svg>
+          Historiador{" "}
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontStyle: "normal",
+              fontSize: 18,
+              fontWeight: 500,
+            }}
+          >
+            Doc
+          </span>
+        </div>
+
+        <div className="max-w-[440px] text-[16px] leading-relaxed opacity-85 mb-auto">
+          Toda equipe tem memória. O Historiador Doc transforma essa memória em
+          páginas — conversando com você.
+        </div>
+
+        <h1
+          className="mt-auto mb-0"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 52,
+            lineHeight: 1.05,
+            fontWeight: 400,
+            margin: 0,
+          }}
+        >
+          Documentação <em>que conversa</em> de volta.
+        </h1>
+
+        <div className="flex gap-1.5">
+          {STEPS.map((s, i) => (
+            <div
+              key={s}
+              className="h-[3px] w-8 rounded-sm"
+              style={{
+                background:
+                  i <= currentIndex ? "white" : "rgba(255,255,255,0.25)",
+              }}
+            />
+          ))}
+        </div>
+      </aside>
+
+      <section className="flex flex-col justify-center bg-surface-canvas p-10 md:p-16 max-w-[640px]">
+        <div
+          className="mb-2.5 text-[11px] font-bold uppercase text-primary-600"
+          style={{ letterSpacing: "0.08em" }}
+        >
+          Passo {currentIndex + 1} de {STEPS.length}
         </div>
 
         <div className="space-y-4">
@@ -236,7 +309,7 @@ export default function SetupPage() {
           {step === "workspace" && (
             <>
               <h2 className="text-lg font-semibold">Workspace name</h2>
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-text-tertiary">
                 Choose a name for your documentation workspace.
               </p>
               <Input
@@ -253,19 +326,23 @@ export default function SetupPage() {
           {step === "llm" && (
             <>
               <h2 className="text-lg font-semibold">LLM Provider</h2>
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-text-tertiary">
                 Select your AI provider for the document editor.
               </p>
               <Select
                 label="Provider"
                 options={PROVIDER_OPTIONS}
                 value={llmProvider}
-                onChange={(e) => handleProviderChange(e.target.value as LlmProvider)}
+                onChange={(e) =>
+                  handleProviderChange(e.target.value as LlmProvider)
+                }
               />
               {llmProvider !== "test" && (
                 <>
                   <Input
-                    label={llmProvider === "ollama" ? "Ollama base URL" : "API Key"}
+                    label={
+                      llmProvider === "ollama" ? "Ollama base URL" : "API Key"
+                    }
                     type={llmProvider === "ollama" ? "url" : "password"}
                     value={llmApiKey}
                     onChange={(e) => {
@@ -284,11 +361,21 @@ export default function SetupPage() {
                     onClick={testConnection}
                     disabled={loading || !llmApiKey.trim()}
                   >
-                    {loading ? <><Spinner className="mr-2" /> Testing...</> : "Test Connection"}
+                    {loading ? (
+                      <>
+                        <Spinner className="mr-2" /> Testing...
+                      </>
+                    ) : (
+                      "Test Connection"
+                    )}
                   </Button>
                   {probeResult && (
-                    <p className={`text-sm ${probeResult.success ? "text-green-600" : "text-red-600"}`}>
-                      {probeResult.success ? "Connection successful" : probeResult.message}
+                    <p
+                      className={`text-sm ${probeResult.success ? "text-teal-600" : "text-red-600"}`}
+                    >
+                      {probeResult.success
+                        ? "Connection successful"
+                        : probeResult.message}
                     </p>
                   )}
 
@@ -307,8 +394,10 @@ export default function SetupPage() {
                         value={embeddingModel}
                         onChange={(e) => setEmbeddingModel(e.target.value)}
                       />
-                      <p className="text-xs text-zinc-500">
-                        Need more models? Run <code>ollama pull &lt;name&gt;</code> and test the connection again.
+                      <p className="text-xs text-text-tertiary">
+                        Need more models? Run{" "}
+                        <code>ollama pull &lt;name&gt;</code> and test the
+                        connection again.
                       </p>
                     </>
                   )}
@@ -337,8 +426,9 @@ export default function SetupPage() {
           {step === "languages" && (
             <>
               <h2 className="text-lg font-semibold">Languages</h2>
-              <p className="text-sm text-zinc-500">
-                Select the primary language and any additional languages for your documentation.
+              <p className="text-sm text-text-tertiary">
+                Select the primary language and any additional languages for
+                your documentation.
               </p>
               <Select
                 label="Primary language"
@@ -347,19 +437,21 @@ export default function SetupPage() {
                 onChange={(e) => setPrimaryLanguage(e.target.value)}
               />
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label className="block text-sm font-medium text-text-secondary">
                   Additional languages
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {COMMON_LANGUAGES.filter((l) => l.value !== primaryLanguage).map((lang) => (
+                  {COMMON_LANGUAGES.filter(
+                    (l) => l.value !== primaryLanguage,
+                  ).map((lang) => (
                     <button
                       key={lang.value}
                       type="button"
                       onClick={() => toggleAdditionalLanguage(lang.value)}
                       className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
                         additionalLanguages.includes(lang.value)
-                          ? "bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-900 dark:border-blue-700 dark:text-blue-200"
-                          : "border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          ? "bg-primary-100 border-primary-200 text-primary-800"
+                          : "border-surface-border-strong text-text-secondary hover:bg-surface-subtle"
                       }`}
                     >
                       {lang.label}
@@ -374,7 +466,7 @@ export default function SetupPage() {
           {step === "admin" && (
             <>
               <h2 className="text-lg font-semibold">Admin account</h2>
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-text-tertiary">
                 Create the first administrator account.
               </p>
               <Input
@@ -391,7 +483,11 @@ export default function SetupPage() {
                 onChange={(e) => setAdminPassword(e.target.value)}
                 placeholder="Min. 12 characters"
                 autoComplete="new-password"
-                error={adminPassword.length > 0 && adminPassword.length < 12 ? "Min. 12 characters" : undefined}
+                error={
+                  adminPassword.length > 0 && adminPassword.length < 12
+                    ? "Min. 12 characters"
+                    : undefined
+                }
               />
               <Input
                 label="Confirm password"
@@ -399,7 +495,12 @@ export default function SetupPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
-                error={confirmPassword.length > 0 && confirmPassword !== adminPassword ? "Passwords do not match" : undefined}
+                error={
+                  confirmPassword.length > 0 &&
+                  confirmPassword !== adminPassword
+                    ? "Passwords do not match"
+                    : undefined
+                }
               />
             </>
           )}
@@ -408,20 +509,40 @@ export default function SetupPage() {
           {step === "summary" && (
             <>
               <h2 className="text-lg font-semibold">Review & Complete</h2>
-              <div className="rounded border border-zinc-200 dark:border-zinc-700 p-4 space-y-2 text-sm">
-                <div><span className="font-medium">Workspace:</span> {workspaceName}</div>
-                <div><span className="font-medium">LLM Provider:</span> {llmProvider}</div>
+              <div className="rounded border border-surface-border p-4 space-y-2 text-sm">
+                <div>
+                  <span className="font-medium">Workspace:</span>{" "}
+                  {workspaceName}
+                </div>
+                <div>
+                  <span className="font-medium">LLM Provider:</span>{" "}
+                  {llmProvider}
+                </div>
                 {llmProvider !== "test" && (
                   <>
-                    <div><span className="font-medium">Generation model:</span> {generationModel}</div>
-                    <div><span className="font-medium">Embedding model:</span> {embeddingModel}</div>
+                    <div>
+                      <span className="font-medium">Generation model:</span>{" "}
+                      {generationModel}
+                    </div>
+                    <div>
+                      <span className="font-medium">Embedding model:</span>{" "}
+                      {embeddingModel}
+                    </div>
                   </>
                 )}
-                <div><span className="font-medium">Primary language:</span> {primaryLanguage}</div>
+                <div>
+                  <span className="font-medium">Primary language:</span>{" "}
+                  {primaryLanguage}
+                </div>
                 {additionalLanguages.length > 0 && (
-                  <div><span className="font-medium">Additional:</span> {additionalLanguages.join(", ")}</div>
+                  <div>
+                    <span className="font-medium">Additional:</span>{" "}
+                    {additionalLanguages.join(", ")}
+                  </div>
                 )}
-                <div><span className="font-medium">Admin email:</span> {adminEmail}</div>
+                <div>
+                  <span className="font-medium">Admin email:</span> {adminEmail}
+                </div>
               </div>
             </>
           )}
@@ -440,7 +561,13 @@ export default function SetupPage() {
           </Button>
           {step === "summary" ? (
             <Button onClick={handleSubmit} disabled={loading}>
-              {loading ? <><Spinner className="mr-2" /> Setting up...</> : "Complete Setup"}
+              {loading ? (
+                <>
+                  <Spinner className="mr-2" /> Setting up...
+                </>
+              ) : (
+                "Complete Setup"
+              )}
             </Button>
           ) : (
             <Button onClick={goNext} disabled={!canGoNext()}>
@@ -448,7 +575,7 @@ export default function SetupPage() {
             </Button>
           )}
         </div>
-      </div>
+      </section>
     </main>
   );
 }
