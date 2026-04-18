@@ -1,26 +1,253 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Historiador Doc — Design Tokens (Editorial Historian v0.1)
+   Source: design handoff 2026-04-17 (colors_and_type.css).
+   Warm cream surfaces, indigo-600 primary, Instrument Serif
+   display accent, Inter body, JetBrains Mono code.
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand / primary (indigo) */
+  --color-primary-50:  #EEF1FF;
+  --color-primary-100: #E0E4FF;
+  --color-primary-200: #C7CDFF;
+  --color-primary-500: #6366F1;
+  --color-primary-600: #4F46E5;
+  --color-primary-700: #4338CA;
+  --color-primary-800: #3730A3;
+
+  /* Brand / amber (drafts, warnings) */
+  --color-amber-50:  #FDF6E3;
+  --color-amber-500: #D97706;
+  --color-amber-600: #B45309;
+  --color-amber-700: #92400E;
+
+  /* Semantic / success (teal) */
+  --color-teal-50:  #ECFDF5;
+  --color-teal-500: #14B8A6;
+  --color-teal-600: #0D9488;
+  --color-teal-700: #0F766E;
+
+  /* Semantic / danger (red) */
+  --color-red-50:   #FEF2F2;
+  --color-red-500:  #EF4444;
+  --color-red-600:  #DC2626;
+  --color-red-700:  #B91C1C;
+
+  /* Neutral / text (warmed ink) */
+  --color-text-primary:   #1A1613;
+  --color-text-secondary: #3F3A36;
+  --color-text-tertiary:  #6B645B;
+  --color-text-disabled:  #A89E91;
+  --color-text-inverse:   #FAF8F3;
+
+  /* Neutral / surfaces (cream) */
+  --color-surface-page:          #FAF8F3;
+  --color-surface-subtle:        #F2EEE3;
+  --color-surface-canvas:        #FFFFFF;
+  --color-surface-hover:         #F7F3E9;
+  --color-surface-border:        #E8E2D6;
+  --color-surface-border-strong: #D6CEBF;
+
+  /* Typography sizes */
+  --text-display-size: 48px; --text-display-lh: 1.1;  --text-display-w: 400;
+  --text-h1-size: 36px;      --text-h1-lh: 1.2;       --text-h1-w: 700;
+  --text-h2-size: 28px;      --text-h2-lh: 1.25;      --text-h2-w: 600;
+  --text-h3-size: 22px;      --text-h3-lh: 1.3;       --text-h3-w: 600;
+  --text-body-lg-size: 18px; --text-body-lg-lh: 1.55; --text-body-lg-w: 400;
+  --text-body-size: 15px;    --text-body-lh: 1.55;    --text-body-w: 400;
+  --text-body-sm-size: 13px; --text-body-sm-lh: 1.5;  --text-body-sm-w: 400;
+  --text-label-size: 12px;   --text-label-lh: 1.4;    --text-label-w: 600;
+  --text-caps-size: 11px;    --text-caps-lh: 1.4;     --text-caps-w: 700;
+  --text-caps-tracking: 0.08em;
+  --text-code-size: 13px;    --text-code-lh: 1.5;
+
+  /* Radii */
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+
+  /* Shadows (warm-tinted, not pure black) */
+  --shadow-xs: 0 1px 2px 0 rgba(59, 48, 31, 0.06);
+  --shadow-sm: 0 1px 3px 0 rgba(59, 48, 31, 0.08), 0 1px 2px -1px rgba(59, 48, 31, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(59, 48, 31, 0.08), 0 2px 4px -2px rgba(59, 48, 31, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(59, 48, 31, 0.10), 0 4px 6px -4px rgba(59, 48, 31, 0.06);
+  --shadow-focus: 0 0 0 2px var(--color-surface-canvas), 0 0 0 4px var(--color-primary-600);
+  --shadow-focus-danger: 0 0 0 2px var(--color-surface-canvas), 0 0 0 4px var(--color-red-600);
+
+  /* Layout */
+  --sidebar-full: 240px;
+  --sidebar-compact: 56px;
+  --topbar-height: 56px;
+  --content-max: 720px;
+  --form-max: 480px;
+  --modal-max: 480px;
 }
+
+/* ============================================================
+   Tailwind 4 theme bridge — maps tokens into utility classes
+   (bg-primary-600, text-text-secondary, rounded-md, shadow-md,
+   font-display, etc.).
+   ============================================================ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary-50:  var(--color-primary-50);
+  --color-primary-100: var(--color-primary-100);
+  --color-primary-200: var(--color-primary-200);
+  --color-primary-500: var(--color-primary-500);
+  --color-primary-600: var(--color-primary-600);
+  --color-primary-700: var(--color-primary-700);
+  --color-primary-800: var(--color-primary-800);
+
+  --color-amber-50:  var(--color-amber-50);
+  --color-amber-500: var(--color-amber-500);
+  --color-amber-600: var(--color-amber-600);
+  --color-amber-700: var(--color-amber-700);
+
+  --color-teal-50:  var(--color-teal-50);
+  --color-teal-500: var(--color-teal-500);
+  --color-teal-600: var(--color-teal-600);
+  --color-teal-700: var(--color-teal-700);
+
+  --color-red-50:  var(--color-red-50);
+  --color-red-500: var(--color-red-500);
+  --color-red-600: var(--color-red-600);
+  --color-red-700: var(--color-red-700);
+
+  --color-text-primary:   var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary:  var(--color-text-tertiary);
+  --color-text-disabled:  var(--color-text-disabled);
+  --color-text-inverse:   var(--color-text-inverse);
+
+  --color-surface-page:          var(--color-surface-page);
+  --color-surface-subtle:        var(--color-surface-subtle);
+  --color-surface-canvas:        var(--color-surface-canvas);
+  --color-surface-hover:         var(--color-surface-hover);
+  --color-surface-border:        var(--color-surface-border);
+  --color-surface-border-strong: var(--color-surface-border-strong);
+
+  --radius-sm:   var(--radius-sm);
+  --radius-md:   var(--radius-md);
+  --radius-lg:   var(--radius-lg);
+  --radius-xl:   var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --font-sans:    var(--font-sans);
+  --font-display: var(--font-display);
+  --font-mono:    var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   Semantic typography classes — use these instead of raw sizes.
+   ============================================================ */
+
+.t-display {
+  font-family: var(--font-display);
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-lh);
+  font-weight: var(--text-display-w);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
+.t-display-italic { font-style: italic; }
+
+.t-h1 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h1-size);
+  line-height: var(--text-h1-lh);
+  font-weight: var(--text-h1-w);
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+.t-h2 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h2-size);
+  line-height: var(--text-h2-lh);
+  font-weight: var(--text-h2-w);
+  letter-spacing: -0.015em;
+  color: var(--color-text-primary);
+}
+.t-h3 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h3-size);
+  line-height: var(--text-h3-lh);
+  font-weight: var(--text-h3-w);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+.t-body-lg {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-lg-size);
+  line-height: var(--text-body-lg-lh);
+  font-weight: var(--text-body-lg-w);
+  color: var(--color-text-primary);
+}
+.t-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  font-weight: var(--text-body-w);
+  color: var(--color-text-primary);
+}
+.t-body-sm {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-sm-size);
+  line-height: var(--text-body-sm-lh);
+  font-weight: var(--text-body-sm-w);
+  color: var(--color-text-secondary);
+}
+.t-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  font-weight: var(--text-label-w);
+  color: var(--color-text-secondary);
+}
+.t-caps {
+  font-family: var(--font-sans);
+  font-size: var(--text-caps-size);
+  line-height: var(--text-caps-lh);
+  font-weight: var(--text-caps-w);
+  letter-spacing: var(--text-caps-tracking);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.t-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-lh);
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+/* ============================================================
+   Base reset.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  color: var(--color-text-primary);
+  background: var(--color-surface-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animated MCP-active / AI-thinking pulse halo used on status dots. */
+@keyframes pulse {
+  0%   { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.8); opacity: 0; }
 }

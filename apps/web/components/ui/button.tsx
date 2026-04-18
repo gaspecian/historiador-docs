@@ -3,17 +3,22 @@
 import { type ButtonHTMLAttributes } from "react";
 
 const variants = {
-  primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400",
+  primary:
+    "bg-primary-600 text-white hover:bg-primary-700 shadow-xs disabled:opacity-40",
   secondary:
-    "border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800",
+    "bg-surface-canvas text-text-primary border border-surface-border hover:bg-surface-hover shadow-xs disabled:opacity-40",
   ghost:
-    "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800",
-  danger: "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-400",
+    "bg-transparent text-text-secondary hover:bg-surface-subtle disabled:opacity-40",
+  danger:
+    "bg-red-600 text-white hover:bg-red-700 disabled:opacity-40",
+  link:
+    "bg-transparent text-primary-600 hover:underline p-0 h-auto border-0 disabled:opacity-40",
 } as const;
 
 const sizes = {
-  sm: "px-2 py-1 text-xs",
-  md: "px-4 py-2 text-sm",
+  sm: "h-8 px-3 text-[13px]",
+  md: "h-10 px-4 text-sm",
+  lg: "h-12 px-6 text-[15px]",
 } as const;
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -27,9 +32,10 @@ export function Button({
   className = "",
   ...props
 }: ButtonProps) {
+  const sizeClass = variant === "link" ? "" : sizes[size];
   return (
     <button
-      className={`rounded font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`inline-flex items-center gap-2 rounded-md font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${variants[variant]} ${sizeClass} ${className}`}
       {...props}
     />
   );
