@@ -29,11 +29,15 @@ use historiador_llm::{
     EmbeddingClient, OllamaEmbeddingClient, OpenAiEmbeddingClient, StubEmbeddingClient,
 };
 
+mod application;
 mod auth;
 mod health;
+mod infrastructure;
 mod query;
 mod state;
 
+use application::SearchChunksUseCase;
+use infrastructure::PostgresChunkMetadataReader;
 use state::McpState;
 
 #[tokio::main]
@@ -150,10 +154,15 @@ async fn main() -> anyhow::Result<()> {
     let internal_api_url =
         std::env::var("API_INTERNAL_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
 
-    let state = Arc::new(McpState {
-        pool,
-        vector_store,
+    let metadata_reader = Arc::new(PostgresChunkMetadataReader::new(pool));
+    let search_chunks = Arc::new(SearchChunksUseCase::new(
         embedding_client,
+        vector_store,
+        metadata_reader,
+    ));
+
+    let state = Arc::new(McpState {
+        search_chunks,
         bearer_token_hash,
         internal_api_url,
         workspace_id,
