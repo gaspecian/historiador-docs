@@ -19,9 +19,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::application::admin::UpdateLlmConfigCommand;
-use crate::auth::extractor::AuthUser;
-use crate::error::ApiError;
-use crate::setup::llm_probe::LlmProvider;
+use crate::presentation::extractor::AuthUser;
+use crate::presentation::error::ApiError;
+use crate::infrastructure::llm::probe::LlmProvider;
 use crate::state::AppState;
 
 // ---- GET /admin/workspace ----

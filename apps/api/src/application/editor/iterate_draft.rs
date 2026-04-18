@@ -6,7 +6,7 @@ use historiador_llm::{TextGenerationClient, TextStream};
 
 use crate::domain::error::ApplicationError;
 use crate::domain::value::{Actor, Role};
-use crate::editor::prompts;
+use super::prompts;
 
 pub struct IterateDraftCommand {
     pub current_draft: String,

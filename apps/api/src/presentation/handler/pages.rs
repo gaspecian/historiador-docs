@@ -18,10 +18,10 @@ use crate::application::pages::{
     CreatePageCommand, ListVersionHistoryCommand, PageView, PageVersionsView, UpdatePageCommand,
     VersionHistoryPage,
 };
-use crate::auth::extractor::AuthUser;
+use crate::presentation::extractor::AuthUser;
 use crate::domain::entity::{Page, PageVersion, VersionHistoryEntry};
 use crate::domain::value::{Language, PageStatus};
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 // ---- DTOs ----

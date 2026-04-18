@@ -15,7 +15,7 @@ use axum::{
     response::Response,
 };
 
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 /// Paths that remain reachable while setup is incomplete.

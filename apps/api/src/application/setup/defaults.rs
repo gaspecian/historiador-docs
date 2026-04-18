@@ -1,6 +1,6 @@
 //! Provider-appropriate default model names when the caller omits them.
 
-use crate::setup::llm_probe::LlmProvider;
+use crate::infrastructure::llm::probe::LlmProvider;
 
 pub fn generation_model(provider: LlmProvider) -> &'static str {
     match provider {

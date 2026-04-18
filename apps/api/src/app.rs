@@ -11,7 +11,11 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{health, middleware::setup_gate::setup_gate, openapi::ApiDoc, routes, state::AppState};
+use crate::presentation::handler::health;
+use crate::presentation::middleware::setup_gate::setup_gate;
+use crate::presentation::openapi::ApiDoc;
+use crate::routes;
+use crate::state::AppState;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     let api_routes = Router::new()

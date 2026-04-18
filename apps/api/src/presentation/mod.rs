@@ -7,9 +7,13 @@
 //! `main.rs` stays thin.
 
 pub mod dto;
+pub mod error;
 pub mod extractor;
 pub mod handler;
 pub mod middleware;
+pub mod openapi;
 pub mod state;
 
+pub use error::ApiError;
+pub use openapi::ApiDoc;
 pub use state::{BuildDeps, UseCases};

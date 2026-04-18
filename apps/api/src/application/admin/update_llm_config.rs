@@ -6,7 +6,7 @@ use crate::domain::port::llm_probe::LlmProbe;
 use crate::domain::port::page_repository::PageRepository;
 use crate::domain::port::workspace_repository::{LlmConfigPatch, WorkspaceRepository};
 use crate::domain::value::{Actor, Role};
-use crate::setup::llm_probe::LlmProvider;
+use crate::infrastructure::llm::probe::LlmProvider;
 
 pub struct UpdateLlmConfigCommand {
     pub llm_provider: LlmProvider,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::auth::tokens as rt;
+use crate::infrastructure::auth::refresh_tokens as rt;
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::session_repository::SessionRepository;
 use crate::domain::port::token_issuer::TokenIssuer;

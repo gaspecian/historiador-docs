@@ -9,7 +9,7 @@ use validator::Validate;
 
 use crate::application::auth::{ActivateCommand, LoginCommand};
 use crate::domain::value::Email;
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 // ---- request / response DTOs ----

@@ -15,9 +15,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::application::collections::{CreateCollectionCommand, UpdateCollectionCommand};
-use crate::auth::extractor::AuthUser;
+use crate::presentation::extractor::AuthUser;
 use crate::domain::entity::Collection;
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 // ---- DTOs ----

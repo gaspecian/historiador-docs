@@ -17,9 +17,9 @@ use axum::{
 use historiador_db::postgres::users::Role;
 use uuid::Uuid;
 
-use crate::auth::jwt;
 use crate::domain::value::{Actor, Role as DomainRole};
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
+use crate::infrastructure::auth::jwt;
 use crate::state::AppState;
 
 /// Authenticated user, derived from a valid access token.

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::domain::error::ApplicationError;
 use crate::domain::port::llm_probe::LlmProbe;
-use crate::setup::llm_probe::LlmProvider;
+use crate::infrastructure::llm::probe::LlmProvider;
 
 pub struct ProbeLlmResult {
     pub success: bool,

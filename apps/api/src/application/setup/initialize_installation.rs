@@ -7,7 +7,7 @@ use crate::domain::port::cipher::Cipher;
 use crate::domain::port::llm_probe::LlmProbe;
 use crate::domain::port::workspace_repository::{InitializeInstallation, WorkspaceRepository};
 use crate::domain::value::{Email, Language};
-use crate::setup::llm_probe::LlmProvider;
+use crate::infrastructure::llm::probe::LlmProvider;
 
 use super::bcp47;
 use super::defaults;

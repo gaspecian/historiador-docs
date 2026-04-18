@@ -23,9 +23,9 @@ use serde::Deserialize;
 use validator::Validate;
 
 use crate::application::editor::{GenerateDraftCommand, IterateDraftCommand};
-use crate::auth::extractor::AuthUser;
+use crate::presentation::extractor::AuthUser;
 use crate::domain::port::event_producer::{DomainEvent, EventProducer};
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 // ---- DTOs ----

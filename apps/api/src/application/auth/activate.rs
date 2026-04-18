@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use historiador_db::password as pw;
 
-use crate::auth::tokens as rt;
+use crate::infrastructure::auth::refresh_tokens as rt;
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::user_repository::UserRepository;
 

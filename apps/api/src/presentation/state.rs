@@ -36,7 +36,7 @@ use crate::application::pages::{
 use crate::application::setup::{
     InitializeInstallationUseCase, ListOllamaModelsUseCase, ProbeLlmUseCase,
 };
-use crate::crypto::Cipher as AesCipher;
+use crate::infrastructure::crypto::raw::Cipher as AesCipher;
 use crate::domain::port::cipher::Cipher as CipherPort;
 use crate::domain::port::llm_probe::LlmProbe;
 use crate::infrastructure::chronik::{ChronikEventProducer, ChronikQueryAnalytics};

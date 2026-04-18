@@ -4,29 +4,26 @@
 //! `ApiDoc` struct without re-implementing the router, and so that
 //! integration tests can spin up a fully configured app without
 //! shelling out through `main`.
-
-pub mod admin;
-pub mod auth;
-pub mod collections;
-pub mod crypto;
-pub mod editor;
-pub mod error;
-pub mod export;
-pub mod health;
-pub mod middleware;
-pub mod openapi;
-pub mod pages;
-pub mod routes;
-pub mod setup;
-pub mod state;
-pub mod util;
+//!
+//! # Layout
+//!
+//! Clean Architecture layers:
+//!
+//! - [`domain`] — pure entities, value objects, port traits
+//! - [`application`] — use cases orchestrating ports
+//! - [`infrastructure`] — adapters implementing ports (sqlx, Chronik,
+//!   JWT, AES-GCM, HTTP clients, …)
+//! - [`presentation`] — Axum handlers, DTOs, extractors, middleware,
+//!   error mapping, OpenAPI registry
+//!
+//! [`app`] + [`routes`] + [`state`] wire the layers together. [`util`]
+//! holds tiny shared helpers that don't fit any other home.
 
 pub mod app;
-
-// Clean Architecture layers (scaffolding). These trees are populated
-// over the course of the refactor; existing modules above remain the
-// source of truth until each layer is migrated.
 pub mod application;
 pub mod domain;
 pub mod infrastructure;
 pub mod presentation;
+pub mod routes;
+pub mod state;
+pub mod util;

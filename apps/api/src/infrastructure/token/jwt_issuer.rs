@@ -1,12 +1,12 @@
 //! JWT-backed `TokenIssuer` adapter. Thin wrapper over the existing
-//! [`crate::auth::jwt`] helpers; the application layer never sees
+//! [`crate::infrastructure::auth::jwt`] helpers; the application layer never sees
 //! `jsonwebtoken` types.
 
 use chrono::{DateTime, TimeZone, Utc};
 
 use historiador_db::postgres::users::Role as DbRole;
 
-use crate::auth::jwt::{decode_token, encode_token, Claims};
+use crate::infrastructure::auth::jwt::{decode_token, encode_token, Claims};
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::token_issuer::{AccessClaims, TokenIssuer};
 use crate::domain::value::Role;

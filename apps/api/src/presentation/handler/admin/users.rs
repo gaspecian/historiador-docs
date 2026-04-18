@@ -15,9 +15,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::application::admin::InviteUserCommand;
-use crate::auth::extractor::AuthUser;
+use crate::presentation::extractor::AuthUser;
 use crate::domain::value::{Email, Role as DomainRole};
-use crate::error::ApiError;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]

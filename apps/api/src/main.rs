@@ -5,9 +5,9 @@ use std::sync::Arc;
 use anyhow::Context;
 use historiador_api::{
     app,
-    crypto::Cipher,
+    infrastructure::crypto::raw::Cipher,
     presentation::{BuildDeps, UseCases},
-    setup::llm_probe::HttpLlmProbe,
+    infrastructure::llm::probe::HttpLlmProbe,
     state::AppState,
 };
 use historiador_db::{
@@ -108,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let llm_probe: Arc<dyn historiador_api::setup::llm_probe::LlmProbe> =
+    let llm_probe: Arc<dyn historiador_api::infrastructure::llm::probe::LlmProbe> =
         Arc::new(HttpLlmProbe::default());
     let jwt_secret_bytes = jwt_secret.into_bytes();
 

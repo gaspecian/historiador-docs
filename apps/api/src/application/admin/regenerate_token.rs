@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::auth::tokens as rt;
+use crate::infrastructure::auth::refresh_tokens as rt;
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::workspace_repository::WorkspaceRepository;
 use crate::domain::value::{Actor, Role};

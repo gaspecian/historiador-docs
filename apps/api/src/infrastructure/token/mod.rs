@@ -1,5 +1,5 @@
 //! Token-issuer adapter — JWT issue/verify. Thin wrapper over the
-//! existing helpers in `crate::auth::jwt`.
+//! existing helpers in `crate::infrastructure::auth::jwt`.
 
 pub mod jwt_issuer;
 

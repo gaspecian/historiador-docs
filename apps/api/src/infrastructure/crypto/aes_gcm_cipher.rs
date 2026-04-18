@@ -1,7 +1,7 @@
 //! `Cipher` port adapter wrapping the existing AES-256-GCM
-//! implementation in [`crate::crypto::Cipher`].
+//! implementation in [`crate::infrastructure::crypto::raw::Cipher`].
 
-use crate::crypto::Cipher as AesCipher;
+use crate::infrastructure::crypto::raw::Cipher as AesCipher;
 use crate::domain::error::ApplicationError;
 use crate::domain::port::cipher::Cipher;
 
