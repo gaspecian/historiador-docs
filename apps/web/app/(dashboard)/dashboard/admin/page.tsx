@@ -59,7 +59,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="max-w-4xl space-y-8">
+    <div className="px-10 py-7 max-w-4xl mx-auto space-y-8">
       <h1 className="text-lg font-semibold">Admin Panel</h1>
 
       {/* User Management */}

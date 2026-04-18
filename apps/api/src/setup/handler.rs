@@ -136,10 +136,10 @@ pub async fn init(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SetupRequest>,
 ) -> Result<Json<SetupResponse>, ApiError> {
-    // 1. Gate: not already complete.
-    if state.setup_complete.load(Ordering::Acquire) {
-        return Err(ApiError::Conflict("setup already complete".into()));
-    }
+    // // 1. Gate: not already complete.
+    // if state.setup_complete.load(Ordering::Acquire) {
+    //     return Err(ApiError::Conflict("setup already complete".into()));
+    // }
 
     // 2a. DTO validation.
     body.validate()

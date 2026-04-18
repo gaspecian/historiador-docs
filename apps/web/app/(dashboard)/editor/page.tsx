@@ -2,10 +2,38 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { apiStream } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+}
+
+type DeltaEvent = { text: string };
+type ErrorEvent = { message: string };
+type DoneEvent = { length: number };
+type StreamPayload = DeltaEvent | ErrorEvent | DoneEvent;
+
+async function streamMarkdown(
+  path: string,
+  body: unknown,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
+  let buffer = "";
+  for await (const ev of apiStream<StreamPayload>(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })) {
+    if (ev.event === "delta" && "text" in ev.data) {
+      buffer += ev.data.text;
+      onChunk(ev.data.text);
+    } else if (ev.event === "error" && "message" in ev.data) {
+      throw new Error(ev.data.message);
+    } else if (ev.event === "done") {
+      break;
+    }
+  }
+  return buffer;
 }
 
 function Sparkle() {
@@ -34,95 +62,60 @@ export default function EditorPage() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const getToken = () =>
-    typeof window !== "undefined" ? localStorage.getItem("access_token") ?? "" : "";
+  const [liveAssistant, setLiveAssistant] = useState("");
 
   const generateDraft = async () => {
     if (!brief.trim() || loading) return;
     setLoading(true);
+    setLiveAssistant("");
     setMessages((prev) => [...prev, { role: "user", content: brief }]);
 
     try {
-      const res = await fetch("/api/editor/draft", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify({ brief }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: `Error ${res.status}: ${err}` },
-        ]);
-        return;
-      }
-
-      const data = await res.json();
-      setDraft(data.content_markdown);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.content_markdown },
-      ]);
+      const full = await streamMarkdown(
+        "/editor/draft",
+        { brief },
+        (chunk) => setLiveAssistant((prev) => prev + chunk),
+      );
+      setDraft(full);
+      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       setBrief("");
     } catch (e) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Network error: ${e}` },
+        { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
       ]);
     } finally {
       setLoading(false);
+      setLiveAssistant("");
     }
   };
 
   const refineDraft = async () => {
     if (!instruction.trim() || !draft || loading) return;
     setLoading(true);
+    setLiveAssistant("");
     setMessages((prev) => [
       ...prev,
       { role: "user", content: `Refine: ${instruction}` },
     ]);
 
     try {
-      const res = await fetch("/api/editor/iterate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify({
-          current_draft: draft,
-          instruction,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: `Error ${res.status}: ${err}` },
-        ]);
-        return;
-      }
-
-      const data = await res.json();
-      setDraft(data.content_markdown);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.content_markdown },
-      ]);
+      const full = await streamMarkdown(
+        "/editor/iterate",
+        { current_draft: draft, instruction },
+        (chunk) => setLiveAssistant((prev) => prev + chunk),
+      );
+      setDraft(full);
+      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       setInstruction("");
     } catch (e) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Network error: ${e}` },
+        { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
       ]);
     } finally {
       setLoading(false);
+      setLiveAssistant("");
     }
   };
 
@@ -133,7 +126,7 @@ export default function EditorPage() {
   const showCheckin = draft && !loading;
 
   return (
-    <main className="grid h-screen grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] bg-surface-page">
+    <main className="grid h-full grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] bg-surface-page">
       {/* Conversation pane */}
       <section className="flex flex-col border-r border-surface-border bg-surface-subtle min-h-0">
         <header className="flex h-14 items-center border-b border-surface-border bg-surface-canvas px-6">
@@ -171,15 +164,29 @@ export default function EditorPage() {
           ))}
 
           {loading && (
-            <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
-              <span className="relative inline-block h-2 w-2 rounded-full bg-primary-600">
-                <span
-                  className="absolute rounded-full border-2 border-primary-600 opacity-35"
-                  style={{ inset: -3, animation: "pulse 1.6s infinite" }}
-                />
-              </span>
-              Escrevendo…
-            </div>
+            <>
+              {liveAssistant ? (
+                <div className="rounded-lg px-4 py-3 text-sm bg-primary-50 text-text-primary">
+                  <div className="mb-1 text-xs font-semibold uppercase text-text-tertiary tracking-wide">
+                    IA
+                  </div>
+                  <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55]">
+                    {liveAssistant}
+                    <span className="animate-pulse">▍</span>
+                  </pre>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+                  <span className="relative inline-block h-2 w-2 rounded-full bg-primary-600">
+                    <span
+                      className="absolute rounded-full border-2 border-primary-600 opacity-35"
+                      style={{ inset: -3, animation: "pulse 1.6s infinite" }}
+                    />
+                  </span>
+                  Escrevendo…
+                </div>
+              )}
+            </>
           )}
         </div>
 

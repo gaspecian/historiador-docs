@@ -115,7 +115,7 @@ export default function PageDetailPage() {
   };
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="px-10 py-7 max-w-4xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/pages")}>
