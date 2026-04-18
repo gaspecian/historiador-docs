@@ -22,3 +22,40 @@ impl Actor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actor_with(role: Role) -> Actor {
+        Actor {
+            user_id: Uuid::nil(),
+            workspace_id: Uuid::nil(),
+            role,
+        }
+    }
+
+    #[test]
+    fn admin_passes_every_gate() {
+        let a = actor_with(Role::Admin);
+        assert!(a.require_role(Role::Admin).is_ok());
+        assert!(a.require_role(Role::Author).is_ok());
+        assert!(a.require_role(Role::Viewer).is_ok());
+    }
+
+    #[test]
+    fn author_passes_author_and_viewer() {
+        let a = actor_with(Role::Author);
+        assert!(a.require_role(Role::Admin).is_err());
+        assert!(a.require_role(Role::Author).is_ok());
+        assert!(a.require_role(Role::Viewer).is_ok());
+    }
+
+    #[test]
+    fn viewer_only_passes_viewer() {
+        let a = actor_with(Role::Viewer);
+        assert!(a.require_role(Role::Admin).is_err());
+        assert!(a.require_role(Role::Author).is_err());
+        assert!(a.require_role(Role::Viewer).is_ok());
+    }
+}
