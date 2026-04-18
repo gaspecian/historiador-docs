@@ -47,6 +47,8 @@ use crate::presentation::handler::{auth, collections, editor, export, health, pa
         admin_analytics::get_mcp_analytics,
         editor::draft,
         editor::iterate,
+        editor::get_conversation,
+        editor::put_conversation,
         export::export_workspace,
         export::export_page,
     ),
@@ -94,6 +96,9 @@ use crate::presentation::handler::{auth, collections, editor, export, health, pa
         admin_analytics::ZeroResultQueryDto,
         editor::DraftRequest,
         editor::IterateRequest,
+        editor::ConversationMessageDto,
+        editor::SaveConversationRequest,
+        editor::ConversationResponse,
     )),
     modifiers(&BearerAuth),
     info(

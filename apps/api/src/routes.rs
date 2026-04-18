@@ -46,6 +46,10 @@ pub fn pages_router() -> Router<Arc<AppState>> {
         )
         .route("/:id/publish", post(pages::publish_page))
         .route("/:id/draft", post(pages::draft_page))
+        .route(
+            "/:id/editor-conversation",
+            get(editor::get_conversation).put(editor::put_conversation),
+        )
         .route("/:id/export", get(export::export_page))
 }
 

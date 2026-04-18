@@ -14,6 +14,7 @@ pub mod chunk_pipeline;
 pub mod cipher;
 pub mod clock;
 pub mod collection_repository;
+pub mod editor_conversation_repository;
 pub mod event_producer;
 pub mod export_repository;
 pub mod id_generator;

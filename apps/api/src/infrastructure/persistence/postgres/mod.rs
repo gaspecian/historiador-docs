@@ -1,6 +1,7 @@
 //! Postgres implementations of the domain repository ports.
 
 pub mod collection_repository;
+pub mod editor_conversation_repository;
 pub mod export_repository;
 pub mod installation_repository;
 pub mod mapper;
@@ -11,6 +12,7 @@ pub mod version_history_repository;
 pub mod workspace_repository;
 
 pub use collection_repository::PostgresCollectionRepository;
+pub use editor_conversation_repository::PostgresEditorConversationRepository;
 pub use export_repository::PostgresExportRepository;
 pub use installation_repository::PostgresInstallationRepository;
 pub use page_repository::PostgresPageRepository;

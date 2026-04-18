@@ -4,6 +4,7 @@
 
 pub mod chunk;
 pub mod collection;
+pub mod editor_conversation;
 pub mod installation;
 pub mod page;
 pub mod page_version;
@@ -14,6 +15,7 @@ pub mod workspace;
 
 pub use chunk::{Chunk, NewChunk};
 pub use collection::Collection;
+pub use editor_conversation::{EditorConversation, EditorConversationMessage};
 pub use installation::Installation;
 pub use page::Page;
 pub use page_version::PageVersion;
