@@ -15,13 +15,13 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::application::pages::{
-    CreatePageCommand, ListVersionHistoryCommand, PageView, PageVersionsView, UpdatePageCommand,
+    CreatePageCommand, ListVersionHistoryCommand, PageVersionsView, PageView, UpdatePageCommand,
     VersionHistoryPage,
 };
-use crate::presentation::extractor::AuthUser;
 use crate::domain::entity::{Page, PageVersion, VersionHistoryEntry};
 use crate::domain::value::{Language, PageStatus};
 use crate::presentation::error::ApiError;
+use crate::presentation::extractor::AuthUser;
 use crate::state::AppState;
 
 // ---- DTOs ----
@@ -245,7 +245,11 @@ pub async fn get_page(
     auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PageResponse>, ApiError> {
-    let view = state.use_cases.get_page.execute(auth.as_actor(), id).await?;
+    let view = state
+        .use_cases
+        .get_page
+        .execute(auth.as_actor(), id)
+        .await?;
     Ok(Json(build_page_response(view)))
 }
 
@@ -308,11 +312,7 @@ pub async fn publish_page(
     Path(page_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<PublishResponse>), ApiError> {
     let actor = auth.as_actor();
-    let confirmed_id = state
-        .use_cases
-        .publish_page
-        .execute(actor, page_id)
-        .await?;
+    let confirmed_id = state.use_cases.publish_page.execute(actor, page_id).await?;
 
     // Async chunking — fire-and-forget. Must stay in presentation,
     // not in the use case, because it owns a tokio runtime handle.

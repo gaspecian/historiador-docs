@@ -4,9 +4,9 @@ use uuid::Uuid;
 
 use historiador_llm::{TextGenerationClient, TextStream};
 
+use super::prompts;
 use crate::domain::error::ApplicationError;
 use crate::domain::value::{Actor, Role};
-use super::prompts;
 
 pub struct GenerateDraftCommand {
     pub brief: String,

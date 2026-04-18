@@ -356,6 +356,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{id}/editor-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_conversation"];
+        put: operations["put_conversation"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{id}/export": {
         parameters: {
             query?: never;
@@ -538,6 +554,24 @@ export interface components {
             /** Format: uuid */
             workspace_id: string;
         };
+        ConversationMessageDto: {
+            content: string;
+            /** @description "user" or "assistant". */
+            role: string;
+            /**
+             * Format: int64
+             * @description Client-side millisecond Unix timestamp.
+             */
+            ts: number;
+        };
+        ConversationResponse: {
+            language: string;
+            messages: components["schemas"]["ConversationMessageDto"][];
+            /** Format: uuid */
+            page_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         CreateCollectionRequest: {
             name: string;
             /** Format: uuid */
@@ -709,6 +743,9 @@ export interface components {
         };
         /** @enum {string} */
         Role: "admin" | "author" | "viewer";
+        SaveConversationRequest: {
+            messages: components["schemas"]["ConversationMessageDto"][];
+        };
         SetupRequest: {
             admin_email: string;
             admin_password: string;
@@ -1855,6 +1892,119 @@ export interface operations {
                 content?: never;
             };
             /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_conversation: {
+        parameters: {
+            query: {
+                /**
+                 * @description BCP 47 language tag identifying which language the conversation
+                 *     belongs to, since authors can hold parallel threads per language.
+                 * @example en
+                 */
+                language: string;
+            };
+            header?: never;
+            path: {
+                /** @description page id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted conversation or an empty transcript if none saved yet. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description page not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_conversation: {
+        parameters: {
+            query: {
+                /**
+                 * @description BCP 47 language tag identifying which language the conversation
+                 *     belongs to, since authors can hold parallel threads per language.
+                 * @example en
+                 */
+                language: string;
+            };
+            header?: never;
+            path: {
+                /** @description page id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated conversation echo (client uses `updated_at` for the banner). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description page not found */
             404: {
                 headers: {
                     [name: string]: unknown;

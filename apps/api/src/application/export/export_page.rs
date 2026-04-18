@@ -38,7 +38,10 @@ impl ExportPageUseCase {
             .ok_or(DomainError::NotFound)?;
         let target_lang = language.unwrap_or_else(|| ws.primary_language.clone());
 
-        let rows = self.export_repo.find_all_published(actor.workspace_id).await?;
+        let rows = self
+            .export_repo
+            .find_all_published(actor.workspace_id)
+            .await?;
         rows.into_iter()
             .find(|r| r.page_id == page_id && r.language.as_str() == target_lang.as_str())
             .ok_or_else(|| DomainError::NotFound.into())

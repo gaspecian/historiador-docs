@@ -21,7 +21,10 @@ impl SearchPagesUseCase {
         query: &str,
     ) -> Result<Vec<PageView>, ApplicationError> {
         actor.require_role(Role::Viewer)?;
-        let pages = self.pages.search_by_title(actor.workspace_id, query).await?;
+        let pages = self
+            .pages
+            .search_by_title(actor.workspace_id, query)
+            .await?;
 
         let mut out = Vec::with_capacity(pages.len());
         for page in pages {

@@ -6,8 +6,8 @@ use anyhow::Context;
 use historiador_api::{
     app,
     infrastructure::crypto::raw::Cipher,
-    presentation::{BuildDeps, UseCases},
     infrastructure::llm::probe::HttpLlmProbe,
+    presentation::{BuildDeps, UseCases},
     state::AppState,
 };
 use historiador_db::{
@@ -81,8 +81,13 @@ async fn main() -> anyhow::Result<()> {
     let (embedding_client, text_generation_client) =
         build_llm_clients_from_workspace(&cipher, workspace_row.as_ref())?;
 
-    // Build Chronik client if configured; fall back to InMemoryVectorStore.
+    // Build Chronik client if configured. Falling back to the in-memory
+    // vector store is gated behind ALLOW_IN_MEMORY_VECTOR_STORE=true
+    // because the in-memory store loses all chunks on process restart,
+    // which silently breaks page version history (ADR-007, code review
+    // finding 4.4).
     let chronik_url = std::env::var("CHRONIK_SQL_URL").ok();
+    let allow_in_memory = historiador_db::vector_store::allow_in_memory_vector_store();
     let (vector_store, chronik): (Arc<dyn VectorStore>, Option<ChronikClient>) = match chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
@@ -96,15 +101,40 @@ async fn main() -> anyhow::Result<()> {
                     let vs = Arc::new(ChronikVectorStore::new(client.clone()));
                     (vs, Some(client))
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to init Chronik — falling back to in-memory");
+                Err(e) if allow_in_memory => {
+                    tracing::warn!(
+                        error = %e,
+                        "⚠️  Chronik init failed — falling back to in-memory vector store \
+                         because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
+                         DATA WILL BE LOST ON RESTART. Do not use this in production."
+                    );
                     (Arc::new(InMemoryVectorStore::new()), None)
+                }
+                Err(e) => {
+                    anyhow::bail!(
+                        "Chronik init failed ({e}). Start Chronik \
+                         (`docker compose up -d chronik`) or set \
+                         ALLOW_IN_MEMORY_VECTOR_STORE=true for dev-only \
+                         in-memory fallback (data lost on restart)."
+                    );
                 }
             }
         }
-        _ => {
-            tracing::info!("vector store: in-memory (CHRONIK_SQL_URL not set)");
+        _ if allow_in_memory => {
+            tracing::warn!(
+                "⚠️  CHRONIK_SQL_URL not set — using in-memory vector store \
+                 because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
+                 DATA WILL BE LOST ON RESTART. Do not use this in production."
+            );
             (Arc::new(InMemoryVectorStore::new()), None)
+        }
+        _ => {
+            anyhow::bail!(
+                "CHRONIK_SQL_URL is not set and ALLOW_IN_MEMORY_VECTOR_STORE is \
+                 not true. Start Chronik (`docker compose up -d chronik`) or \
+                 set ALLOW_IN_MEMORY_VECTOR_STORE=true for dev-only in-memory \
+                 fallback (data lost on restart)."
+            );
         }
     };
 

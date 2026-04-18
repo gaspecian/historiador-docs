@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::infrastructure::auth::refresh_tokens as rt;
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::session_repository::SessionRepository;
 use crate::domain::port::token_issuer::TokenIssuer;
 use crate::domain::port::user_repository::UserRepository;
+use crate::infrastructure::auth::refresh_tokens as rt;
 
 use super::login::issue_pair;
 use super::tokens::IssuedTokens;
@@ -28,10 +28,7 @@ impl RefreshUseCase {
         }
     }
 
-    pub async fn execute(
-        &self,
-        refresh_token: &str,
-    ) -> Result<IssuedTokens, ApplicationError> {
+    pub async fn execute(&self, refresh_token: &str) -> Result<IssuedTokens, ApplicationError> {
         let hash = rt::sha256_hex(refresh_token);
         let session = self
             .sessions

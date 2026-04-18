@@ -64,9 +64,7 @@ impl UpdatePageUseCase {
 
         // Default to "en" if no language specified — matches current
         // handler behavior. Callers should pass a language explicitly.
-        let language = cmd
-            .language
-            .unwrap_or_else(|| Language::from_trusted("en"));
+        let language = cmd.language.unwrap_or_else(|| Language::from_trusted("en"));
 
         let existing = self.pages.find_version(page.id, &language).await?;
         let title = cmd

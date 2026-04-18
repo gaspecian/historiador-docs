@@ -17,7 +17,9 @@ impl Email {
             .split_once('@')
             .ok_or_else(|| DomainError::Validation("email must contain '@'".into()))?;
         if local.is_empty() || domain.is_empty() {
-            return Err(DomainError::Validation("email has empty local or domain part".into()));
+            return Err(DomainError::Validation(
+                "email has empty local or domain part".into(),
+            ));
         }
         Ok(Self(trimmed.to_ascii_lowercase()))
     }

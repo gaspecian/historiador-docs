@@ -614,6 +614,87 @@ paths:
           description: not found
       security:
       - bearer: []
+  /pages/{id}/editor-conversation:
+    get:
+      tags:
+      - editor
+      operationId: get_conversation
+      parameters:
+      - name: id
+        in: path
+        description: page id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: |-
+          BCP 47 language tag identifying which language the conversation
+          belongs to, since authors can hold parallel threads per language.
+        required: true
+        schema:
+          type: string
+        example: en
+      responses:
+        '200':
+          description: Persisted conversation or an empty transcript if none saved yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: page not found
+      security:
+      - bearer: []
+    put:
+      tags:
+      - editor
+      operationId: put_conversation
+      parameters:
+      - name: id
+        in: path
+        description: page id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: |-
+          BCP 47 language tag identifying which language the conversation
+          belongs to, since authors can hold parallel threads per language.
+        required: true
+        schema:
+          type: string
+        example: en
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveConversationRequest'
+        required: true
+      responses:
+        '200':
+          description: Updated conversation echo (client uses `updated_at` for the banner).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: page not found
+      security:
+      - bearer: []
   /pages/{id}/export:
     get:
       tags:
@@ -958,6 +1039,42 @@ components:
         workspace_id:
           type: string
           format: uuid
+    ConversationMessageDto:
+      type: object
+      required:
+      - role
+      - content
+      - ts
+      properties:
+        content:
+          type: string
+        role:
+          type: string
+          description: '"user" or "assistant".'
+        ts:
+          type: integer
+          format: int64
+          description: Client-side millisecond Unix timestamp.
+    ConversationResponse:
+      type: object
+      required:
+      - page_id
+      - language
+      - messages
+      - updated_at
+      properties:
+        language:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
+        page_id:
+          type: string
+          format: uuid
+        updated_at:
+          type: string
+          format: date-time
     CreateCollectionRequest:
       type: object
       required:
@@ -1357,6 +1474,15 @@ components:
       - admin
       - author
       - viewer
+    SaveConversationRequest:
+      type: object
+      required:
+      - messages
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
     SetupRequest:
       type: object
       required:

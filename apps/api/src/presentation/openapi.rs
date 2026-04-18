@@ -9,9 +9,7 @@ use crate::infrastructure::llm::probe as llm_probe;
 use crate::presentation::handler::admin::{
     analytics as admin_analytics, users as admin_users, workspace as admin_workspace,
 };
-use crate::presentation::handler::{
-    auth, collections, editor, export, health, pages, setup,
-};
+use crate::presentation::handler::{auth, collections, editor, export, health, pages, setup};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -49,6 +47,8 @@ use crate::presentation::handler::{
         admin_analytics::get_mcp_analytics,
         editor::draft,
         editor::iterate,
+        editor::get_conversation,
+        editor::put_conversation,
         export::export_workspace,
         export::export_page,
     ),
@@ -96,6 +96,9 @@ use crate::presentation::handler::{
         admin_analytics::ZeroResultQueryDto,
         editor::DraftRequest,
         editor::IterateRequest,
+        editor::ConversationMessageDto,
+        editor::SaveConversationRequest,
+        editor::ConversationResponse,
     )),
     modifiers(&BearerAuth),
     info(

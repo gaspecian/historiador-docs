@@ -51,3 +51,8 @@ export type ZeroResultQueryDto = components["schemas"]["ZeroResultQueryDto"];
 // Backwards-compatible alias: frontend uses "PageVersion" but the
 // Rust DTO is named PageVersionResponse.
 export type PageVersion = components["schemas"]["PageVersionResponse"];
+
+// Sprint 10: editor conversation persistence types
+export type ConversationMessageDto = components["schemas"]["ConversationMessageDto"];
+export type SaveConversationRequest = components["schemas"]["SaveConversationRequest"];
+export type ConversationResponse = components["schemas"]["ConversationResponse"];

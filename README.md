@@ -140,14 +140,14 @@ Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev
 ### 5. Conectar Claude Desktop ao endpoint MCP
 
 1. No dashboard, va em **Admin** > **MCP Server** e clique "Regenerate Token"
-2. Copie o token e a URL do endpoint MCP (ex: `http://localhost:3002/query`)
+2. Copie o token e a URL do endpoint MCP (`http://localhost:3002/mcp`)
 3. No Claude Desktop, abra Settings > MCP Servers e adicione:
 
 ```json
 {
   "mcpServers": {
     "historiador": {
-      "url": "http://localhost:3002/query",
+      "url": "http://localhost:3002/mcp",
       "token": "<seu-bearer-token>"
     }
   }
@@ -156,13 +156,38 @@ Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev
 
 4. Agora o Claude pode consultar sua documentacao diretamente via MCP.
 
-### Limitacoes conhecidas (Alpha)
+#### Conformidade com o protocolo MCP
 
-> **VexFS integration in progress** — os chunks persistem apenas enquanto o container esta rodando. Reiniciar o container limpa o vector store in-memory. Dados relacionais (paginas, usuarios, collections) persistem normalmente no Postgres.
+O endpoint `POST /mcp` fala [Model Context Protocol](https://modelcontextprotocol.io/) via JSON-RPC 2.0 (versao do protocolo `2025-03-26`), implementando `initialize`, `tools/list` e `tools/call`. Ele anuncia uma unica ferramenta `query` cujo `inputSchema` aceita `query` (obrigatorio), `language` (BCP 47, opcional) e `top_k` (1–20, default 5). A autenticacao e via header `Authorization: Bearer <token>`, com comparacao em tempo constante sobre o digest SHA-256 do token (ver [ADR-009](artifacts/adr/ADR-009-editor-transport-v1.md) e o relatorio de seguranca em [docs/security.md](docs/security.md)).
 
-- Sem envio de email: links de ativacao de convite devem ser compartilhados manualmente
-- Sem historico de versao de paginas: edicoes sobrescrevem a versao atual
-- Sem suporte a embeddings via Ollama: se usar Ollama como provedor LLM, embeddings usam stub
+O endpoint `POST /query` (REST customizado) permanece disponivel como alias interno para a UI web e nao faz parte do contrato MCP publico.
+
+### Limitacoes conhecidas (v1.0)
+
+Resumo; a lista completa com racional vive em [CHANGELOG.md](CHANGELOG.md)
+na secao `[1.0.0] → Known Limitations`.
+
+- Transporte do editor e Server-Sent Events (SSE), nao WebSocket — ver
+  [ADR-009](artifacts/adr/ADR-009-editor-transport-v1.md). A reconstrucao
+  com WebSocket + modo conversacao/geracao + edicao inline de secao
+  esta planejada para v1.1.
+- Middleware RBAC no nivel de rota ainda nao existe; autorizacao e
+  feita na camada de use case. Defesa em profundidade em v1.1.
+- Envio de email ainda nao e automatico — convites retornam a URL de
+  ativacao e o admin compartilha manualmente. Em v1.1.
+- Embeddings nativos via Ollama estao como stub; OpenAI e Anthropic
+  funcionam nativamente.
+
+### Referencias
+
+- [docs/security.md](docs/security.md) — postura de seguranca, auditoria
+  de dependencias, comparacao em tempo constante do token MCP, separacao
+  de roles Postgres.
+- [docs/performance.md](docs/performance.md) — alvo de p95 < 2 s para
+  1.000 queries sobre 10.000 chunks + script de carga (`scripts/load-test/run.sh`).
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup local, pipeline de
+  OpenAPI → TypeScript, convencoes de PR.
+- [CHANGELOG.md](CHANGELOG.md) — lancamento v1.0.0 completo.
 
 ## Desenvolvimento
 

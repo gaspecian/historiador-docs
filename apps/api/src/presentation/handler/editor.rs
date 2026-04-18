@@ -14,18 +14,24 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     response::sse::{Event, KeepAlive, Sse},
     Json,
 };
+use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 
-use crate::application::editor::{GenerateDraftCommand, IterateDraftCommand};
-use crate::presentation::extractor::AuthUser;
+use crate::application::editor::{
+    GenerateDraftCommand, IterateDraftCommand, SaveEditorConversationCommand,
+};
+use crate::domain::entity::EditorConversationMessage;
 use crate::domain::port::event_producer::{DomainEvent, EventProducer};
+use crate::domain::value::Language;
 use crate::presentation::error::ApiError;
+use crate::presentation::extractor::AuthUser;
 use crate::state::AppState;
 
 // ---- DTOs ----
@@ -217,4 +223,151 @@ fn publish_editor_event(
             tracing::warn!(error = ?e, "editor telemetry publish failed");
         }
     });
+}
+
+// ---- editor conversation persistence (Sprint 10 item #4) ----
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct ConversationQuery {
+    /// BCP 47 language tag identifying which language the conversation
+    /// belongs to, since authors can hold parallel threads per language.
+    #[param(example = "en")]
+    pub language: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct ConversationMessageDto {
+    /// "user" or "assistant".
+    pub role: String,
+    pub content: String,
+    /// Client-side millisecond Unix timestamp.
+    pub ts: i64,
+}
+
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
+pub struct SaveConversationRequest {
+    pub messages: Vec<ConversationMessageDto>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ConversationResponse {
+    pub page_id: Uuid,
+    pub language: String,
+    pub messages: Vec<ConversationMessageDto>,
+    pub updated_at: DateTime<Utc>,
+}
+
+fn parse_language(raw: &str) -> Result<Language, ApiError> {
+    Language::parse(raw).map_err(ApiError::from)
+}
+
+fn to_dto(m: EditorConversationMessage) -> ConversationMessageDto {
+    ConversationMessageDto {
+        role: m.role,
+        content: m.content,
+        ts: m.ts,
+    }
+}
+
+fn from_dto(m: ConversationMessageDto) -> EditorConversationMessage {
+    EditorConversationMessage {
+        role: m.role,
+        content: m.content,
+        ts: m.ts,
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/pages/{id}/editor-conversation",
+    params(
+        ("id" = Uuid, Path, description = "page id"),
+        ConversationQuery,
+    ),
+    responses(
+        (status = 200, description = "Persisted conversation or an empty transcript if none saved yet.", body = ConversationResponse),
+        (status = 401, description = "unauthorized"),
+        (status = 403, description = "forbidden"),
+        (status = 404, description = "page not found"),
+    ),
+    security(("bearer" = [])),
+    tag = "editor"
+)]
+pub async fn get_conversation(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(page_id): Path<Uuid>,
+    Query(params): Query<ConversationQuery>,
+) -> Result<Json<ConversationResponse>, ApiError> {
+    let language = parse_language(&params.language)?;
+    let conversation = state
+        .use_cases
+        .load_editor_conversation
+        .execute(auth.as_actor(), page_id, language.clone())
+        .await?;
+
+    let response = match conversation {
+        Some(c) => ConversationResponse {
+            page_id: c.page_id,
+            language: c.language.into_string(),
+            messages: c.messages.into_iter().map(to_dto).collect(),
+            updated_at: c.updated_at,
+        },
+        None => ConversationResponse {
+            page_id,
+            language: language.into_string(),
+            messages: Vec::new(),
+            updated_at: Utc::now(),
+        },
+    };
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    put,
+    path = "/pages/{id}/editor-conversation",
+    params(
+        ("id" = Uuid, Path, description = "page id"),
+        ConversationQuery,
+    ),
+    request_body = SaveConversationRequest,
+    responses(
+        (status = 200, description = "Updated conversation echo (client uses `updated_at` for the banner).", body = ConversationResponse),
+        (status = 400, description = "validation error"),
+        (status = 401, description = "unauthorized"),
+        (status = 403, description = "forbidden"),
+        (status = 404, description = "page not found"),
+    ),
+    security(("bearer" = [])),
+    tag = "editor"
+)]
+pub async fn put_conversation(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(page_id): Path<Uuid>,
+    Query(params): Query<ConversationQuery>,
+    Json(body): Json<SaveConversationRequest>,
+) -> Result<Json<ConversationResponse>, ApiError> {
+    let language = parse_language(&params.language)?;
+    let messages = body.messages.into_iter().map(from_dto).collect();
+
+    let saved = state
+        .use_cases
+        .save_editor_conversation
+        .execute(
+            auth.as_actor(),
+            SaveEditorConversationCommand {
+                page_id,
+                language,
+                messages,
+            },
+        )
+        .await?;
+
+    Ok(Json(ConversationResponse {
+        page_id: saved.page_id,
+        language: saved.language.into_string(),
+        messages: saved.messages.into_iter().map(to_dto).collect(),
+        updated_at: saved.updated_at,
+    }))
 }

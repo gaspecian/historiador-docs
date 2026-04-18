@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::infrastructure::auth::refresh_tokens as rt;
 use crate::domain::error::ApplicationError;
 use crate::domain::port::session_repository::SessionRepository;
+use crate::infrastructure::auth::refresh_tokens as rt;
 
 pub struct LogoutUseCase {
     sessions: Arc<dyn SessionRepository>,

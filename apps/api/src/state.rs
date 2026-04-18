@@ -4,8 +4,8 @@ use std::sync::Arc;
 use sqlx::PgPool;
 
 use crate::infrastructure::crypto::raw::Cipher;
-use crate::presentation::UseCases;
 use crate::infrastructure::llm::probe::LlmProbe;
+use crate::presentation::UseCases;
 use historiador_db::chronik::ChronikClient;
 use historiador_db::vector_store::VectorStore;
 use historiador_llm::{EmbeddingClient, TextGenerationClient};

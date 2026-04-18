@@ -69,7 +69,8 @@ impl InitializeInstallationUseCase {
                 )))
             })?;
 
-        let password_hash = pw::hash(&cmd.admin_password).map_err(ApplicationError::Infrastructure)?;
+        let password_hash =
+            pw::hash(&cmd.admin_password).map_err(ApplicationError::Infrastructure)?;
 
         let (encrypted_key, base_url): (Option<String>, Option<String>) = match cmd.llm_provider {
             LlmProvider::Ollama => (None, Some(cmd.llm_api_key.trim().to_string())),

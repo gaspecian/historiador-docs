@@ -33,6 +33,7 @@ mod application;
 mod auth;
 mod health;
 mod infrastructure;
+mod jsonrpc;
 mod query;
 mod state;
 
@@ -120,8 +121,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Build vector store: Chronik if configured, else in-memory fallback.
+    // Build vector store: Chronik if configured, else bail unless
+    // ALLOW_IN_MEMORY_VECTOR_STORE=true (code review finding 4.4).
     let chronik_url = std::env::var("CHRONIK_SQL_URL").ok();
+    let allow_in_memory = historiador_db::vector_store::allow_in_memory_vector_store();
     let vector_store: Arc<dyn VectorStore> = match &chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
@@ -133,15 +136,40 @@ async fn main() -> anyhow::Result<()> {
                     tracing::info!("MCP vector store: Chronik-Stream");
                     Arc::new(ChronikVectorStore::new(client))
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to init Chronik — falling back to in-memory");
+                Err(e) if allow_in_memory => {
+                    tracing::warn!(
+                        error = %e,
+                        "⚠️  Chronik init failed — MCP falling back to in-memory vector \
+                         store because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
+                         DATA WILL BE LOST ON RESTART. Do not use this in production."
+                    );
                     Arc::new(InMemoryVectorStore::new())
+                }
+                Err(e) => {
+                    anyhow::bail!(
+                        "MCP: Chronik init failed ({e}). Start Chronik \
+                         (`docker compose up -d chronik`) or set \
+                         ALLOW_IN_MEMORY_VECTOR_STORE=true for dev-only \
+                         in-memory fallback (data lost on restart)."
+                    );
                 }
             }
         }
-        _ => {
-            tracing::info!("MCP vector store: in-memory (CHRONIK_SQL_URL not set)");
+        _ if allow_in_memory => {
+            tracing::warn!(
+                "⚠️  MCP: CHRONIK_SQL_URL not set — using in-memory vector store \
+                 because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
+                 DATA WILL BE LOST ON RESTART. Do not use this in production."
+            );
             Arc::new(InMemoryVectorStore::new())
+        }
+        _ => {
+            anyhow::bail!(
+                "MCP: CHRONIK_SQL_URL is not set and ALLOW_IN_MEMORY_VECTOR_STORE \
+                 is not true. Start Chronik (`docker compose up -d chronik`) or \
+                 set ALLOW_IN_MEMORY_VECTOR_STORE=true for dev-only in-memory \
+                 fallback (data lost on restart)."
+            );
         }
     };
 
@@ -168,14 +196,16 @@ async fn main() -> anyhow::Result<()> {
         workspace_id,
     });
 
-    // Routes: /health is public, /query requires bearer token.
-    let authed_routes =
-        Router::new()
-            .route("/query", post(query::handler))
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth::bearer_auth,
-            ));
+    // Routes: /health is public; /mcp (JSON-RPC 2.0 MCP protocol) and
+    // /query (internal custom REST alias, kept for the web UI) both
+    // require bearer token.
+    let authed_routes = Router::new()
+        .route("/mcp", post(jsonrpc::handler))
+        .route("/query", post(query::handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::bearer_auth,
+        ));
 
     let app = Router::new()
         .route("/health", get(health::handler))

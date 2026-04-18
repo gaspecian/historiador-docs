@@ -6,10 +6,10 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use historiador_db::postgres::users::Role as DbRole;
 
-use crate::infrastructure::auth::jwt::{decode_token, encode_token, Claims};
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::token_issuer::{AccessClaims, TokenIssuer};
 use crate::domain::value::Role;
+use crate::infrastructure::auth::jwt::{decode_token, encode_token, Claims};
 
 pub struct JwtTokenIssuer {
     secret: Vec<u8>,
@@ -25,11 +25,8 @@ impl TokenIssuer for JwtTokenIssuer {
     fn issue_access(&self, claims: &AccessClaims) -> Result<String, ApplicationError> {
         // Reuse `Claims::new` so jti/iat/exp policy stays centralized,
         // then override exp to the caller-provided deadline.
-        let mut jwt_claims = Claims::new(
-            claims.user_id,
-            claims.workspace_id,
-            role_to_db(claims.role),
-        );
+        let mut jwt_claims =
+            Claims::new(claims.user_id, claims.workspace_id, role_to_db(claims.role));
         jwt_claims.exp = claims.expires_at.timestamp();
 
         encode_token(&jwt_claims, &self.secret).map_err(ApplicationError::Infrastructure)

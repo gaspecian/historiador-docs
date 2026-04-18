@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::admin::LogMcpQueryCommand;
-use crate::presentation::extractor::AuthUser;
 use crate::domain::port::query_analytics;
 use crate::presentation::error::ApiError;
+use crate::presentation::extractor::AuthUser;
 use crate::state::AppState;
 
 // ---- MCP query log (internal endpoint) ----

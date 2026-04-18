@@ -53,10 +53,7 @@ impl UserRepository for PostgresUserRepository {
         Ok(row.map(mapper::user))
     }
 
-    async fn list_by_workspace(
-        &self,
-        workspace_id: Uuid,
-    ) -> Result<Vec<User>, ApplicationError> {
+    async fn list_by_workspace(&self, workspace_id: Uuid) -> Result<Vec<User>, ApplicationError> {
         let rows = users::list_by_workspace(&self.pool, workspace_id).await?;
         Ok(rows.into_iter().map(mapper::user).collect())
     }

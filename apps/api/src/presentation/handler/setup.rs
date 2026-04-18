@@ -10,8 +10,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::application::setup::InitializeInstallationCommand;
-use crate::presentation::error::ApiError;
 use crate::infrastructure::llm::probe::LlmProvider;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]

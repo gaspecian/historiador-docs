@@ -18,8 +18,8 @@ use historiador_db::postgres::users::Role;
 use uuid::Uuid;
 
 use crate::domain::value::{Actor, Role as DomainRole};
-use crate::presentation::error::ApiError;
 use crate::infrastructure::auth::jwt;
+use crate::presentation::error::ApiError;
 use crate::state::AppState;
 
 /// Authenticated user, derived from a valid access token.

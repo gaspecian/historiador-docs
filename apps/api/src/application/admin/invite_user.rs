@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::infrastructure::auth::refresh_tokens::{self as rt, INVITE_TOKEN_TTL_DAYS};
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::user_repository::{NewPendingUser, UserRepository};
 use crate::domain::value::{Actor, Email, Role};
+use crate::infrastructure::auth::refresh_tokens::{self as rt, INVITE_TOKEN_TTL_DAYS};
 
 pub struct InviteUserCommand {
     pub email: Email,

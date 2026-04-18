@@ -38,10 +38,7 @@ pub trait UserRepository: Send + Sync {
         invite_token_hash: &str,
     ) -> Result<Option<User>, ApplicationError>;
 
-    async fn list_by_workspace(
-        &self,
-        workspace_id: Uuid,
-    ) -> Result<Vec<User>, ApplicationError>;
+    async fn list_by_workspace(&self, workspace_id: Uuid) -> Result<Vec<User>, ApplicationError>;
 
     async fn insert_pending(&self, input: NewPendingUser) -> Result<Uuid, ApplicationError>;
 
@@ -49,5 +46,6 @@ pub trait UserRepository: Send + Sync {
     async fn activate(&self, user_id: Uuid, password_hash: &str) -> Result<(), ApplicationError>;
 
     /// Returns true iff a row was updated.
-    async fn deactivate(&self, user_id: Uuid, workspace_id: Uuid) -> Result<bool, ApplicationError>;
+    async fn deactivate(&self, user_id: Uuid, workspace_id: Uuid)
+        -> Result<bool, ApplicationError>;
 }

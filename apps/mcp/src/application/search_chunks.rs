@@ -53,10 +53,7 @@ impl SearchChunksUseCase {
         }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: SearchChunksCommand,
-    ) -> Result<SearchChunksResult, McpError> {
+    pub async fn execute(&self, cmd: SearchChunksCommand) -> Result<SearchChunksResult, McpError> {
         let language_filter_applied = cmd.language.is_some();
         let top_k = cmd.top_k.clamp(1, 20);
 

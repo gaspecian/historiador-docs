@@ -26,26 +26,29 @@ use crate::application::collections::{
     CreateCollectionUseCase, DeleteCollectionUseCase, ListCollectionsUseCase,
     UpdateCollectionUseCase,
 };
-use crate::application::editor::{GenerateDraftUseCase, IterateDraftUseCase};
+use crate::application::editor::{
+    GenerateDraftUseCase, IterateDraftUseCase, LoadEditorConversationUseCase,
+    SaveEditorConversationUseCase,
+};
 use crate::application::export::{ExportPageUseCase, ExportWorkspaceUseCase};
 use crate::application::pages::{
     CreatePageUseCase, DraftPageUseCase, GetPageUseCase, GetPageVersionsUseCase,
-    GetVersionHistoryItemUseCase, ListPagesUseCase, ListVersionHistoryUseCase,
-    PublishPageUseCase, RestoreVersionUseCase, SearchPagesUseCase, UpdatePageUseCase,
+    GetVersionHistoryItemUseCase, ListPagesUseCase, ListVersionHistoryUseCase, PublishPageUseCase,
+    RestoreVersionUseCase, SearchPagesUseCase, UpdatePageUseCase,
 };
 use crate::application::setup::{
     InitializeInstallationUseCase, ListOllamaModelsUseCase, ProbeLlmUseCase,
 };
-use crate::infrastructure::crypto::raw::Cipher as AesCipher;
 use crate::domain::port::cipher::Cipher as CipherPort;
 use crate::domain::port::llm_probe::LlmProbe;
 use crate::infrastructure::chronik::{ChronikEventProducer, ChronikQueryAnalytics};
 use crate::infrastructure::chunker::DefaultChunkPipeline;
+use crate::infrastructure::crypto::raw::Cipher as AesCipher;
 use crate::infrastructure::crypto::AesGcmCipher;
 use crate::infrastructure::persistence::postgres::{
-    PostgresCollectionRepository, PostgresExportRepository, PostgresInstallationRepository,
-    PostgresPageRepository, PostgresSessionRepository, PostgresUserRepository,
-    PostgresVersionHistoryRepository, PostgresWorkspaceRepository,
+    PostgresCollectionRepository, PostgresEditorConversationRepository, PostgresExportRepository,
+    PostgresInstallationRepository, PostgresPageRepository, PostgresSessionRepository,
+    PostgresUserRepository, PostgresVersionHistoryRepository, PostgresWorkspaceRepository,
 };
 use crate::infrastructure::token::JwtTokenIssuer;
 
@@ -111,6 +114,8 @@ pub struct UseCases {
     // editor
     pub generate_draft: Arc<GenerateDraftUseCase>,
     pub iterate_draft: Arc<IterateDraftUseCase>,
+    pub load_editor_conversation: Arc<LoadEditorConversationUseCase>,
+    pub save_editor_conversation: Arc<SaveEditorConversationUseCase>,
 
     // export
     pub export_workspace: Arc<ExportWorkspaceUseCase>,
@@ -126,6 +131,8 @@ impl UseCases {
         let workspaces = Arc::new(PostgresWorkspaceRepository::new(deps.pool.clone()));
         let sessions = Arc::new(PostgresSessionRepository::new(deps.pool.clone()));
         let history = Arc::new(PostgresVersionHistoryRepository::new(deps.pool.clone()));
+        let editor_conversations =
+            Arc::new(PostgresEditorConversationRepository::new(deps.pool.clone()));
         let _installation = Arc::new(PostgresInstallationRepository::new(deps.pool.clone()));
         let export_repo = Arc::new(PostgresExportRepository::new(deps.pool.clone()));
 
@@ -234,6 +241,14 @@ impl UseCases {
                 deps.text_generation_client.clone(),
             )),
             iterate_draft: Arc::new(IterateDraftUseCase::new(deps.text_generation_client)),
+            load_editor_conversation: Arc::new(LoadEditorConversationUseCase::new(
+                pages.clone(),
+                editor_conversations.clone(),
+            )),
+            save_editor_conversation: Arc::new(SaveEditorConversationUseCase::new(
+                pages.clone(),
+                editor_conversations,
+            )),
 
             // export
             export_workspace: Arc::new(ExportWorkspaceUseCase::new(

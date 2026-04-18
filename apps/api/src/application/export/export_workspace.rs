@@ -34,7 +34,10 @@ impl ExportWorkspaceUseCase {
             .find_by_id(actor.workspace_id)
             .await?
             .ok_or(DomainError::NotFound)?;
-        let pages = self.export_repo.find_all_published(actor.workspace_id).await?;
+        let pages = self
+            .export_repo
+            .find_all_published(actor.workspace_id)
+            .await?;
         Ok(WorkspaceExportView { workspace, pages })
     }
 }

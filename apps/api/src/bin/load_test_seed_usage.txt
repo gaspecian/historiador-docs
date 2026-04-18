@@ -1,0 +1,14 @@
+load-test-seed — seed Chronik with synthetic chunks for the MCP load test.
+
+USAGE:
+    cargo run --release -p historiador_api --bin load-test-seed -- [OPTIONS]
+
+OPTIONS:
+    --chunks N     total chunks to upsert (default: 10000)
+    --dim N        embedding dimension (default: 1536)
+    --batch N      chunks per upsert call (default: 100)
+    -h, --help     show this help
+
+ENV:
+    CHRONIK_SQL_URL    required, e.g. http://localhost:6092
+    CHRONIK_SEARCH_URL optional, defaults to CHRONIK_SQL_URL

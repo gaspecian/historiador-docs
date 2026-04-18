@@ -16,6 +16,11 @@ path = "src/main.rs"
 name = "gen-openapi"
 path = "src/bin/gen-openapi.rs"
 
+# Sprint 10 item #7 — seed 10k synthetic chunks for the MCP load test.
+[[bin]]
+name = "load-test-seed"
+path = "src/bin/load_test_seed.rs"
+
 [dependencies]
 historiador_db = { path = "../../crates/db" }
 historiador_chunker = { path = "../../crates/chunker" }

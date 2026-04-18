@@ -117,9 +117,7 @@ pub fn version_history_entry(row: vh_rows::PageVersionHistoryRow) -> VersionHist
     }
 }
 
-pub fn version_history_summary(
-    row: vh_rows::PageVersionHistorySummary,
-) -> VersionHistorySummary {
+pub fn version_history_summary(row: vh_rows::PageVersionHistorySummary) -> VersionHistorySummary {
     VersionHistorySummary {
         id: row.id,
         version_number: row.version_number,
