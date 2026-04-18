@@ -37,7 +37,10 @@ const COLLECTION_COUNT: u32 = 50;
 const CHUNKS_PER_PAGE: usize = 8; // realistic: 6-10 chunks per page
 
 fn env_u64(key: &str, default: u64) -> u64 {
-    env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 fn env_str(key: &str, default: &str) -> String {
