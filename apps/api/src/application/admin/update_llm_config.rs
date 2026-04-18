@@ -64,9 +64,7 @@ impl UpdateLlmConfigUseCase {
                 .probe(cmd.llm_provider, &cmd.llm_api_key)
                 .await
                 .map_err(|e| {
-                    ApplicationError::Domain(DomainError::Validation(format!(
-                        "LLM rejected: {e}"
-                    )))
+                    ApplicationError::Domain(DomainError::Validation(format!("LLM rejected: {e}")))
                 })?;
         }
 

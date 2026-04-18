@@ -35,10 +35,7 @@ pub struct VersionHistoryPage {
 }
 
 impl ListVersionHistoryUseCase {
-    pub fn new(
-        pages: Arc<dyn PageRepository>,
-        history: Arc<dyn VersionHistoryRepository>,
-    ) -> Self {
+    pub fn new(pages: Arc<dyn PageRepository>, history: Arc<dyn VersionHistoryRepository>) -> Self {
         Self { pages, history }
     }
 
@@ -58,11 +55,7 @@ impl ListVersionHistoryUseCase {
 
         let (summaries, total) = self
             .history
-            .list(
-                cmd.page_id,
-                &cmd.language,
-                PageRequest { page, per_page },
-            )
+            .list(cmd.page_id, &cmd.language, PageRequest { page, per_page })
             .await?;
 
         Ok(VersionHistoryPage {
@@ -82,10 +75,7 @@ pub struct GetVersionHistoryItemUseCase {
 }
 
 impl GetVersionHistoryItemUseCase {
-    pub fn new(
-        pages: Arc<dyn PageRepository>,
-        history: Arc<dyn VersionHistoryRepository>,
-    ) -> Self {
+    pub fn new(pages: Arc<dyn PageRepository>, history: Arc<dyn VersionHistoryRepository>) -> Self {
         Self { pages, history }
     }
 

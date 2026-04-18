@@ -4,9 +4,9 @@ use chrono::Utc;
 
 use historiador_db::password as pw;
 
-use crate::infrastructure::auth::refresh_tokens as rt;
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::user_repository::UserRepository;
+use crate::infrastructure::auth::refresh_tokens as rt;
 
 pub struct ActivateCommand {
     pub invite_token: String,
@@ -35,8 +35,7 @@ impl ActivateUseCase {
             return Err(DomainError::Forbidden.into());
         }
 
-        let password_hash = pw::hash(&cmd.password)
-            .map_err(ApplicationError::Infrastructure)?;
+        let password_hash = pw::hash(&cmd.password).map_err(ApplicationError::Infrastructure)?;
         self.users.activate(user.id, &password_hash).await?;
         Ok(())
     }

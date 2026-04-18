@@ -30,17 +30,17 @@ use crate::application::editor::{GenerateDraftUseCase, IterateDraftUseCase};
 use crate::application::export::{ExportPageUseCase, ExportWorkspaceUseCase};
 use crate::application::pages::{
     CreatePageUseCase, DraftPageUseCase, GetPageUseCase, GetPageVersionsUseCase,
-    GetVersionHistoryItemUseCase, ListPagesUseCase, ListVersionHistoryUseCase,
-    PublishPageUseCase, RestoreVersionUseCase, SearchPagesUseCase, UpdatePageUseCase,
+    GetVersionHistoryItemUseCase, ListPagesUseCase, ListVersionHistoryUseCase, PublishPageUseCase,
+    RestoreVersionUseCase, SearchPagesUseCase, UpdatePageUseCase,
 };
 use crate::application::setup::{
     InitializeInstallationUseCase, ListOllamaModelsUseCase, ProbeLlmUseCase,
 };
-use crate::infrastructure::crypto::raw::Cipher as AesCipher;
 use crate::domain::port::cipher::Cipher as CipherPort;
 use crate::domain::port::llm_probe::LlmProbe;
 use crate::infrastructure::chronik::{ChronikEventProducer, ChronikQueryAnalytics};
 use crate::infrastructure::chunker::DefaultChunkPipeline;
+use crate::infrastructure::crypto::raw::Cipher as AesCipher;
 use crate::infrastructure::crypto::AesGcmCipher;
 use crate::infrastructure::persistence::postgres::{
     PostgresCollectionRepository, PostgresExportRepository, PostgresInstallationRepository,

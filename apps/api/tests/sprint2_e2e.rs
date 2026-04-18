@@ -21,8 +21,8 @@ use std::sync::Arc;
 use historiador_api::{
     app,
     infrastructure::crypto::raw::Cipher,
-    presentation::{BuildDeps, UseCases},
     infrastructure::llm::probe::{LlmProbe, StubProbe},
+    presentation::{BuildDeps, UseCases},
     state::AppState,
 };
 use historiador_db::vector_store::{InMemoryVectorStore, VectorStore};

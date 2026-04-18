@@ -63,10 +63,7 @@ impl VersionHistoryRepository for PostgresVersionHistoryRepository {
         Ok((summaries, total))
     }
 
-    async fn find_by_id(
-        &self,
-        id: Uuid,
-    ) -> Result<Option<VersionHistoryEntry>, ApplicationError> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<VersionHistoryEntry>, ApplicationError> {
         let row = page_version_history::find_by_id(&self.pool, id).await?;
         Ok(row.map(mapper::version_history_entry))
     }

@@ -19,9 +19,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::application::admin::UpdateLlmConfigCommand;
-use crate::presentation::extractor::AuthUser;
-use crate::presentation::error::ApiError;
 use crate::infrastructure::llm::probe::LlmProvider;
+use crate::presentation::error::ApiError;
+use crate::presentation::extractor::AuthUser;
 use crate::state::AppState;
 
 // ---- GET /admin/workspace ----
@@ -240,7 +240,10 @@ pub async fn reindex(
         }
         "openai" | "anthropic" => match plan.workspace.llm_api_key_encrypted.as_deref() {
             Some(encrypted) => {
-                let key = state.cipher.decrypt(encrypted).map_err(ApiError::Internal)?;
+                let key = state
+                    .cipher
+                    .decrypt(encrypted)
+                    .map_err(ApiError::Internal)?;
                 Arc::new(OpenAiEmbeddingClient::with_model(
                     &key,
                     &plan.workspace.embedding_model,

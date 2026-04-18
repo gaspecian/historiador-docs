@@ -104,9 +104,8 @@ impl PageRepository for PostgresPageRepository {
         page_id: Uuid,
         language: &Language,
     ) -> Result<Option<PageVersion>, ApplicationError> {
-        let row =
-            page_versions::find_by_page_and_language(&self.pool, page_id, language.as_str())
-                .await?;
+        let row = page_versions::find_by_page_and_language(&self.pool, page_id, language.as_str())
+            .await?;
         Ok(row.map(mapper::page_version))
     }
 

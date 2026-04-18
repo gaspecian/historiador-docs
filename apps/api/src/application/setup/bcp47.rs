@@ -4,30 +4,24 @@ use regex::Regex;
 
 use crate::domain::error::{ApplicationError, DomainError};
 
-pub fn validate_pair(
-    languages: &[String],
-    primary: &str,
-) -> Result<(), ApplicationError> {
+pub fn validate_pair(languages: &[String], primary: &str) -> Result<(), ApplicationError> {
     let re = Regex::new(r"^[a-z]{2,3}(-[A-Z]{2})?$").unwrap();
     for tag in languages {
         if !re.is_match(tag) {
-            return Err(DomainError::Validation(format!(
-                "invalid BCP 47 language tag: {tag}"
-            ))
-            .into());
+            return Err(
+                DomainError::Validation(format!("invalid BCP 47 language tag: {tag}")).into(),
+            );
         }
     }
     if !re.is_match(primary) {
-        return Err(DomainError::Validation(format!(
-            "invalid BCP 47 primary_language: {primary}"
-        ))
-        .into());
+        return Err(
+            DomainError::Validation(format!("invalid BCP 47 primary_language: {primary}")).into(),
+        );
     }
     if !languages.iter().any(|l| l == primary) {
-        return Err(DomainError::Validation(
-            "primary_language must be one of languages".into(),
-        )
-        .into());
+        return Err(
+            DomainError::Validation("primary_language must be one of languages".into()).into(),
+        );
     }
     Ok(())
 }

@@ -35,10 +35,7 @@ pub trait VersionHistoryRepository: Send + Sync {
         request: PageRequest,
     ) -> Result<(Vec<VersionHistorySummary>, i64), ApplicationError>;
 
-    async fn find_by_id(
-        &self,
-        id: Uuid,
-    ) -> Result<Option<VersionHistoryEntry>, ApplicationError>;
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<VersionHistoryEntry>, ApplicationError>;
 
     async fn has_recent_snapshot(
         &self,

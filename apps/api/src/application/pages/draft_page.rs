@@ -29,11 +29,7 @@ impl DraftPageUseCase {
         }
     }
 
-    pub async fn execute(
-        &self,
-        actor: Actor,
-        page_id: Uuid,
-    ) -> Result<PageView, ApplicationError> {
+    pub async fn execute(&self, actor: Actor, page_id: Uuid) -> Result<PageView, ApplicationError> {
         actor.require_role(Role::Author)?;
 
         let page = self

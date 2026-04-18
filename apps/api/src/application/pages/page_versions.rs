@@ -15,10 +15,7 @@ pub struct GetPageVersionsUseCase {
 }
 
 impl GetPageVersionsUseCase {
-    pub fn new(
-        pages: Arc<dyn PageRepository>,
-        workspaces: Arc<dyn WorkspaceRepository>,
-    ) -> Self {
+    pub fn new(pages: Arc<dyn PageRepository>, workspaces: Arc<dyn WorkspaceRepository>) -> Self {
         Self { pages, workspaces }
     }
 

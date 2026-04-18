@@ -27,10 +27,7 @@ impl ReindexPlan {
 }
 
 impl ReindexWorkspaceUseCase {
-    pub fn new(
-        workspaces: Arc<dyn WorkspaceRepository>,
-        pages: Arc<dyn PageRepository>,
-    ) -> Self {
+    pub fn new(workspaces: Arc<dyn WorkspaceRepository>, pages: Arc<dyn PageRepository>) -> Self {
         Self { workspaces, pages }
     }
 

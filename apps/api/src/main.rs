@@ -6,8 +6,8 @@ use anyhow::Context;
 use historiador_api::{
     app,
     infrastructure::crypto::raw::Cipher,
-    presentation::{BuildDeps, UseCases},
     infrastructure::llm::probe::HttpLlmProbe,
+    presentation::{BuildDeps, UseCases},
     state::AppState,
 };
 use historiador_db::{
