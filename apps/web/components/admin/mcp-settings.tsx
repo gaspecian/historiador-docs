@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
-import type { RegenerateTokenResponse, WorkspaceResponse } from "@historiador/types";
+import type { WorkspaceResponse } from "@historiador/types";
 
 interface Props {
  workspace: WorkspaceResponse;
@@ -19,9 +19,7 @@ export function McpSettings({ workspace }: Props) {
  if (!confirm("Regenerate the MCP bearer token? The old token will stop working immediately.")) return;
  setLoading(true);
  try {
- const data = await apiFetch<RegenerateTokenResponse>("/admin/workspace/regenerate-token", {
- method: "POST",
- });
+ const data = await adminService.regenerateToken();
  setToken(data.bearer_token);
  setShowToken(true);
  } catch {

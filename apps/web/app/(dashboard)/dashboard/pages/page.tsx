@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { usePages } from "@/lib/use-pages";
 import { PageList } from "@/components/pages/page-list";
 import { SearchBar } from "@/components/pages/search-bar";
 import { Button } from "@/components/ui/button";
-import type { WorkspaceResponse } from "@historiador/types";
 
 export default function PagesPage() {
   const router = useRouter();
@@ -16,7 +15,8 @@ export default function PagesPage() {
   const [workspaceLanguages, setWorkspaceLanguages] = useState<string[]>([]);
 
   useEffect(() => {
-    apiFetch<WorkspaceResponse>("/admin/workspace")
+    adminService
+      .getWorkspace()
       .then((ws) => {
         setWorkspaceLanguages(ws.languages);
       })

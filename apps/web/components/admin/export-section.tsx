@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { apiDownload } from "@/lib/api";
+import * as exportService from "@/lib/services/export";
 
 export function ExportSection() {
  const [loading, setLoading] = useState(false);
@@ -13,7 +13,7 @@ export function ExportSection() {
  setLoading(true);
  setError(null);
  try {
- await apiDownload("/export");
+ await exportService.workspaceZip();
  } catch (e) {
  setError(e instanceof Error ? e.message : String(e));
  } finally {

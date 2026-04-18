@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { QueryProviders } from "@/lib/query-client";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -38,7 +39,9 @@ export default function RootLayout({
       className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
+        <QueryProviders>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryProviders>
       </body>
     </html>
   );

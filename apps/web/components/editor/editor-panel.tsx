@@ -1,13 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { apiStream } from "@/lib/api";
+import { useEditorStream } from "@/features/editor";
 import { Button } from "@/components/ui/button";
-
-interface Message {
- role: "user" | "assistant";
- content: string;
-}
 
 interface Props {
  initialContent?: string;
@@ -15,91 +10,22 @@ interface Props {
  onSave?: (markdown: string) => void;
 }
 
-type DeltaEvent = { text: string };
-type ErrorEvent = { message: string };
-type DoneEvent = { length: number };
-type StreamPayload = DeltaEvent | ErrorEvent | DoneEvent;
-
-async function streamMarkdown(
- path: string,
- body: unknown,
- onChunk: (chunk: string) => void,
-): Promise<string> {
- let buffer = "";
- for await (const ev of apiStream<StreamPayload>(path, {
- method: "POST",
- body: JSON.stringify(body),
- })) {
- if (ev.event === "delta" && "text" in ev.data) {
- buffer += ev.data.text;
- onChunk(ev.data.text);
- } else if (ev.event === "error" && "message" in ev.data) {
- throw new Error(ev.data.message);
- } else if (ev.event === "done") {
- break;
- }
- }
- return buffer;
-}
-
 export function EditorPanel({ initialContent, language, onSave }: Props) {
  const [brief, setBrief] = useState("");
  const [instruction, setInstruction] = useState("");
- const [draft, setDraft] = useState(initialContent || "");
- const [messages, setMessages] = useState<Message[]>([]);
- const [streaming, setStreaming] = useState(false);
- const [liveAssistant, setLiveAssistant] = useState("");
+ const { draft, messages, streaming, liveAssistant, generateDraft, iterateDraft } =
+ useEditorStream({ initialDraft: initialContent });
 
- const generateDraft = async () => {
+ const submitGenerate = async () => {
  if (!brief.trim() || streaming) return;
- setStreaming(true);
- setLiveAssistant("");
- setMessages((prev) => [...prev, { role: "user", content: brief }]);
-
- try {
- const full = await streamMarkdown(
- "/editor/draft",
- { brief, language },
- (chunk) => setLiveAssistant((prev) => prev + chunk),
- );
- setDraft(full);
- setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+ await generateDraft({ brief, language });
  setBrief("");
- } catch (e) {
- setMessages((prev) => [
- ...prev,
- { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
- ]);
- } finally {
- setStreaming(false);
- setLiveAssistant("");
- }
  };
 
- const refineDraft = async () => {
+ const submitRefine = async () => {
  if (!instruction.trim() || !draft || streaming) return;
- setStreaming(true);
- setLiveAssistant("");
- setMessages((prev) => [...prev, { role: "user", content: `Refine: ${instruction}` }]);
-
- try {
- const full = await streamMarkdown(
- "/editor/iterate",
- { current_draft: draft, instruction },
- (chunk) => setLiveAssistant((prev) => prev + chunk),
- );
- setDraft(full);
- setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+ await iterateDraft({ instruction });
  setInstruction("");
- } catch (e) {
- setMessages((prev) => [
- ...prev,
- { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
- ]);
- } finally {
- setStreaming(false);
- setLiveAssistant("");
- }
  };
 
  return (
@@ -150,10 +76,10 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  value={brief}
  onChange={(e) => setBrief(e.target.value)}
  onKeyDown={(e) => {
- if (e.key === "Enter" && e.metaKey) generateDraft();
+ if (e.key === "Enter" && e.metaKey) submitGenerate();
  }}
  />
- <Button onClick={generateDraft} disabled={streaming || !brief.trim()}>
+ <Button onClick={submitGenerate} disabled={streaming || !brief.trim()}>
  Generate Draft
  </Button>
  </div>
@@ -166,10 +92,10 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  value={instruction}
  onChange={(e) => setInstruction(e.target.value)}
  onKeyDown={(e) => {
- if (e.key === "Enter") refineDraft();
+ if (e.key === "Enter") submitRefine();
  }}
  />
- <Button onClick={refineDraft} disabled={streaming || !instruction.trim()}>
+ <Button onClick={submitRefine} disabled={streaming || !instruction.trim()}>
  Refine
  </Button>
  </div>

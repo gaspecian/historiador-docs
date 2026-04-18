@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
-use crate::crypto::Cipher;
-use crate::setup::llm_probe::LlmProbe;
+use crate::infrastructure::crypto::raw::Cipher;
+use crate::presentation::UseCases;
+use crate::infrastructure::llm::probe::LlmProbe;
 use historiador_db::chronik::ChronikClient;
 use historiador_db::vector_store::VectorStore;
 use historiador_llm::{EmbeddingClient, TextGenerationClient};
@@ -33,4 +34,8 @@ pub struct AppState {
     pub text_generation_client: Arc<dyn TextGenerationClient>,
     /// Chronik-Stream client for event production and analytics queries (Sprint 7).
     pub chronik: Option<ChronikClient>,
+    /// Clean-architecture use-case bundle. Handlers rewired to Clean
+    /// reach here; legacy handlers continue to use the primitives
+    /// above until they are rewritten.
+    pub use_cases: Arc<UseCases>,
 }

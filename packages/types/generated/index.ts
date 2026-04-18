@@ -557,9 +557,7 @@ export interface components {
             date: string;
         };
         DraftRequest: {
-            /** @description Natural language description of the document to create. */
             brief: string;
-            /** @description Optional BCP 47 language tag for the output language. */
             language?: string | null;
         };
         /**
@@ -584,9 +582,7 @@ export interface components {
             user_id: string;
         };
         IterateRequest: {
-            /** @description The current draft markdown to refine. */
             current_draft: string;
-            /** @description Follow-up instruction describing what to change. */
             instruction: string;
         };
         LlmPatchRequest: {
@@ -603,18 +599,7 @@ export interface components {
         LlmPatchResponse: {
             /** Format: int64 */
             affected_page_versions: number;
-            /**
-             * @description When the embedding model changed and published chunks exist,
-             *     the admin must trigger a re-index — this field tells the UI
-             *     how many page versions are affected so it can show a confirm.
-             */
             requires_reindex: boolean;
-            /**
-             * @description True when the generation model changed. The live AppState
-             *     clients keep the previous config until the API process is
-             *     restarted; the UI surfaces this so the admin can plan a
-             *     restart.
-             */
             requires_restart: boolean;
             success: boolean;
         };
@@ -627,10 +612,6 @@ export interface components {
         LogoutRequest: {
             refresh_token: string;
         };
-        /**
-         * @description Response DTO for the analytics endpoint. Mirrors the Chronik
-         *     `McpQueryStats` but with `utoipa::ToSchema` for OpenAPI generation.
-         */
         McpAnalyticsResponse: {
             /** Format: int32 */
             period_days: number;
@@ -769,7 +750,7 @@ export interface components {
         };
         UpdatePageRequest: {
             content_markdown?: string | null;
-            /** @description BCP 47 language tag. Defaults to the version's current language. */
+            /** @description BCP 47 language tag. Defaults to "en" when omitted. */
             language?: string | null;
             title?: string | null;
         };

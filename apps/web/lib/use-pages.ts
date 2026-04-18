@@ -1,55 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "./api";
-import type { PageResponse } from "@historiador/types";
+// Backwards-compatible wrapper around the TanStack Query hooks. Keeps
+// the same `{ pages, isLoading, error, refresh, search }` shape that
+// existing consumers rely on while routing through the shared cache
+// so mutations elsewhere (publish, update, restore) invalidate this
+// view automatically.
+
+import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  queryKeys,
+  usePagesQuery,
+  useSearchPagesQuery,
+} from "@/lib/queries";
 
 export function usePages(collectionId: string | null) {
-  const [pages, setPages] = useState<PageResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const fetchPages = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const query = collectionId ? `?collection_id=${collectionId}` : "";
-      const data = await apiFetch<PageResponse[]>(`/pages${query}`);
-      setPages(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load pages");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [collectionId]);
+  const listQuery = usePagesQuery(collectionId);
+  const searchQueryResult = useSearchPagesQuery(searchQuery, searchQuery.trim().length > 0);
 
-  useEffect(() => {
-    fetchPages();
-  }, [fetchPages]);
+  const active = searchQuery.trim().length > 0 ? searchQueryResult : listQuery;
 
-  const search = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      fetchPages();
-      return;
-    }
-    try {
-      setIsLoading(true);
-      const data = await apiFetch<PageResponse[]>(
-        `/pages/search?q=${encodeURIComponent(query)}`,
-      );
-      setPages(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fetchPages]);
+  const refresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.pages.all });
+  }, [qc]);
+
+  const search = useCallback((query: string) => {
+    setSearchQuery(query);
+  }, []);
 
   return {
-    pages,
-    isLoading,
-    error,
-    refresh: fetchPages,
+    pages: active.data ?? [],
+    isLoading: active.isLoading,
+    error: active.error ? (active.error as Error).message : null,
+    refresh,
     search,
   };
 }

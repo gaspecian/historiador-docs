@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { UserList } from "@/components/admin/user-list";
 import { InviteUserForm } from "@/components/admin/invite-user-form";
 import { McpSettings } from "@/components/admin/mcp-settings";
@@ -24,8 +24,8 @@ export default function AdminPage() {
   const fetchData = useCallback(async () => {
     try {
       const [usersData, wsData] = await Promise.all([
-        apiFetch<UserResponse[]>("/admin/users"),
-        apiFetch<WorkspaceResponse>("/admin/workspace"),
+        adminService.listUsers(),
+        adminService.getWorkspace(),
       ]);
       setUsers(usersData);
       setWorkspace(wsData);

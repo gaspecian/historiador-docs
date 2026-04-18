@@ -60,7 +60,7 @@ services:
       - |
         /bin/ollama serve &
         sleep 3
-        /bin/ollama pull ${OLLAMA_MODEL:-llama3.2:1b} || true
+        /bin/ollama pull ${OLLAMA_MODEL:-llama3.1:8b} || true
         wait
     environment:
       OLLAMA_KEEP_ALIVE: "24h"

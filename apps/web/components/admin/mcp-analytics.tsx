@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import type { McpAnalyticsResponse } from "@historiador/types";
@@ -16,9 +16,7 @@ export function McpAnalytics() {
  setLoading(true);
  setError(null);
  try {
- const result = await apiFetch<McpAnalyticsResponse>(
- `/admin/analytics/mcp-queries?days=${days}`,
- );
+ const result = await adminService.mcpAnalytics(days);
  setData(result);
  } catch (e) {
  setError(e instanceof Error ? e.message : "Failed to load analytics");

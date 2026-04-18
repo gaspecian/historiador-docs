@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as collectionsService from "@/lib/services/collections";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -23,12 +23,9 @@ export function CreateCollectionDialog({ parentId, onCreated, onCancel }: Props)
     setLoading(true);
     setError("");
     try {
-      await apiFetch("/collections", {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          parent_id: parentId || null,
-        }),
+      await collectionsService.create({
+        name: name.trim(),
+        parent_id: parentId || null,
       });
       onCreated();
     } catch (err) {

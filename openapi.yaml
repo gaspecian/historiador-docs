@@ -1007,12 +1007,10 @@ components:
       properties:
         brief:
           type: string
-          description: Natural language description of the document to create.
         language:
           type:
           - string
           - 'null'
-          description: Optional BCP 47 language tag for the output language.
     HealthResponse:
       type: object
       description: |-
@@ -1063,10 +1061,8 @@ components:
       properties:
         current_draft:
           type: string
-          description: The current draft markdown to refine.
         instruction:
           type: string
-          description: Follow-up instruction describing what to change.
     LlmPatchRequest:
       type: object
       required:
@@ -1099,17 +1095,8 @@ components:
           format: int64
         requires_reindex:
           type: boolean
-          description: |-
-            When the embedding model changed and published chunks exist,
-            the admin must trigger a re-index — this field tells the UI
-            how many page versions are affected so it can show a confirm.
         requires_restart:
           type: boolean
-          description: |-
-            True when the generation model changed. The live AppState
-            clients keep the previous config until the API process is
-            restarted; the UI surfaces this so the admin can plan a
-            restart.
         success:
           type: boolean
     LlmProvider:
@@ -1138,9 +1125,6 @@ components:
           type: string
     McpAnalyticsResponse:
       type: object
-      description: |-
-        Response DTO for the analytics endpoint. Mirrors the Chronik
-        `McpQueryStats` but with `utoipa::ToSchema` for OpenAPI generation.
       required:
       - period_days
       - total_queries
@@ -1468,7 +1452,7 @@ components:
           type:
           - string
           - 'null'
-          description: BCP 47 language tag. Defaults to the version's current language.
+          description: BCP 47 language tag. Defaults to "en" when omitted.
         title:
           type:
           - string
