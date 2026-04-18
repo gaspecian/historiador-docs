@@ -2,28 +2,20 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { apiStream } from "@/lib/api";
+import * as editorService from "@/lib/services/editor";
+import type { EditorEvent } from "@/lib/services/editor";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-type DeltaEvent = { text: string };
-type ErrorEvent = { message: string };
-type DoneEvent = { length: number };
-type StreamPayload = DeltaEvent | ErrorEvent | DoneEvent;
-
-async function streamMarkdown(
-  path: string,
-  body: unknown,
+async function collectStream(
+  stream: AsyncGenerator<EditorEvent, void, void>,
   onChunk: (chunk: string) => void,
 ): Promise<string> {
   let buffer = "";
-  for await (const ev of apiStream<StreamPayload>(path, {
-    method: "POST",
-    body: JSON.stringify(body),
-  })) {
+  for await (const ev of stream) {
     if (ev.event === "delta" && "text" in ev.data) {
       buffer += ev.data.text;
       onChunk(ev.data.text);
@@ -71,9 +63,8 @@ export default function EditorPage() {
     setMessages((prev) => [...prev, { role: "user", content: brief }]);
 
     try {
-      const full = await streamMarkdown(
-        "/editor/draft",
-        { brief },
+      const full = await collectStream(
+        editorService.draft({ brief }),
         (chunk) => setLiveAssistant((prev) => prev + chunk),
       );
       setDraft(full);
@@ -100,9 +91,8 @@ export default function EditorPage() {
     ]);
 
     try {
-      const full = await streamMarkdown(
-        "/editor/iterate",
-        { current_draft: draft, instruction },
+      const full = await collectStream(
+        editorService.iterate({ current_draft: draft, instruction }),
         (chunk) => setLiveAssistant((prev) => prev + chunk),
       );
       setDraft(full);

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { apiDownload, apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
+import * as pagesService from "@/lib/services/pages";
+import * as exportService from "@/lib/services/export";
 import { EditorPanel } from "@/components/editor/editor-panel";
 import { LanguageTabs } from "@/components/pages/language-tabs";
 import { PublishConfirmModal } from "@/components/pages/publish-confirm-modal";
@@ -11,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Spinner } from "@/components/ui/spinner";
-import type { PageResponse, WorkspaceResponse } from "@historiador/types";
+import type { PageResponse } from "@historiador/types";
 
 export default function PageDetailPage() {
   const params = useParams();
@@ -30,8 +32,8 @@ export default function PageDetailPage() {
 
   useEffect(() => {
     Promise.all([
-      apiFetch<PageResponse>(`/pages/${pageId}`),
-      apiFetch<WorkspaceResponse>("/admin/workspace").catch(() => null),
+      pagesService.get(pageId),
+      adminService.getWorkspace().catch(() => null),
     ]).then(([pageData, ws]) => {
       setPage(pageData);
       if (ws) {
@@ -70,16 +72,13 @@ export default function PageDetailPage() {
   const handleSave = async (markdown: string) => {
     setSaving(true);
     try {
-      await apiFetch(`/pages/${pageId}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title: activeVersion?.title || primaryVersion?.title || "Untitled",
-          content_markdown: markdown,
-          language: activeLanguage,
-        }),
+      await pagesService.update(pageId, {
+        title: activeVersion?.title || primaryVersion?.title || "Untitled",
+        content_markdown: markdown,
+        language: activeLanguage ?? undefined,
       });
       // Refresh page data
-      const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
+      const updated = await pagesService.get(pageId);
       setPage(updated);
     } catch {
       // Alpha error handling
@@ -108,9 +107,12 @@ export default function PageDetailPage() {
 
   const doToggleStatus = async () => {
     setShowPublishModal(false);
-    const endpoint = page.status === "draft" ? "publish" : "draft";
-    await apiFetch(`/pages/${pageId}/${endpoint}`, { method: "POST" });
-    const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
+    if (page.status === "draft") {
+      await pagesService.publish(pageId);
+    } else {
+      await pagesService.draft(pageId);
+    }
+    const updated = await pagesService.get(pageId);
     setPage(updated);
   };
 
@@ -150,12 +152,11 @@ export default function PageDetailPage() {
               {
                 label: "Download as Markdown",
                 onClick: () => {
-                  const qs = activeLanguage
-                    ? `?language=${encodeURIComponent(activeLanguage)}`
-                    : "";
-                  apiDownload(`/pages/${pageId}/export${qs}`).catch(() => {
-                    /* alpha error handling */
-                  });
+                  exportService
+                    .pageMarkdown(pageId, activeLanguage ?? undefined)
+                    .catch(() => {
+                      /* alpha error handling */
+                    });
                 },
                 disabled: page.status !== "published" || !activeLanguage,
               },
@@ -229,7 +230,7 @@ export default function PageDetailPage() {
         open={showHistory}
         onClose={() => setShowHistory(false)}
         onRestore={async () => {
-          const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
+          const updated = await pagesService.get(pageId);
           setPage(updated);
         }}
       />

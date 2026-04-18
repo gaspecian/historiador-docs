@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as pagesService from "@/lib/services/pages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -37,9 +37,11 @@ export function VersionHistoryPanel({
  const fetchHistory = useCallback(async () => {
  setLoading(true);
  try {
- const result = await apiFetch<VersionHistoryListResponse>(
- `/pages/${pageId}/history?language=${encodeURIComponent(language)}&page=${page}&per_page=20`,
- );
+ const result = await pagesService.history(pageId, {
+ language,
+ page,
+ per_page: 20,
+ });
  setData(result);
  } catch {
  // Silently fail for alpha
@@ -60,9 +62,7 @@ export function VersionHistoryPanel({
  setSelectedId(entry.id);
  setDetailLoading(true);
  try {
- const result = await apiFetch<VersionHistoryDetailResponse>(
- `/pages/${pageId}/history/${entry.id}`,
- );
+ const result = await pagesService.historyItem(pageId, entry.id);
  setDetail(result);
  } catch {
  setDetail(null);
@@ -75,9 +75,7 @@ export function VersionHistoryPanel({
  if (!selectedId) return;
  setRestoring(true);
  try {
- await apiFetch(`/pages/${pageId}/history/${selectedId}/restore`, {
- method: "POST",
- });
+ await pagesService.restoreVersion(pageId, selectedId);
  onRestore();
  onClose();
  } catch {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as pagesService from "@/lib/services/pages";
 import { PublishConfirmModal } from "./publish-confirm-modal";
 import { Button } from "@/components/ui/button";
 import type { PageStatus } from "@historiador/types";
@@ -44,8 +44,11 @@ export function DraftPublishToggle({
     setShowModal(false);
     setLoading(true);
     try {
-      const endpoint = status === "draft" ? "publish" : "draft";
-      await apiFetch(`/pages/${pageId}/${endpoint}`, { method: "POST" });
+      if (status === "draft") {
+        await pagesService.publish(pageId);
+      } else {
+        await pagesService.draft(pageId);
+      }
       onToggled();
     } catch {
       // Error handled silently for alpha

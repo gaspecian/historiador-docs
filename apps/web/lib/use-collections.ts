@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch } from "./api";
+import * as collectionsService from "./services/collections";
 import type { Collection, TreeNode } from "@historiador/types";
 
 function buildTree(collections: Collection[]): TreeNode[] {
@@ -33,7 +33,7 @@ export function useCollections() {
   const fetchCollections = useCallback(async () => {
     try {
       setIsLoading(true);
-      const data = await apiFetch<Collection[]>("/collections");
+      const data = await collectionsService.list();
       setCollections(data);
       setError(null);
     } catch (err) {

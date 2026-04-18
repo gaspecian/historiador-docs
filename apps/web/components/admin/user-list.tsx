@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { UserResponse } from "@historiador/types";
@@ -18,7 +18,7 @@ export function UserList({ users, onRefresh }: Props) {
  if (!confirm("Deactivate this user?")) return;
  setDeactivating(userId);
  try {
- await apiFetch(`/admin/users/${userId}/deactivate`, { method: "PATCH" });
+ await adminService.deactivateUser(userId);
  onRefresh();
  } catch {
  // Alpha error handling

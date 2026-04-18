@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "./api";
+import * as pagesService from "./services/pages";
 import type { PageResponse } from "@historiador/types";
 
 export function usePages(collectionId: string | null) {
@@ -12,8 +12,7 @@ export function usePages(collectionId: string | null) {
   const fetchPages = useCallback(async () => {
     try {
       setIsLoading(true);
-      const query = collectionId ? `?collection_id=${collectionId}` : "";
-      const data = await apiFetch<PageResponse[]>(`/pages${query}`);
+      const data = await pagesService.list(collectionId);
       setPages(data);
       setError(null);
     } catch (err) {
@@ -34,9 +33,7 @@ export function usePages(collectionId: string | null) {
     }
     try {
       setIsLoading(true);
-      const data = await apiFetch<PageResponse[]>(
-        `/pages/search?q=${encodeURIComponent(query)}`,
-      );
+      const data = await pagesService.search(query);
       setPages(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");

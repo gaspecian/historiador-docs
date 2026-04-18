@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
+import * as setupService from "@/lib/services/setup";
 import type { LlmProvider, WorkspaceResponse } from "@historiador/types";
 
 const VALID_PROVIDERS: LlmProvider[] = ["openai", "anthropic", "ollama", "test"];
@@ -108,24 +109,15 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     setProbeMessage(null);
     setProbeSuccess(null);
     try {
-      const data = await apiFetch<{ success: boolean; message: string }>(
-        "/setup/probe",
-        {
-          method: "POST",
-          body: JSON.stringify({ llm_provider: provider, llm_api_key: apiKey }),
-        },
-      );
+      const data = await setupService.probe({
+        llm_provider: provider,
+        llm_api_key: apiKey,
+      });
       setProbeSuccess(data.success);
       setProbeMessage(data.message);
       if (data.success && provider === "ollama") {
-        const models = await apiFetch<{ models: OllamaModelEntry[] }>(
-          "/setup/ollama-models",
-          {
-            method: "POST",
-            body: JSON.stringify({ base_url: apiKey }),
-          },
-        );
-        setOllamaModels(models.models);
+        const models = await setupService.ollamaModels(apiKey);
+        setOllamaModels(models);
       }
     } catch (e) {
       setProbeSuccess(false);
@@ -145,14 +137,11 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     setSaving(true);
     setResult(null);
     try {
-      const res = await apiFetch<LlmPatchResponse>("/admin/workspace/llm", {
-        method: "PATCH",
-        body: JSON.stringify({
-          llm_provider: provider,
-          llm_api_key: apiKey, // empty string ⇒ keep existing secret
-          generation_model: generationModel,
-          embedding_model: embeddingModel,
-        }),
+      const res = await adminService.updateLlmConfig({
+        llm_provider: provider,
+        llm_api_key: apiKey, // empty string ⇒ keep existing secret
+        generation_model: generationModel,
+        embedding_model: embeddingModel,
       });
       setResult(res);
       onSaved();
@@ -172,9 +161,7 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
   const triggerReindex = async () => {
     setReindexStatus("Re-indexing…");
     try {
-      const r = await apiFetch<{ scheduled: number }>("/admin/workspace/reindex", {
-        method: "POST",
-      });
+      const r = await adminService.reindex();
       setReindexStatus(`Re-indexing ${r.scheduled} page version(s) in background.`);
     } catch (e) {
       setReindexStatus(

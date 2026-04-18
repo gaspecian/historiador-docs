@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -32,10 +32,7 @@ export function InviteUserForm({ onInvited }: Props) {
  setLoading(true);
 
  try {
- const data = await apiFetch<InviteResponse>("/admin/users/invite", {
- method: "POST",
- body: JSON.stringify({ email, role }),
- });
+ const data = await adminService.invite({ email, role });
  setResult(data);
  setEmail("");
  onInvited();
