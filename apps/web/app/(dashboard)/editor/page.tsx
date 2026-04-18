@@ -2,31 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import * as editorService from "@/lib/services/editor";
-import type { EditorEvent } from "@/lib/services/editor";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-async function collectStream(
-  stream: AsyncGenerator<EditorEvent, void, void>,
-  onChunk: (chunk: string) => void,
-): Promise<string> {
-  let buffer = "";
-  for await (const ev of stream) {
-    if (ev.event === "delta" && "text" in ev.data) {
-      buffer += ev.data.text;
-      onChunk(ev.data.text);
-    } else if (ev.event === "error" && "message" in ev.data) {
-      throw new Error(ev.data.message);
-    } else if (ev.event === "done") {
-      break;
-    }
-  }
-  return buffer;
-}
+import { useEditorStream } from "@/features/editor";
 
 function Sparkle() {
   return <span aria-hidden className="text-lg">✨</span>;
@@ -51,68 +27,26 @@ function ArrowRight() {
 export default function EditorPage() {
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
-  const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [liveAssistant, setLiveAssistant] = useState("");
+  const { draft, messages, streaming, liveAssistant, generateDraft, iterateDraft } =
+    useEditorStream();
 
-  const generateDraft = async () => {
-    if (!brief.trim() || loading) return;
-    setLoading(true);
-    setLiveAssistant("");
-    setMessages((prev) => [...prev, { role: "user", content: brief }]);
-
-    try {
-      const full = await collectStream(
-        editorService.draft({ brief }),
-        (chunk) => setLiveAssistant((prev) => prev + chunk),
-      );
-      setDraft(full);
-      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
-      setBrief("");
-    } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
-      ]);
-    } finally {
-      setLoading(false);
-      setLiveAssistant("");
-    }
+  const submitGenerate = async () => {
+    if (!brief.trim() || streaming) return;
+    await generateDraft({ brief });
+    setBrief("");
   };
 
-  const refineDraft = async () => {
-    if (!instruction.trim() || !draft || loading) return;
-    setLoading(true);
-    setLiveAssistant("");
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: `Refine: ${instruction}` },
-    ]);
-
-    try {
-      const full = await collectStream(
-        editorService.iterate({ current_draft: draft, instruction }),
-        (chunk) => setLiveAssistant((prev) => prev + chunk),
-      );
-      setDraft(full);
-      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
-      setInstruction("");
-    } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${e instanceof Error ? e.message : e}` },
-      ]);
-    } finally {
-      setLoading(false);
-      setLiveAssistant("");
-    }
+  const submitRefine = async () => {
+    if (!instruction.trim() || !draft || streaming) return;
+    await iterateDraft({ instruction });
+    setInstruction("");
   };
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(draft);
   };
 
+  const loading = streaming;
   const showCheckin = draft && !loading;
 
   return (
@@ -190,14 +124,14 @@ export default function EditorPage() {
                 value={brief}
                 onChange={(e) => setBrief(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.metaKey) generateDraft();
+                  if (e.key === "Enter" && e.metaKey) submitGenerate();
                 }}
               />
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-text-tertiary" style={{ fontFamily: "var(--font-mono)" }}>
                   ⌘+Enter para gerar
                 </span>
-                <Button onClick={generateDraft} disabled={loading || !brief.trim()}>
+                <Button onClick={submitGenerate} disabled={loading || !brief.trim()}>
                   Gerar rascunho
                 </Button>
               </div>
@@ -210,10 +144,10 @@ export default function EditorPage() {
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") refineDraft();
+                  if (e.key === "Enter") submitRefine();
                 }}
               />
-              <Button onClick={refineDraft} disabled={loading || !instruction.trim()}>
+              <Button onClick={submitRefine} disabled={loading || !instruction.trim()}>
                 Refinar
               </Button>
             </div>
