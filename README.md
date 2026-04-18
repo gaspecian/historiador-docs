@@ -140,14 +140,14 @@ Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev
 ### 5. Conectar Claude Desktop ao endpoint MCP
 
 1. No dashboard, va em **Admin** > **MCP Server** e clique "Regenerate Token"
-2. Copie o token e a URL do endpoint MCP (ex: `http://localhost:3002/query`)
+2. Copie o token e a URL do endpoint MCP (`http://localhost:3002/mcp`)
 3. No Claude Desktop, abra Settings > MCP Servers e adicione:
 
 ```json
 {
   "mcpServers": {
     "historiador": {
-      "url": "http://localhost:3002/query",
+      "url": "http://localhost:3002/mcp",
       "token": "<seu-bearer-token>"
     }
   }
@@ -155,6 +155,12 @@ Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev
 ```
 
 4. Agora o Claude pode consultar sua documentacao diretamente via MCP.
+
+#### Conformidade com o protocolo MCP
+
+O endpoint `POST /mcp` fala [Model Context Protocol](https://modelcontextprotocol.io/) via JSON-RPC 2.0 (versao do protocolo `2025-03-26`), implementando `initialize`, `tools/list` e `tools/call`. Ele anuncia uma unica ferramenta `query` cujo `inputSchema` aceita `query` (obrigatorio), `language` (BCP 47, opcional) e `top_k` (1–20, default 5). A autenticacao e via header `Authorization: Bearer <token>`, com comparacao em tempo constante sobre o digest SHA-256 do token (ver [ADR-009](artifacts/adr/ADR-009-editor-transport-v1.md) e o relatorio de seguranca em [docs/security.md](docs/security.md)).
+
+O endpoint `POST /query` (REST customizado) permanece disponivel como alias interno para a UI web e nao faz parte do contrato MCP publico.
 
 ### Limitacoes conhecidas (Alpha)
 

@@ -2,6 +2,10 @@
 //! [`crate::application::SearchChunksUseCase`]. The handler only
 //! translates DTOs, runs the timer for telemetry, and fires the
 //! read-only proxied log to the API.
+//!
+//! The core logic is extracted into [`perform_query`] so the
+//! JSON-RPC 2.0 `tools/call` handler in [`crate::jsonrpc`] can reuse
+//! it without duplicating the telemetry path.
 
 use std::sync::Arc;
 
@@ -46,6 +50,18 @@ pub async fn handler(
     State(state): State<Arc<McpState>>,
     Json(body): Json<QueryRequest>,
 ) -> Result<Json<QueryResponse>, StatusCode> {
+    perform_query(&state, body).await.map(Json).map_err(|e| {
+        tracing::error!(error = %e, "search_chunks failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+/// Run a query against the vector store and fire the async telemetry
+/// log. Shared by `POST /query` and the JSON-RPC `tools/call` dispatcher.
+pub async fn perform_query(
+    state: &Arc<McpState>,
+    body: QueryRequest,
+) -> Result<QueryResponse, anyhow::Error> {
     let start = std::time::Instant::now();
     let top_k = body.top_k.unwrap_or(5);
     let query_text_for_log = body.query.clone();
@@ -57,11 +73,7 @@ pub async fn handler(
             language: body.language,
             top_k,
         })
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "search_chunks failed");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .await?;
 
     let chunks: Vec<ChunkResult> = result
         .chunks
@@ -98,9 +110,9 @@ pub async fn handler(
             .await;
     });
 
-    Ok(Json(QueryResponse {
+    Ok(QueryResponse {
         chunks,
         total_results,
         language_filter_applied: result.language_filter_applied,
-    }))
+    })
 }

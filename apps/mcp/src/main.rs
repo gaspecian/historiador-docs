@@ -33,6 +33,7 @@ mod application;
 mod auth;
 mod health;
 mod infrastructure;
+mod jsonrpc;
 mod query;
 mod state;
 
@@ -168,14 +169,16 @@ async fn main() -> anyhow::Result<()> {
         workspace_id,
     });
 
-    // Routes: /health is public, /query requires bearer token.
-    let authed_routes =
-        Router::new()
-            .route("/query", post(query::handler))
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth::bearer_auth,
-            ));
+    // Routes: /health is public; /mcp (JSON-RPC 2.0 MCP protocol) and
+    // /query (internal custom REST alias, kept for the web UI) both
+    // require bearer token.
+    let authed_routes = Router::new()
+        .route("/mcp", post(jsonrpc::handler))
+        .route("/query", post(query::handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::bearer_auth,
+        ));
 
     let app = Router::new()
         .route("/health", get(health::handler))
