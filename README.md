@@ -162,13 +162,32 @@ O endpoint `POST /mcp` fala [Model Context Protocol](https://modelcontextprotoco
 
 O endpoint `POST /query` (REST customizado) permanece disponivel como alias interno para a UI web e nao faz parte do contrato MCP publico.
 
-### Limitacoes conhecidas (Alpha)
+### Limitacoes conhecidas (v1.0)
 
-> **VexFS integration in progress** — os chunks persistem apenas enquanto o container esta rodando. Reiniciar o container limpa o vector store in-memory. Dados relacionais (paginas, usuarios, collections) persistem normalmente no Postgres.
+Resumo; a lista completa com racional vive em [CHANGELOG.md](CHANGELOG.md)
+na secao `[1.0.0] → Known Limitations`.
 
-- Sem envio de email: links de ativacao de convite devem ser compartilhados manualmente
-- Sem historico de versao de paginas: edicoes sobrescrevem a versao atual
-- Sem suporte a embeddings via Ollama: se usar Ollama como provedor LLM, embeddings usam stub
+- Transporte do editor e Server-Sent Events (SSE), nao WebSocket — ver
+  [ADR-009](artifacts/adr/ADR-009-editor-transport-v1.md). A reconstrucao
+  com WebSocket + modo conversacao/geracao + edicao inline de secao
+  esta planejada para v1.1.
+- Middleware RBAC no nivel de rota ainda nao existe; autorizacao e
+  feita na camada de use case. Defesa em profundidade em v1.1.
+- Envio de email ainda nao e automatico — convites retornam a URL de
+  ativacao e o admin compartilha manualmente. Em v1.1.
+- Embeddings nativos via Ollama estao como stub; OpenAI e Anthropic
+  funcionam nativamente.
+
+### Referencias
+
+- [docs/security.md](docs/security.md) — postura de seguranca, auditoria
+  de dependencias, comparacao em tempo constante do token MCP, separacao
+  de roles Postgres.
+- [docs/performance.md](docs/performance.md) — alvo de p95 < 2 s para
+  1.000 queries sobre 10.000 chunks + script de carga (`scripts/load-test/run.sh`).
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup local, pipeline de
+  OpenAPI → TypeScript, convencoes de PR.
+- [CHANGELOG.md](CHANGELOG.md) — lancamento v1.0.0 completo.
 
 ## Desenvolvimento
 
