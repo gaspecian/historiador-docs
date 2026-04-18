@@ -94,6 +94,23 @@ pub trait VectorStore: Send + Sync {
     async fn delete_by_page_version(&self, page_version_id: &str) -> Result<u64, VectorStoreError>;
 }
 
+/// Returns `true` when operators have explicitly opted into the
+/// in-memory vector store fallback by setting
+/// `ALLOW_IN_MEMORY_VECTOR_STORE=true` (or `1`).
+///
+/// The default is `false`: if `CHRONIK_SQL_URL` is missing or Chronik
+/// fails to initialize, callers should abort startup rather than
+/// silently fall back to `InMemoryVectorStore`, whose data disappears on
+/// every process restart and silently breaks durability-dependent
+/// features like page version history.
+///
+/// Closes code review finding 4.4 / Sprint 10 item #3.
+pub fn allow_in_memory_vector_store() -> bool {
+    std::env::var("ALLOW_IN_MEMORY_VECTOR_STORE")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false)
+}
+
 // ---- InMemoryVectorStore ----
 
 /// In-memory vector store for Sprint 3. Data is lost on process
