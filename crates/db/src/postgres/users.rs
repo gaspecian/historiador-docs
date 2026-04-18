@@ -122,6 +122,39 @@ pub async fn find_by_email(
     Ok(row)
 }
 
+/// Look up a user by email across all workspaces. Used by login on
+/// single-workspace installs where the caller does not yet know
+/// which workspace the email belongs to. Callers that do know the
+/// workspace should use [`find_by_email`] instead.
+pub async fn find_by_email_any_workspace(
+    pool: &PgPool,
+    email: &str,
+) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query_as::<_, User>(
+        "SELECT id, workspace_id, email, password_hash, role, active, \
+                invite_token_hash, invite_expires_at \
+           FROM users \
+          WHERE email = $1",
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+/// Look up a user by id.
+pub async fn find_by_id(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query_as::<_, User>(
+        "SELECT id, workspace_id, email, password_hash, role, active, \
+                invite_token_hash, invite_expires_at \
+           FROM users WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
 /// Look up a pending user by the sha256 hash of their invite token.
 pub async fn find_by_invite_token_hash(
     pool: &PgPool,

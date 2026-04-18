@@ -22,3 +22,11 @@ pub mod state;
 pub mod util;
 
 pub mod app;
+
+// Clean Architecture layers (scaffolding). These trees are populated
+// over the course of the refactor; existing modules above remain the
+// source of truth until each layer is migrated.
+pub mod application;
+pub mod domain;
+pub mod infrastructure;
+pub mod presentation;
