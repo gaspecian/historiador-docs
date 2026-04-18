@@ -1,30 +1,15 @@
-//! `POST /setup/init` — first-run installation.
-//!
-//! Flow:
-//!   1. Fast-fail if `installation.setup_complete` is already TRUE.
-//!   2. Validate the request DTO (email format, password length,
-//!      BCP 47 tags, `primary_language ∈ languages`).
-//!   3. Probe the LLM provider with the supplied key. **Runs before
-//!      the DB transaction** — we never hold a transaction open
-//!      across a network call.
-//!   4. Open a transaction: insert workspace → insert admin user →
-//!      mark installation complete → commit.
-//!   5. Flip the cached setup-complete flag so the gate middleware
-//!      stops returning 423.
+//! `/setup/{init,probe,ollama-models}` HTTP handlers — thin Clean
+//! Architecture wrappers over [`crate::application::setup`].
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use axum::{extract::State, Json};
-use historiador_db::{
-    password,
-    postgres::{installation, users, workspaces},
-};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::application::setup::InitializeInstallationCommand;
 use crate::error::ApiError;
 use crate::setup::llm_probe::LlmProvider;
 use crate::state::AppState;
@@ -69,58 +54,6 @@ pub struct SetupResponse {
     pub setup_complete: bool,
 }
 
-/// Validate a BCP 47 language tag. Accepts the small subset used by
-/// v1 (2–3 letter primary tag, optional 2-letter region subtag).
-/// Tighten later if/when we allow script/variant subtags.
-fn is_valid_bcp47(tag: &str) -> bool {
-    // Lazy static via once_cell would save a recompile per call but
-    // setup runs at most once; a local construction is fine.
-    let re = Regex::new(r"^[a-z]{2,3}(-[A-Z]{2})?$").unwrap();
-    re.is_match(tag)
-}
-
-/// Provider-appropriate default generation model when the client omits one.
-pub fn default_generation_model(provider: LlmProvider) -> &'static str {
-    match provider {
-        LlmProvider::OpenAi => "gpt-4o-mini",
-        LlmProvider::Anthropic => "claude-haiku-4-5-20251001",
-        LlmProvider::Ollama => "llama3.1:8b",
-        LlmProvider::Test => "stub",
-    }
-}
-
-/// Provider-appropriate default embedding model when the client omits one.
-pub fn default_embedding_model(provider: LlmProvider) -> &'static str {
-    match provider {
-        // Anthropic has no embedding API; production uses an OpenAI
-        // fallback with this model, so the default reflects that.
-        LlmProvider::OpenAi | LlmProvider::Anthropic => "text-embedding-3-small",
-        LlmProvider::Ollama => "nomic-embed-text",
-        LlmProvider::Test => "stub",
-    }
-}
-
-fn validate_languages(languages: &[String], primary: &str) -> Result<(), ApiError> {
-    for tag in languages {
-        if !is_valid_bcp47(tag) {
-            return Err(ApiError::Validation(format!(
-                "invalid BCP 47 language tag: {tag}"
-            )));
-        }
-    }
-    if !is_valid_bcp47(primary) {
-        return Err(ApiError::Validation(format!(
-            "invalid BCP 47 primary_language: {primary}"
-        )));
-    }
-    if !languages.iter().any(|l| l == primary) {
-        return Err(ApiError::Validation(
-            "primary_language must be one of languages".into(),
-        ));
-    }
-    Ok(())
-}
-
 #[utoipa::path(
     post,
     path = "/setup/init",
@@ -136,92 +69,32 @@ pub async fn init(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SetupRequest>,
 ) -> Result<Json<SetupResponse>, ApiError> {
-    // // 1. Gate: not already complete.
-    // if state.setup_complete.load(Ordering::Acquire) {
-    //     return Err(ApiError::Conflict("setup already complete".into()));
-    // }
-
-    // 2a. DTO validation.
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
-    // 2b. Language cross-field + BCP 47.
-    validate_languages(&body.languages, &body.primary_language)?;
 
-    // 3. LLM probe — before we touch the DB. Network timeout is 10s
-    //    (configured in HttpLlmProbe::default).
-    state
-        .llm_probe
-        .probe(body.llm_provider, &body.llm_api_key)
-        .await
-        .map_err(|e| ApiError::Validation(format!("LLM key rejected: {e}")))?;
+    let result = state
+        .use_cases
+        .initialize_installation
+        .execute(InitializeInstallationCommand {
+            admin_email: body.admin_email,
+            admin_password: body.admin_password,
+            workspace_name: body.workspace_name,
+            llm_provider: body.llm_provider,
+            llm_api_key: body.llm_api_key,
+            generation_model: body.generation_model,
+            embedding_model: body.embedding_model,
+            languages: body.languages,
+            primary_language: body.primary_language,
+        })
+        .await?;
 
-    // 4. Secrets we persist: hash the admin password, encrypt the LLM
-    //    key (only for cloud providers — Ollama's "api_key" field is
-    //    actually a base URL and is stored in the clear).
-    let password_hash = password::hash(&body.admin_password).map_err(ApiError::Internal)?;
-
-    let (encrypted_key, base_url): (Option<String>, Option<String>) = match body.llm_provider {
-        LlmProvider::Ollama => (None, Some(body.llm_api_key.trim().to_string())),
-        LlmProvider::Test => (None, None),
-        LlmProvider::OpenAi | LlmProvider::Anthropic => {
-            let encrypted = state
-                .cipher
-                .encrypt(&body.llm_api_key)
-                .map_err(ApiError::Internal)?;
-            (Some(encrypted), None)
-        }
-    };
-
-    let generation_model = body
-        .generation_model
-        .clone()
-        .unwrap_or_else(|| default_generation_model(body.llm_provider).to_string());
-    let embedding_model = body
-        .embedding_model
-        .clone()
-        .unwrap_or_else(|| default_embedding_model(body.llm_provider).to_string());
-
-    // 5. Transactional insert.
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-
-    let workspace_id = workspaces::insert(
-        &mut tx,
-        workspaces::NewWorkspace {
-            name: &body.workspace_name,
-            languages: &body.languages,
-            primary_language: &body.primary_language,
-            llm_provider: body.llm_provider.as_db_str(),
-            llm_api_key_encrypted: encrypted_key.as_deref(),
-            llm_base_url: base_url.as_deref(),
-            generation_model: &generation_model,
-            embedding_model: &embedding_model,
-        },
-    )
-    .await
-    .map_err(ApiError::Internal)?;
-
-    let user_id = users::insert_admin(&mut tx, workspace_id, &body.admin_email, &password_hash)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    installation::mark_complete(&mut tx)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    tx.commit()
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-
-    // 6. Flip the cached flag so the gate middleware stops blocking.
+    // Flip the cached setup-complete flag so the gate middleware
+    // stops returning 423. Presentation concern — not the use case's.
     state.setup_complete.store(true, Ordering::Release);
 
     Ok(Json(SetupResponse {
-        workspace_id,
-        user_id,
+        workspace_id: result.workspace_id,
+        user_id: result.user_id,
         setup_complete: true,
     }))
 }
@@ -254,20 +127,15 @@ pub async fn probe(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ProbeRequest>,
 ) -> Result<Json<ProbeResponse>, ApiError> {
-    match state
-        .llm_probe
-        .probe(body.llm_provider, &body.llm_api_key)
-        .await
-    {
-        Ok(()) => Ok(Json(ProbeResponse {
-            success: true,
-            message: "connection successful".into(),
-        })),
-        Err(e) => Ok(Json(ProbeResponse {
-            success: false,
-            message: format!("{e}"),
-        })),
-    }
+    let result = state
+        .use_cases
+        .probe_llm
+        .execute(body.llm_provider, &body.llm_api_key)
+        .await?;
+    Ok(Json(ProbeResponse {
+        success: result.success,
+        message: result.message,
+    }))
 }
 
 // ---- list Ollama models ----
@@ -301,56 +169,25 @@ pub struct OllamaModelsResponse {
     tag = "setup"
 )]
 pub async fn ollama_models(
+    State(state): State<Arc<AppState>>,
     Json(body): Json<OllamaModelsRequest>,
 ) -> Result<Json<OllamaModelsResponse>, ApiError> {
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let tags = historiador_llm::list_ollama_models(&body.base_url)
-        .await
-        .map_err(|e| ApiError::Validation(format!("Ollama unreachable: {e}")))?;
+    let models = state
+        .use_cases
+        .list_ollama_models
+        .execute(&body.base_url)
+        .await?;
 
     Ok(Json(OllamaModelsResponse {
-        models: tags
+        models: models
             .into_iter()
-            .map(|t| OllamaModelEntry {
-                name: t.name,
-                size_bytes: t.size,
+            .map(|m| OllamaModelEntry {
+                name: m.name,
+                size_bytes: m.size_bytes,
             })
             .collect(),
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bcp47_accepts_common_tags() {
-        assert!(is_valid_bcp47("en"));
-        assert!(is_valid_bcp47("pt-BR"));
-        assert!(is_valid_bcp47("en-US"));
-        assert!(is_valid_bcp47("fra"));
-    }
-
-    #[test]
-    fn bcp47_rejects_bad_shapes() {
-        assert!(!is_valid_bcp47(""));
-        assert!(!is_valid_bcp47("EN"));
-        assert!(!is_valid_bcp47("pt_BR"));
-        assert!(!is_valid_bcp47("english"));
-        assert!(!is_valid_bcp47("pt-br"));
-    }
-
-    #[test]
-    fn primary_must_be_in_languages() {
-        let res = validate_languages(&["pt-BR".into(), "en-US".into()], "es-ES");
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn valid_language_config_passes() {
-        let res = validate_languages(&["pt-BR".into(), "en-US".into()], "pt-BR");
-        assert!(res.is_ok());
-    }
 }

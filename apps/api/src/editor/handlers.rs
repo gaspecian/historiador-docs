@@ -1,15 +1,14 @@
 //! `/editor` HTTP handlers — AI-assisted document drafting.
 //!
-//! Both endpoints stream the generated markdown as Server-Sent Events:
+//! Both endpoints stream the generated markdown as Server-Sent Events.
+//! The use case builds the prompt and returns a `TextStream`; the
+//! handler wraps it in SSE and emits a telemetry event after the
+//! stream ends.
 //!
-//! - `delta` events (`data: {"text": "..."}`) — one per provider chunk.
-//! - Optional `error` event (`data: {"message": "..."}`) — if the
-//!   upstream LLM fails mid-stream.
-//! - `done` event (`data: {"length": <bytes>}`) — always terminates the
-//!   stream on clean completion.
-//!
-//! Chronik event logging (ADR-007, topic `editor-conversations`) runs
-//! after the stream ends so the full response length is captured.
+//! Event shape (unchanged from pre-refactor):
+//! - `delta` — `data: {"text": "..."}`
+//! - `error` — `data: {"message": "..."}`
+//! - `done`  — `data: {"length": N}`
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -20,39 +19,32 @@ use axum::{
     Json,
 };
 use futures::{Stream, StreamExt};
-use historiador_db::postgres::users::Role;
 use serde::Deserialize;
 use validator::Validate;
 
-use crate::auth::{extractor::AuthUser, rbac::require_role};
+use crate::application::editor::{GenerateDraftCommand, IterateDraftCommand};
+use crate::auth::extractor::AuthUser;
+use crate::domain::port::event_producer::{DomainEvent, EventProducer};
 use crate::error::ApiError;
 use crate::state::AppState;
-
-use super::prompts;
 
 // ---- DTOs ----
 
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct DraftRequest {
-    /// Natural language description of the document to create.
     #[validate(length(min = 10, max = 5000))]
     pub brief: String,
-    /// Optional BCP 47 language tag for the output language.
     #[validate(length(min = 2, max = 35))]
     pub language: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct IterateRequest {
-    /// The current draft markdown to refine.
     #[validate(length(min = 1, max = 50000))]
     pub current_draft: String,
-    /// Follow-up instruction describing what to change.
     #[validate(length(min = 1, max = 5000))]
     pub instruction: String,
 }
-
-// ---- handlers ----
 
 type SseResponse = Sse<std::pin::Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>>>;
 
@@ -81,29 +73,28 @@ pub async fn draft(
     auth: AuthUser,
     Json(body): Json<DraftRequest>,
 ) -> Result<SseResponse, ApiError> {
-    require_role(&auth, Role::Author)?;
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let user_prompt = match &body.language {
-        Some(lang) => format!("Write in {lang}.\n\n{}", body.brief),
-        None => body.brief.clone(),
-    };
-
-    let upstream = state
-        .text_generation_client
-        .generate_text_stream(prompts::DRAFT_SYSTEM_PROMPT, &user_prompt)
-        .await
-        .map_err(|e| anyhow::anyhow!("LLM error: {e}"))?;
+    let prepared = state
+        .use_cases
+        .generate_draft
+        .execute(
+            auth.as_actor(),
+            GenerateDraftCommand {
+                brief: body.brief,
+                language: body.language,
+            },
+        )
+        .await?;
 
     let chronik = state.chronik.clone();
-    let user_id = auth.user_id;
-    let brief = body.brief;
-    let language = body.language;
+    let workspace_id = prepared.workspace_id;
+    let user_id = prepared.user_id;
 
     let event_stream = async_stream::stream! {
         let mut buffer = String::new();
-        let mut upstream = upstream;
+        let mut upstream = prepared.stream;
         while let Some(item) = upstream.next().await {
             match item {
                 Ok(chunk) => {
@@ -121,20 +112,14 @@ pub async fn draft(
         let done = serde_json::json!({"length": buffer.len()}).to_string();
         yield Ok(Event::default().event("done").data(done));
 
-        if let Some(ref chronik) = chronik {
-            chronik.produce_event_fire_and_forget(
-                historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
-                user_id.to_string(),
-                serde_json::json!({
-                    "type": "draft",
-                    "user_id": user_id,
-                    "brief": brief,
-                    "language": language,
-                    "response_length": buffer.len(),
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                }),
-            );
-        }
+        publish_editor_event(
+            chronik.as_ref(),
+            DomainEvent::EditorDraftGenerated {
+                workspace_id,
+                user_id,
+                prompt_tokens: None,
+            },
+        );
     };
 
     let boxed: std::pin::Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>> =
@@ -164,28 +149,28 @@ pub async fn iterate(
     auth: AuthUser,
     Json(body): Json<IterateRequest>,
 ) -> Result<SseResponse, ApiError> {
-    require_role(&auth, Role::Author)?;
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let user_prompt = format!(
-        "## Current Draft\n\n{}\n\n## Instruction\n\n{}",
-        body.current_draft, body.instruction
-    );
-
-    let upstream = state
-        .text_generation_client
-        .generate_text_stream(prompts::ITERATE_SYSTEM_PROMPT, &user_prompt)
-        .await
-        .map_err(|e| anyhow::anyhow!("LLM error: {e}"))?;
+    let prepared = state
+        .use_cases
+        .iterate_draft
+        .execute(
+            auth.as_actor(),
+            IterateDraftCommand {
+                current_draft: body.current_draft,
+                instruction: body.instruction,
+            },
+        )
+        .await?;
 
     let chronik = state.chronik.clone();
-    let user_id = auth.user_id;
-    let instruction = body.instruction;
+    let workspace_id = prepared.workspace_id;
+    let user_id = prepared.user_id;
 
     let event_stream = async_stream::stream! {
         let mut buffer = String::new();
-        let mut upstream = upstream;
+        let mut upstream = prepared.stream;
         while let Some(item) = upstream.next().await {
             match item {
                 Ok(chunk) => {
@@ -203,22 +188,33 @@ pub async fn iterate(
         let done = serde_json::json!({"length": buffer.len()}).to_string();
         yield Ok(Event::default().event("done").data(done));
 
-        if let Some(ref chronik) = chronik {
-            chronik.produce_event_fire_and_forget(
-                historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
-                user_id.to_string(),
-                serde_json::json!({
-                    "type": "iterate",
-                    "user_id": user_id,
-                    "instruction": instruction,
-                    "response_length": buffer.len(),
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                }),
-            );
-        }
+        publish_editor_event(
+            chronik.as_ref(),
+            DomainEvent::EditorDraftGenerated {
+                workspace_id,
+                user_id,
+                prompt_tokens: None,
+            },
+        );
     };
 
     let boxed: std::pin::Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>> =
         Box::pin(event_stream);
     Ok(Sse::new(boxed).keep_alive(KeepAlive::default()))
+}
+
+/// Fire-and-forget telemetry event directly via Chronik when present.
+/// Bypasses the use-case / port layer because the event is emitted
+/// from inside the SSE generator stream, where awaiting async work is
+/// awkward and pointless for non-critical telemetry.
+fn publish_editor_event(
+    chronik: Option<&historiador_db::chronik::ChronikClient>,
+    event: DomainEvent,
+) {
+    let producer = crate::infrastructure::chronik::ChronikEventProducer::new(chronik.cloned());
+    tokio::spawn(async move {
+        if let Err(e) = producer.publish(event).await {
+            tracing::warn!(error = ?e, "editor telemetry publish failed");
+        }
+    });
 }

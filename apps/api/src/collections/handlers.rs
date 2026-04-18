@@ -1,4 +1,7 @@
-//! `/collections` HTTP handlers.
+//! `/collections` HTTP handlers — thin Clean Architecture adapters
+//! that translate DTOs, call use cases, and map the domain result
+//! back onto the wire. All business logic lives in
+//! [`crate::application::collections`].
 
 use std::sync::Arc;
 
@@ -7,15 +10,15 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use historiador_db::postgres::{collections, users::Role};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::auth::{extractor::AuthUser, rbac::require_role};
+use crate::application::collections::{CreateCollectionCommand, UpdateCollectionCommand};
+use crate::auth::extractor::AuthUser;
+use crate::domain::entity::Collection;
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::util::slugify;
 
 // ---- DTOs ----
 
@@ -47,14 +50,14 @@ pub struct CollectionResponse {
     pub updated_at: String,
 }
 
-impl From<collections::Collection> for CollectionResponse {
-    fn from(c: collections::Collection) -> Self {
+impl From<Collection> for CollectionResponse {
+    fn from(c: Collection) -> Self {
         Self {
             id: c.id,
             workspace_id: c.workspace_id,
             parent_id: c.parent_id,
             name: c.name,
-            slug: c.slug,
+            slug: c.slug.into_string(),
             sort_order: c.sort_order,
             created_at: c.created_at.to_rfc3339(),
             updated_at: c.updated_at.to_rfc3339(),
@@ -83,37 +86,20 @@ pub async fn create_collection(
     auth: AuthUser,
     Json(body): Json<CreateCollectionRequest>,
 ) -> Result<(StatusCode, Json<CollectionResponse>), ApiError> {
-    require_role(&auth, Role::Author)?;
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    // Validate parent exists if specified.
-    if let Some(parent_id) = body.parent_id {
-        collections::find_by_id(&state.pool, parent_id, auth.workspace_id)
-            .await
-            .map_err(ApiError::Internal)?
-            .ok_or_else(|| ApiError::Validation("parent collection not found".into()))?;
-    }
-
-    let slug = slugify(&body.name);
-
-    let collection = collections::insert(
-        &state.pool,
-        auth.workspace_id,
-        body.parent_id,
-        &body.name,
-        &slug,
-    )
-    .await
-    .map_err(|e| {
-        // Check for unique constraint violation (slug conflict).
-        let msg = e.to_string();
-        if msg.contains("duplicate key") || msg.contains("unique constraint") {
-            ApiError::Conflict(format!("collection with slug '{slug}' already exists"))
-        } else {
-            ApiError::Internal(e)
-        }
-    })?;
+    let collection = state
+        .use_cases
+        .create_collection
+        .execute(
+            auth.as_actor(),
+            CreateCollectionCommand {
+                name: body.name,
+                parent_id: body.parent_id,
+            },
+        )
+        .await?;
 
     Ok((StatusCode::CREATED, Json(collection.into())))
 }
@@ -132,14 +118,12 @@ pub async fn list_collections(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
 ) -> Result<Json<Vec<CollectionResponse>>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
-
-    let rows = collections::list_by_workspace(&state.pool, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    let resp: Vec<CollectionResponse> = rows.into_iter().map(Into::into).collect();
-    Ok(Json(resp))
+    let rows = state
+        .use_cases
+        .list_collections
+        .execute(auth.as_actor())
+        .await?;
+    Ok(Json(rows.into_iter().map(Into::into).collect()))
 }
 
 #[utoipa::path(
@@ -164,30 +148,21 @@ pub async fn update_collection(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateCollectionRequest>,
 ) -> Result<Json<CollectionResponse>, ApiError> {
-    require_role(&auth, Role::Author)?;
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let new_slug = body.name.as_deref().map(slugify);
-
-    let collection = collections::update(
-        &state.pool,
-        id,
-        auth.workspace_id,
-        body.name.as_deref(),
-        new_slug.as_deref(),
-        body.parent_id,
-    )
-    .await
-    .map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("duplicate key") || msg.contains("unique constraint") {
-            ApiError::Conflict("collection slug conflict".into())
-        } else {
-            ApiError::Internal(e)
-        }
-    })?
-    .ok_or(ApiError::NotFound)?;
+    let collection = state
+        .use_cases
+        .update_collection
+        .execute(
+            auth.as_actor(),
+            UpdateCollectionCommand {
+                id,
+                name: body.name,
+                parent_id: body.parent_id,
+            },
+        )
+        .await?;
 
     Ok(Json(collection.into()))
 }
@@ -210,15 +185,10 @@ pub async fn delete_collection(
     auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    require_role(&auth, Role::Author)?;
-
-    let deleted = collections::delete_cascade(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    if deleted == 0 {
-        return Err(ApiError::NotFound);
-    }
-
+    state
+        .use_cases
+        .delete_collection
+        .execute(auth.as_actor(), id)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }

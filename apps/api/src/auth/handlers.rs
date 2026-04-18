@@ -1,20 +1,14 @@
-//! `/auth/{login,refresh,logout,activate}` HTTP handlers.
+//! `/auth/{login,refresh,logout,activate}` HTTP handlers — thin Clean
+//! Architecture wrappers over [`crate::application::auth`].
 
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, Json};
-use chrono::{Duration, Utc};
-use historiador_db::{
-    password,
-    postgres::{sessions, users},
-};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::auth::{
-    jwt::{self, ACCESS_TOKEN_TTL_SECONDS},
-    tokens,
-};
+use crate::application::auth::{ActivateCommand, LoginCommand};
+use crate::domain::value::Email;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -53,31 +47,6 @@ pub struct ActivateRequest {
     pub password: String,
 }
 
-// ---- shared helpers ----
-
-async fn issue_token_pair(
-    state: &AppState,
-    user_id: uuid::Uuid,
-    workspace_id: uuid::Uuid,
-    role: historiador_db::postgres::users::Role,
-) -> Result<TokenResponse, ApiError> {
-    let claims = jwt::Claims::new(user_id, workspace_id, role);
-    let access_token = jwt::encode_token(&claims, &state.jwt_secret)
-        .map_err(|e| ApiError::Internal(e.context("failed to encode access token")))?;
-
-    let (refresh_plaintext, refresh_hash) = tokens::generate();
-    let refresh_expires_at = Utc::now() + Duration::days(tokens::REFRESH_TOKEN_TTL_DAYS);
-    sessions::insert(&state.pool, user_id, &refresh_hash, refresh_expires_at)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    Ok(TokenResponse {
-        access_token,
-        refresh_token: refresh_plaintext,
-        expires_in: ACCESS_TOKEN_TTL_SECONDS,
-    })
-}
-
 // ---- handlers ----
 
 #[utoipa::path(
@@ -98,37 +67,23 @@ pub async fn login(
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    // v1 is single-workspace. Pick the (only) workspace by looking up
-    // the user across all workspaces that share the email. Since the
-    // UNIQUE constraint is per-workspace, in a single-workspace install
-    // there is at most one match.
-    let user = sqlx::query_as::<_, users::User>(
-        "SELECT id, workspace_id, email, password_hash, role, active, \
-                invite_token_hash, invite_expires_at \
-           FROM users \
-          WHERE email = $1",
-    )
-    .bind(&body.email)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Internal(e.into()))?
-    .ok_or(ApiError::Unauthorized)?;
+    let issued = state
+        .use_cases
+        .login
+        .execute(LoginCommand {
+            email: Email::parse(body.email).map_err(|_| ApiError::Unauthorized)?,
+            password: body.password,
+        })
+        .await
+        // Domain `Forbidden` on login means bad credentials — surface
+        // 401 rather than 403 so clients show the right prompt.
+        .map_err(login_error_to_401)?;
 
-    if !user.active {
-        return Err(ApiError::Unauthorized);
-    }
-    let stored_hash = user
-        .password_hash
-        .as_deref()
-        .ok_or(ApiError::Unauthorized)?;
-    let matches =
-        password::verify(&body.password, stored_hash).map_err(|_| ApiError::Unauthorized)?;
-    if !matches {
-        return Err(ApiError::Unauthorized);
-    }
-
-    let tokens = issue_token_pair(&state, user.id, user.workspace_id, user.role).await?;
-    Ok(Json(tokens))
+    Ok(Json(TokenResponse {
+        access_token: issued.access_token,
+        refresh_token: issued.refresh_token,
+        expires_in: issued.expires_in_seconds,
+    }))
 }
 
 #[utoipa::path(
@@ -145,36 +100,18 @@ pub async fn refresh(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RefreshRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
-    let hash = tokens::sha256_hex(&body.refresh_token);
-    let session = sessions::find_active_by_token_hash(&state.pool, &hash)
+    let issued = state
+        .use_cases
+        .refresh
+        .execute(&body.refresh_token)
         .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::Unauthorized)?;
+        .map_err(login_error_to_401)?;
 
-    // Rotate: delete the old session row, then issue a fresh pair.
-    sessions::delete_by_token_hash(&state.pool, &hash)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    // Re-load the user so we have a fresh role snapshot (an admin may
-    // have demoted them since login).
-    let user = sqlx::query_as::<_, users::User>(
-        "SELECT id, workspace_id, email, password_hash, role, active, \
-                invite_token_hash, invite_expires_at \
-           FROM users WHERE id = $1",
-    )
-    .bind(session.user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Internal(e.into()))?
-    .ok_or(ApiError::Unauthorized)?;
-
-    if !user.active {
-        return Err(ApiError::Unauthorized);
-    }
-
-    let tokens = issue_token_pair(&state, user.id, user.workspace_id, user.role).await?;
-    Ok(Json(tokens))
+    Ok(Json(TokenResponse {
+        access_token: issued.access_token,
+        refresh_token: issued.refresh_token,
+        expires_in: issued.expires_in_seconds,
+    }))
 }
 
 #[utoipa::path(
@@ -188,10 +125,7 @@ pub async fn logout(
     State(state): State<Arc<AppState>>,
     Json(body): Json<LogoutRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let hash = tokens::sha256_hex(&body.refresh_token);
-    sessions::delete_by_token_hash(&state.pool, &hash)
-        .await
-        .map_err(ApiError::Internal)?;
+    state.use_cases.logout.execute(&body.refresh_token).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -213,30 +147,26 @@ pub async fn activate(
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let invite_hash = tokens::sha256_hex(&body.invite_token);
-    let user = users::find_by_invite_token_hash(&state.pool, &invite_hash)
+    state
+        .use_cases
+        .activate
+        .execute(ActivateCommand {
+            invite_token: body.invite_token,
+            password: body.password,
+        })
         .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::Unauthorized)?;
-
-    let expires_at = user.invite_expires_at.ok_or(ApiError::Unauthorized)?;
-    if expires_at <= Utc::now() {
-        return Err(ApiError::Unauthorized);
-    }
-
-    let password_hash = password::hash(&body.password).map_err(ApiError::Internal)?;
-
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-    users::activate(&mut tx, user.id, &password_hash)
-        .await
-        .map_err(ApiError::Internal)?;
-    tx.commit()
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-
+        .map_err(login_error_to_401)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Map a login/refresh/activate `ApplicationError` onto the right
+/// `ApiError`. For these endpoints, `DomainError::Forbidden` is the
+/// "bad credentials / bad token" signal and should surface as 401
+/// (Unauthorized), not 403 (Forbidden).
+fn login_error_to_401(err: crate::domain::error::ApplicationError) -> ApiError {
+    use crate::domain::error::{ApplicationError, DomainError};
+    match err {
+        ApplicationError::Domain(DomainError::Forbidden) => ApiError::Unauthorized,
+        other => other.into(),
+    }
 }

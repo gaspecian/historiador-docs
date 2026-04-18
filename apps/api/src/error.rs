@@ -1,6 +1,8 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 
+use crate::domain::error::{ApplicationError, DomainError};
+
 /// Top-level error type for route handlers.
 ///
 /// Every variant maps to a known HTTP status. `Internal` is the only
@@ -71,5 +73,25 @@ impl IntoResponse for ApiError {
         }
         let (status, code, message) = self.code_and_message();
         (status, Json(json!({ "error": code, "message": message }))).into_response()
+    }
+}
+
+impl From<DomainError> for ApiError {
+    fn from(e: DomainError) -> Self {
+        match e {
+            DomainError::NotFound => ApiError::NotFound,
+            DomainError::Validation(msg) => ApiError::Validation(msg),
+            DomainError::Conflict(msg) => ApiError::Conflict(msg),
+            DomainError::Forbidden => ApiError::Forbidden,
+        }
+    }
+}
+
+impl From<ApplicationError> for ApiError {
+    fn from(e: ApplicationError) -> Self {
+        match e {
+            ApplicationError::Domain(d) => d.into(),
+            ApplicationError::Infrastructure(err) => ApiError::Internal(err),
+        }
     }
 }

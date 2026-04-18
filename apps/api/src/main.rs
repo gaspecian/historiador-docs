@@ -3,7 +3,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use anyhow::Context;
-use historiador_api::{app, crypto::Cipher, setup::llm_probe::HttpLlmProbe, state::AppState};
+use historiador_api::{
+    app,
+    crypto::Cipher,
+    presentation::{BuildDeps, UseCases},
+    setup::llm_probe::HttpLlmProbe,
+    state::AppState,
+};
 use historiador_db::{
     chronik::{ChronikClient, ChronikConfig},
     postgres::installation,
@@ -102,18 +108,34 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let llm_probe: Arc<dyn historiador_api::setup::llm_probe::LlmProbe> =
+        Arc::new(HttpLlmProbe::default());
+    let jwt_secret_bytes = jwt_secret.into_bytes();
+
+    let use_cases = Arc::new(UseCases::build(BuildDeps {
+        pool: pool.clone(),
+        cipher: cipher.clone(),
+        jwt_secret: jwt_secret_bytes.clone(),
+        llm_probe: llm_probe.clone(),
+        vector_store: vector_store.clone(),
+        embedding_client: embedding_client.clone(),
+        text_generation_client: text_generation_client.clone(),
+        chronik: chronik.clone(),
+    }));
+
     let state = Arc::new(AppState {
         pool,
         git_sha,
-        jwt_secret: jwt_secret.into_bytes(),
+        jwt_secret: jwt_secret_bytes,
         cipher,
         public_base_url,
         setup_complete,
-        llm_probe: Arc::new(HttpLlmProbe::default()),
+        llm_probe,
         vector_store,
         embedding_client,
         text_generation_client,
         chronik,
+        use_cases,
     });
 
     let app = app::build_router(state);

@@ -18,6 +18,7 @@ use historiador_db::postgres::users::Role;
 use uuid::Uuid;
 
 use crate::auth::jwt;
+use crate::domain::value::{Actor, Role as DomainRole};
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -27,6 +28,23 @@ pub struct AuthUser {
     pub user_id: Uuid,
     pub workspace_id: Uuid,
     pub role: Role,
+}
+
+impl AuthUser {
+    /// Project this HTTP-layer identity into the domain-layer `Actor`
+    /// use cases expect. Role variants are 1:1 with the DB enum.
+    pub fn as_actor(&self) -> Actor {
+        let role = match self.role {
+            Role::Admin => DomainRole::Admin,
+            Role::Author => DomainRole::Author,
+            Role::Viewer => DomainRole::Viewer,
+        };
+        Actor {
+            user_id: self.user_id,
+            workspace_id: self.workspace_id,
+            role,
+        }
+    }
 }
 
 #[async_trait]

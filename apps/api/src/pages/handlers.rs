@@ -1,29 +1,28 @@
-//! `/pages` HTTP handlers.
+//! `/pages` HTTP handlers — thin Clean Architecture wrappers over
+//! [`crate::application::pages`]. All business logic (role checks,
+//! snapshots, event production, async chunking) lives in use cases.
 
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
-use historiador_db::postgres::{
-    page_version_history,
-    page_versions::{self, PageVersion},
-    pages::{self, PageStatus},
-    users::Role,
-    workspaces,
-};
+use historiador_db::postgres::pages::PageStatus as DbPageStatus;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::auth::{extractor::AuthUser, rbac::require_role};
+use crate::application::pages::{
+    CreatePageCommand, ListVersionHistoryCommand, PageView, PageVersionsView, UpdatePageCommand,
+    VersionHistoryPage,
+};
+use crate::auth::extractor::AuthUser;
+use crate::domain::entity::{Page, PageVersion, VersionHistoryEntry};
+use crate::domain::value::{Language, PageStatus};
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::util::slugify;
-
-use super::pipeline;
 
 // ---- DTOs ----
 
@@ -44,7 +43,7 @@ pub struct UpdatePageRequest {
     #[validate(length(min = 1, max = 500))]
     pub title: Option<String>,
     pub content_markdown: Option<String>,
-    /// BCP 47 language tag. Defaults to the version's current language.
+    /// BCP 47 language tag. Defaults to "en" when omitted.
     #[validate(length(min = 2, max = 35))]
     pub language: Option<String>,
 }
@@ -55,7 +54,7 @@ pub struct PageResponse {
     pub workspace_id: Uuid,
     pub collection_id: Option<Uuid>,
     pub slug: String,
-    pub status: PageStatus,
+    pub status: DbPageStatus,
     pub created_by: Option<Uuid>,
     pub versions: Vec<PageVersionResponse>,
     pub created_at: String,
@@ -68,7 +67,7 @@ pub struct PageVersionResponse {
     pub language: String,
     pub title: String,
     pub content_markdown: String,
-    pub status: PageStatus,
+    pub status: DbPageStatus,
     pub author_id: Option<Uuid>,
     pub created_at: String,
     pub updated_at: String,
@@ -85,14 +84,46 @@ impl From<PageVersion> for PageVersionResponse {
     fn from(v: PageVersion) -> Self {
         Self {
             id: v.id,
-            language: v.language,
+            language: v.language.into_string(),
             title: v.title,
             content_markdown: v.content_markdown,
-            status: v.status,
+            status: page_status_to_db(v.status),
             author_id: v.author_id,
             created_at: v.created_at.to_rfc3339(),
             updated_at: v.updated_at.to_rfc3339(),
         }
+    }
+}
+
+fn page_status_to_db(s: PageStatus) -> DbPageStatus {
+    match s {
+        PageStatus::Draft => DbPageStatus::Draft,
+        PageStatus::Published => DbPageStatus::Published,
+    }
+}
+
+fn build_page_response(view: PageView) -> PageResponse {
+    let PageView { page, versions } = view;
+    let Page {
+        id,
+        workspace_id,
+        collection_id,
+        slug,
+        status,
+        created_by,
+        created_at,
+        updated_at,
+    } = page;
+    PageResponse {
+        id,
+        workspace_id,
+        collection_id,
+        slug: slug.into_string(),
+        status: page_status_to_db(status),
+        created_by,
+        versions: versions.into_iter().map(Into::into).collect(),
+        created_at: created_at.to_rfc3339(),
+        updated_at: updated_at.to_rfc3339(),
     }
 }
 
@@ -124,34 +155,14 @@ pub struct SearchPagesQuery {
 pub async fn list_pages(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
-    axum::extract::Query(params): axum::extract::Query<ListPagesQuery>,
+    Query(params): Query<ListPagesQuery>,
 ) -> Result<Json<Vec<PageResponse>>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
-
-    let pages_list =
-        pages::list_by_collection(&state.pool, auth.workspace_id, params.collection_id)
-            .await
-            .map_err(ApiError::Internal)?;
-
-    let mut results = Vec::with_capacity(pages_list.len());
-    for page in pages_list {
-        let versions = page_versions::find_by_page(&state.pool, page.id)
-            .await
-            .map_err(ApiError::Internal)?;
-        results.push(PageResponse {
-            id: page.id,
-            workspace_id: page.workspace_id,
-            collection_id: page.collection_id,
-            slug: page.slug,
-            status: page.status,
-            created_by: page.created_by,
-            versions: versions.into_iter().map(Into::into).collect(),
-            created_at: page.created_at.to_rfc3339(),
-            updated_at: page.updated_at.to_rfc3339(),
-        });
-    }
-
-    Ok(Json(results))
+    let views = state
+        .use_cases
+        .list_pages
+        .execute(auth.as_actor(), params.collection_id)
+        .await?;
+    Ok(Json(views.into_iter().map(build_page_response).collect()))
 }
 
 #[utoipa::path(
@@ -168,33 +179,14 @@ pub async fn list_pages(
 pub async fn search_pages(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
-    axum::extract::Query(params): axum::extract::Query<SearchPagesQuery>,
+    Query(params): Query<SearchPagesQuery>,
 ) -> Result<Json<Vec<PageResponse>>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
-
-    let pages_list = pages::search(&state.pool, auth.workspace_id, &params.q)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    let mut results = Vec::with_capacity(pages_list.len());
-    for page in pages_list {
-        let versions = page_versions::find_by_page(&state.pool, page.id)
-            .await
-            .map_err(ApiError::Internal)?;
-        results.push(PageResponse {
-            id: page.id,
-            workspace_id: page.workspace_id,
-            collection_id: page.collection_id,
-            slug: page.slug,
-            status: page.status,
-            created_by: page.created_by,
-            versions: versions.into_iter().map(Into::into).collect(),
-            created_at: page.created_at.to_rfc3339(),
-            updated_at: page.updated_at.to_rfc3339(),
-        });
-    }
-
-    Ok(Json(results))
+    let views = state
+        .use_cases
+        .search_pages
+        .execute(auth.as_actor(), &params.q)
+        .await?;
+    Ok(Json(views.into_iter().map(build_page_response).collect()))
 }
 
 #[utoipa::path(
@@ -216,73 +208,24 @@ pub async fn create_page(
     auth: AuthUser,
     Json(body): Json<CreatePageRequest>,
 ) -> Result<(StatusCode, Json<PageResponse>), ApiError> {
-    require_role(&auth, Role::Author)?;
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let slug = slugify(&body.title);
+    let view = state
+        .use_cases
+        .create_page
+        .execute(
+            auth.as_actor(),
+            CreatePageCommand {
+                collection_id: body.collection_id,
+                title: body.title,
+                content_markdown: body.content_markdown,
+                language: Language::from_trusted(body.language),
+            },
+        )
+        .await?;
 
-    let page = pages::insert(
-        &state.pool,
-        auth.workspace_id,
-        body.collection_id,
-        &slug,
-        auth.user_id,
-    )
-    .await
-    .map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("duplicate key") || msg.contains("unique constraint") {
-            ApiError::Conflict(format!(
-                "page with slug '{slug}' already exists in this collection"
-            ))
-        } else {
-            ApiError::Internal(e)
-        }
-    })?;
-
-    // Create the initial draft version for the given language.
-    let version = page_versions::upsert(
-        &state.pool,
-        page.id,
-        &body.language,
-        &body.title,
-        &body.content_markdown,
-        auth.user_id,
-        PageStatus::Draft,
-    )
-    .await
-    .map_err(ApiError::Internal)?;
-
-    // Fire-and-forget: emit page.created event to Chronik.
-    if let Some(ref chronik) = state.chronik {
-        chronik.produce_event_fire_and_forget(
-            historiador_db::chronik::producer::topics::PAGE_EVENTS,
-            page.id.to_string(),
-            serde_json::json!({
-                "event": "page.created",
-                "page_id": page.id,
-                "language": body.language,
-                "title": body.title,
-                "author_id": auth.user_id,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            }),
-        );
-    }
-
-    let resp = PageResponse {
-        id: page.id,
-        workspace_id: page.workspace_id,
-        collection_id: page.collection_id,
-        slug: page.slug,
-        status: page.status,
-        created_by: page.created_by,
-        versions: vec![version.into()],
-        created_at: page.created_at.to_rfc3339(),
-        updated_at: page.updated_at.to_rfc3339(),
-    };
-
-    Ok((StatusCode::CREATED, Json(resp)))
+    Ok((StatusCode::CREATED, Json(build_page_response(view))))
 }
 
 #[utoipa::path(
@@ -302,30 +245,8 @@ pub async fn get_page(
     auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PageResponse>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
-
-    let page = pages::find_by_id(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    let versions = page_versions::find_by_page(&state.pool, page.id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    let resp = PageResponse {
-        id: page.id,
-        workspace_id: page.workspace_id,
-        collection_id: page.collection_id,
-        slug: page.slug,
-        status: page.status,
-        created_by: page.created_by,
-        versions: versions.into_iter().map(Into::into).collect(),
-        created_at: page.created_at.to_rfc3339(),
-        updated_at: page.updated_at.to_rfc3339(),
-    };
-
-    Ok(Json(resp))
+    let view = state.use_cases.get_page.execute(auth.as_actor(), id).await?;
+    Ok(Json(build_page_response(view)))
 }
 
 #[utoipa::path(
@@ -349,110 +270,23 @@ pub async fn update_page(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdatePageRequest>,
 ) -> Result<Json<PageResponse>, ApiError> {
-    require_role(&auth, Role::Author)?;
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
-    let page = pages::find_by_id(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    if page.status == PageStatus::Published {
-        return Err(ApiError::Validation(
-            "page is published — revert to draft before editing".into(),
-        ));
-    }
-
-    // Determine which language version to update.
-    // Default to "en" if no language specified. In practice, callers
-    // should pass the language explicitly for the version they want.
-    let language = body.language.as_deref().unwrap_or("en");
-
-    // Load the existing version (if any) to merge partial updates.
-    let existing = page_versions::find_by_page_and_language(&state.pool, page.id, language)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    let title = body
-        .title
-        .as_deref()
-        .or(existing.as_ref().map(|v| v.title.as_str()))
-        .unwrap_or("Untitled");
-    let content = body
-        .content_markdown
-        .as_deref()
-        .or(existing.as_ref().map(|v| v.content_markdown.as_str()))
-        .unwrap_or("");
-
-    page_versions::upsert(
-        &state.pool,
-        page.id,
-        language,
-        title,
-        content,
-        auth.user_id,
-        PageStatus::Draft,
-    )
-    .await
-    .map_err(ApiError::Internal)?;
-
-    // Snapshot to version history (debounced: skip if < 30s since last).
-    let should_snapshot =
-        !page_version_history::has_recent_snapshot(&state.pool, page.id, language, 30)
-            .await
-            .unwrap_or(true);
-
-    if should_snapshot {
-        if let Err(e) = page_version_history::insert(
-            &state.pool,
-            page.id,
-            language,
-            title,
-            content,
-            false, // is_published
-            Some(auth.user_id),
+    let view = state
+        .use_cases
+        .update_page
+        .execute(
+            auth.as_actor(),
+            UpdatePageCommand {
+                page_id: id,
+                language: body.language.map(Language::from_trusted),
+                title: body.title,
+                content_markdown: body.content_markdown,
+            },
         )
-        .await
-        {
-            tracing::warn!(page_id = %page.id, error = ?e, "failed to snapshot version history on save");
-        }
-    }
-
-    // Fire-and-forget: emit page.updated event to Chronik.
-    if let Some(ref chronik) = state.chronik {
-        chronik.produce_event_fire_and_forget(
-            historiador_db::chronik::producer::topics::PAGE_EVENTS,
-            page.id.to_string(),
-            serde_json::json!({
-                "event": "page.updated",
-                "page_id": page.id,
-                "language": language,
-                "title": title,
-                "author_id": auth.user_id,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            }),
-        );
-    }
-
-    // Re-fetch all versions for the response.
-    let versions = page_versions::find_by_page(&state.pool, page.id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    let resp = PageResponse {
-        id: page.id,
-        workspace_id: page.workspace_id,
-        collection_id: page.collection_id,
-        slug: page.slug,
-        status: page.status,
-        created_by: page.created_by,
-        versions: versions.into_iter().map(Into::into).collect(),
-        created_at: page.created_at.to_rfc3339(),
-        updated_at: page.updated_at.to_rfc3339(),
-    };
-
-    Ok(Json(resp))
+        .await?;
+    Ok(Json(build_page_response(view)))
 }
 
 #[utoipa::path(
@@ -473,93 +307,25 @@ pub async fn publish_page(
     auth: AuthUser,
     Path(page_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<PublishResponse>), ApiError> {
-    require_role(&auth, Role::Author)?;
+    let actor = auth.as_actor();
+    let confirmed_id = state
+        .use_cases
+        .publish_page
+        .execute(actor, page_id)
+        .await?;
 
-    let page = pages::find_by_id(&state.pool, page_id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    // Synchronously update status.
-    pages::update_status(
-        &state.pool,
-        page.id,
-        auth.workspace_id,
-        PageStatus::Published,
-    )
-    .await
-    .map_err(ApiError::Internal)?;
-    page_versions::update_status_all(&state.pool, page.id, PageStatus::Published)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    // Fetch all versions for async processing.
-    let versions = page_versions::find_by_page(&state.pool, page.id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    // Snapshot each language version into the history table.
-    for v in &versions {
-        if let Err(e) = page_version_history::insert(
-            &state.pool,
-            v.page_id,
-            &v.language,
-            &v.title,
-            &v.content_markdown,
-            true, // is_published
-            v.author_id,
-        )
-        .await
-        {
-            tracing::warn!(page_id = %v.page_id, language = %v.language, error = ?e, "failed to snapshot version history on publish");
-        }
-    }
-
-    // Fire-and-forget: emit page.published events to Chronik.
-    if let Some(ref chronik) = state.chronik {
-        for v in &versions {
-            chronik.produce_event_fire_and_forget(
-                historiador_db::chronik::producer::topics::PAGE_EVENTS,
-                page.id.to_string(),
-                serde_json::json!({
-                    "event": "page.published",
-                    "page_id": page.id,
-                    "language": v.language,
-                    "title": v.title,
-                    "author_id": auth.user_id,
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                }),
-            );
-        }
-    }
-
-    // Fire-and-forget: spawn async chunking pipeline.
-    let pool = state.pool.clone();
-    let vector_store = state.vector_store.clone();
-    let embedding_client = state.embedding_client.clone();
+    // Async chunking — fire-and-forget. Must stay in presentation,
+    // not in the use case, because it owns a tokio runtime handle.
+    let uc = state.use_cases.publish_page.clone();
     tokio::spawn(async move {
-        for version in versions {
-            if let Err(e) = pipeline::run_chunk_pipeline(
-                &pool,
-                vector_store.as_ref(),
-                embedding_client.as_ref(),
-                &version,
-            )
-            .await
-            {
-                tracing::error!(
-                    page_version_id = %version.id,
-                    error = ?e,
-                    "async chunk pipeline failed"
-                );
-            }
-        }
+        uc.run_chunk_pipeline_for(confirmed_id, actor.workspace_id)
+            .await;
     });
 
     Ok((
         StatusCode::ACCEPTED,
         Json(PublishResponse {
-            page_id: page.id,
+            page_id: confirmed_id,
             status: "published".into(),
             message: "page published; chunking in progress".into(),
         }),
@@ -584,71 +350,21 @@ pub async fn draft_page(
     auth: AuthUser,
     Path(page_id): Path<Uuid>,
 ) -> Result<Json<PageResponse>, ApiError> {
-    require_role(&auth, Role::Author)?;
-
-    let page = pages::find_by_id(&state.pool, page_id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    // Revert status to draft.
-    pages::update_status(&state.pool, page.id, auth.workspace_id, PageStatus::Draft)
-        .await
-        .map_err(ApiError::Internal)?;
-    page_versions::update_status_all(&state.pool, page.id, PageStatus::Draft)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    // Delete existing chunks for all versions.
-    let versions = page_versions::find_by_page(&state.pool, page.id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    for version in &versions {
-        // Delete from vector store.
-        if let Err(e) = state
-            .vector_store
-            .delete_by_page_version(&version.id.to_string())
-            .await
-        {
-            tracing::warn!(
-                page_version_id = %version.id,
-                error = ?e,
-                "failed to delete chunks from vector store"
-            );
-        }
-        // Delete from Postgres.
-        historiador_db::postgres::chunks::delete_by_page_version(&state.pool, version.id)
-            .await
-            .map_err(ApiError::Internal)?;
+    let view = state
+        .use_cases
+        .draft_page
+        .execute(auth.as_actor(), page_id)
+        .await?;
+    // draft_page in the use case returns the current state, but its
+    // status has not been flipped on the returned entity since the
+    // use case reads it before the status change. The old handler
+    // rewrote status to Draft on the DTO; do the same so wire-format
+    // stability holds.
+    let mut resp = build_page_response(view);
+    resp.status = DbPageStatus::Draft;
+    for v in &mut resp.versions {
+        v.status = DbPageStatus::Draft;
     }
-
-    // Fire-and-forget: emit page.unpublished event to Chronik.
-    if let Some(ref chronik) = state.chronik {
-        chronik.produce_event_fire_and_forget(
-            historiador_db::chronik::producer::topics::PAGE_EVENTS,
-            page.id.to_string(),
-            serde_json::json!({
-                "event": "page.unpublished",
-                "page_id": page.id,
-                "author_id": auth.user_id,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            }),
-        );
-    }
-
-    let resp = PageResponse {
-        id: page.id,
-        workspace_id: page.workspace_id,
-        collection_id: page.collection_id,
-        slug: page.slug,
-        status: PageStatus::Draft,
-        created_by: page.created_by,
-        versions: versions.into_iter().map(Into::into).collect(),
-        created_at: page.created_at.to_rfc3339(),
-        updated_at: page.updated_at.to_rfc3339(),
-    };
-
     Ok(Json(resp))
 }
 
@@ -681,43 +397,36 @@ pub async fn get_page_versions(
     auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PageVersionsResponse>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
-
-    let page = pages::find_by_id(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    let ws = workspaces::find_by_id(&state.pool, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    let versions = page_versions::find_by_page(&state.pool, page.id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    let existing_langs: std::collections::HashSet<&str> =
-        versions.iter().map(|v| v.language.as_str()).collect();
-    let missing_languages: Vec<String> = ws
-        .languages
-        .iter()
-        .filter(|lang| !existing_langs.contains(lang.as_str()))
-        .cloned()
-        .collect();
-    let complete = missing_languages.is_empty();
-
+    let view = state
+        .use_cases
+        .get_page_versions
+        .execute(auth.as_actor(), id)
+        .await?;
+    let complete = view.complete();
+    let PageVersionsView {
+        page,
+        workspace_languages,
+        primary_language,
+        versions,
+        missing_languages,
+    } = view;
     Ok(Json(PageVersionsResponse {
         page_id: page.id,
-        workspace_languages: ws.languages,
-        primary_language: ws.primary_language,
+        workspace_languages: workspace_languages
+            .into_iter()
+            .map(Language::into_string)
+            .collect(),
+        primary_language: primary_language.into_string(),
         versions: versions.into_iter().map(Into::into).collect(),
-        missing_languages,
+        missing_languages: missing_languages
+            .into_iter()
+            .map(Language::into_string)
+            .collect(),
         complete,
     }))
 }
 
-// ---- version history (Sprint 7) ----
+// ---- version history ----
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct VersionHistoryQuery {
@@ -763,13 +472,26 @@ pub struct VersionHistoryDetailResponse {
     pub created_at: String,
 }
 
+impl From<VersionHistoryEntry> for VersionHistoryDetailResponse {
+    fn from(e: VersionHistoryEntry) -> Self {
+        Self {
+            id: e.id,
+            page_id: e.page_id,
+            language: e.language.into_string(),
+            version_number: e.version_number,
+            title: e.title,
+            content_markdown: e.content_markdown,
+            is_published: e.is_published,
+            author_id: e.author_id,
+            created_at: e.created_at.to_rfc3339(),
+        }
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/pages/{id}/history",
-    params(
-        ("id" = Uuid, Path, description = "Page ID"),
-        VersionHistoryQuery,
-    ),
+    params(("id" = Uuid, Path, description = "Page ID"), VersionHistoryQuery),
     responses(
         (status = 200, description = "paginated version history", body = VersionHistoryListResponse),
         (status = 401, description = "unauthorized"),
@@ -782,27 +504,29 @@ pub async fn list_version_history(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    axum::extract::Query(params): axum::extract::Query<VersionHistoryQuery>,
+    Query(params): Query<VersionHistoryQuery>,
 ) -> Result<Json<VersionHistoryListResponse>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
+    let language_str = params.language.clone();
+    let page = state
+        .use_cases
+        .list_version_history
+        .execute(
+            auth.as_actor(),
+            ListVersionHistoryCommand {
+                page_id: id,
+                language: Language::from_trusted(params.language),
+                page: params.page,
+                per_page: params.per_page,
+            },
+        )
+        .await?;
 
-    let page = pages::find_by_id(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    let pg = params.page.unwrap_or(1).max(1);
-    let per_pg = params.per_page.unwrap_or(20).clamp(1, 50);
-
-    let (summaries, total) = page_version_history::list_by_page_and_language(
-        &state.pool,
-        page.id,
-        &params.language,
-        pg,
-        per_pg,
-    )
-    .await
-    .map_err(ApiError::Internal)?;
+    let VersionHistoryPage {
+        summaries,
+        total,
+        page: pg,
+        per_page,
+    } = page;
 
     let versions = summaries
         .into_iter()
@@ -818,12 +542,12 @@ pub async fn list_version_history(
         .collect();
 
     Ok(Json(VersionHistoryListResponse {
-        page_id: page.id,
-        language: params.language,
+        page_id: id,
+        language: language_str,
         versions,
         total,
         page: pg,
-        per_page: per_pg,
+        per_page,
     }))
 }
 
@@ -847,35 +571,12 @@ pub async fn get_version_history_item(
     auth: AuthUser,
     Path((id, history_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<VersionHistoryDetailResponse>, ApiError> {
-    require_role(&auth, Role::Viewer)?;
-
-    // Verify page belongs to workspace.
-    let _page = pages::find_by_id(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    let entry = page_version_history::find_by_id(&state.pool, history_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    // Verify the history entry belongs to this page.
-    if entry.page_id != id {
-        return Err(ApiError::NotFound);
-    }
-
-    Ok(Json(VersionHistoryDetailResponse {
-        id: entry.id,
-        page_id: entry.page_id,
-        language: entry.language,
-        version_number: entry.version_number,
-        title: entry.title,
-        content_markdown: entry.content_markdown,
-        is_published: entry.is_published,
-        author_id: entry.author_id,
-        created_at: entry.created_at.to_rfc3339(),
-    }))
+    let entry = state
+        .use_cases
+        .get_version_history_item
+        .execute(auth.as_actor(), id, history_id)
+        .await?;
+    Ok(Json(entry.into()))
 }
 
 #[utoipa::path(
@@ -900,83 +601,10 @@ pub async fn restore_version(
     auth: AuthUser,
     Path((id, history_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PageResponse>, ApiError> {
-    require_role(&auth, Role::Author)?;
-
-    let page = pages::find_by_id(&state.pool, id, auth.workspace_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    if page.status == PageStatus::Published {
-        return Err(ApiError::Validation(
-            "page is published — revert to draft before restoring".into(),
-        ));
-    }
-
-    let entry = page_version_history::find_by_id(&state.pool, history_id)
-        .await
-        .map_err(ApiError::Internal)?
-        .ok_or(ApiError::NotFound)?;
-
-    if entry.page_id != id {
-        return Err(ApiError::NotFound);
-    }
-
-    // Upsert the historical content as the current draft.
-    page_versions::upsert(
-        &state.pool,
-        page.id,
-        &entry.language,
-        &entry.title,
-        &entry.content_markdown,
-        auth.user_id,
-        PageStatus::Draft,
-    )
-    .await
-    .map_err(ApiError::Internal)?;
-
-    // Record the restore itself in version history.
-    let _ = page_version_history::insert(
-        &state.pool,
-        page.id,
-        &entry.language,
-        &entry.title,
-        &entry.content_markdown,
-        false,
-        Some(auth.user_id),
-    )
-    .await;
-
-    // Fire-and-forget: emit page.restored event to Chronik.
-    if let Some(ref chronik) = state.chronik {
-        chronik.produce_event_fire_and_forget(
-            historiador_db::chronik::producer::topics::PAGE_EVENTS,
-            page.id.to_string(),
-            serde_json::json!({
-                "event": "page.restored",
-                "page_id": page.id,
-                "language": entry.language,
-                "restored_version_number": entry.version_number,
-                "author_id": auth.user_id,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            }),
-        );
-    }
-
-    // Re-fetch for response.
-    let versions = page_versions::find_by_page(&state.pool, page.id)
-        .await
-        .map_err(ApiError::Internal)?;
-
-    Ok(Json(PageResponse {
-        id: page.id,
-        workspace_id: page.workspace_id,
-        collection_id: page.collection_id,
-        slug: page.slug,
-        status: page.status,
-        created_by: page.created_by,
-        versions: versions.into_iter().map(Into::into).collect(),
-        created_at: page.created_at.to_rfc3339(),
-        updated_at: page.updated_at.to_rfc3339(),
-    }))
+    let view = state
+        .use_cases
+        .restore_version
+        .execute(auth.as_actor(), id, history_id)
+        .await?;
+    Ok(Json(build_page_response(view)))
 }
