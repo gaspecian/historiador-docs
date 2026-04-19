@@ -62,17 +62,24 @@ export function useEditorStream(
         const full = await collectStream(stream, (chunk) => {
           setLiveAssistant((prev) => prev + chunk);
         });
-        // The conversation pane is for thinking, not for shipping the
-        // artefact. The generated markdown lands on the canvas; chat
-        // gets a short status so the timeline reads cleanly.
-        setDraft(full);
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "Rascunho atualizado — veja o canvas à direita.",
-          },
-        ]);
+        // The agent prompt splits its reply into <chat>/<canvas>
+        // tags; parse them so conversation goes to the messages
+        // list and document content goes to the draft pane. A
+        // pure-conversation turn carries no <canvas>, so the
+        // existing draft stays put.
+        const { chat, canvas } = splitChannels(full);
+        if (canvas.length > 0) {
+          setDraft(canvas);
+        }
+        const chatContent =
+          chat.length > 0
+            ? chat
+            : canvas.length > 0
+              ? "Rascunho atualizado — veja o canvas à direita."
+              : full.trim();
+        if (chatContent.length > 0) {
+          setMessages((prev) => [...prev, { role: "assistant", content: chatContent }]);
+        }
       } catch (e) {
         setMessages((prev) => [
           ...prev,
@@ -142,4 +149,34 @@ export async function collectStream(
     }
   }
   return buffer;
+}
+
+/**
+ * Mirrors `apps/api/src/application/editor/channels.rs`. Forgiving
+ * parser: case-insensitive tags, tolerates attributes on the open
+ * tag, handles arbitrary content (backticks, angle brackets) inside
+ * the tag body. If neither tag appears, the whole reply falls into
+ * the chat channel so content never gets silently dropped.
+ */
+function splitChannels(raw: string): { chat: string; canvas: string } {
+  const chat = extractTag(raw, "chat");
+  const canvas = extractTag(raw, "canvas");
+  if (chat === null && canvas === null) {
+    return { chat: raw.trim(), canvas: "" };
+  }
+  return { chat: (chat ?? "").trim(), canvas: (canvas ?? "").trim() };
+}
+
+function extractTag(raw: string, tag: string): string | null {
+  const lower = raw.toLowerCase();
+  const open = `<${tag}`;
+  const close = `</${tag}>`;
+  const openPos = lower.indexOf(open);
+  if (openPos < 0) return null;
+  // Skip past the `>` that closes the opening tag so attributes work.
+  const gt = raw.indexOf(">", openPos);
+  if (gt < 0) return null;
+  const closePos = lower.indexOf(close, gt + 1);
+  if (closePos < 0) return null;
+  return raw.slice(gt + 1, closePos);
 }
