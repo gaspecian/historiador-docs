@@ -10,5 +10,7 @@ pub mod config;
 pub mod crypto;
 pub mod llm;
 pub mod persistence;
+pub mod prompts;
 pub mod system;
+pub mod telemetry;
 pub mod token;

@@ -22,6 +22,8 @@ use historiador_api::{
     app,
     infrastructure::crypto::raw::Cipher,
     infrastructure::llm::probe::{LlmProbe, StubProbe},
+    infrastructure::prompts::LoadedPrompt,
+    infrastructure::telemetry::editor::EditorMetrics,
     presentation::{BuildDeps, UseCases},
     state::AppState,
 };
@@ -67,6 +69,9 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
         text_generation_client,
         chronik: None,
         use_cases,
+        editor_v2_enabled: false,
+        agent_prompt: Arc::new(LoadedPrompt::for_test()),
+        editor_metrics: Arc::new(EditorMetrics::new()),
     })
 }
 

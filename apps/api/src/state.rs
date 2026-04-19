@@ -5,6 +5,8 @@ use sqlx::PgPool;
 
 use crate::infrastructure::crypto::raw::Cipher;
 use crate::infrastructure::llm::probe::LlmProbe;
+use crate::infrastructure::prompts::LoadedPrompt;
+use crate::infrastructure::telemetry::editor::EditorMetrics;
 use crate::presentation::UseCases;
 use historiador_db::chronik::ChronikClient;
 use historiador_db::vector_store::VectorStore;
@@ -38,4 +40,15 @@ pub struct AppState {
     /// reach here; legacy handlers continue to use the primitives
     /// above until they are rewritten.
     pub use_cases: Arc<UseCases>,
+    /// Sprint 11 master feature flag. `true` exposes editor_v2 routes
+    /// and the new `/editor/ws` WebSocket; `false` keeps the Sprint 4
+    /// SSE editor as the only surface. Flipped at the tier-A
+    /// verification milestone per the approved plan.
+    pub editor_v2_enabled: bool,
+    /// Loaded + hashed agent system prompt. Shared so the block-op
+    /// dispatcher (A4) and WebSocket handler (A3) see the same body.
+    pub agent_prompt: Arc<LoadedPrompt>,
+    /// In-process counters for editor telemetry (US-11.17 success
+    /// metrics).
+    pub editor_metrics: Arc<EditorMetrics>,
 }

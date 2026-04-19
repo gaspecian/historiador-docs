@@ -1203,6 +1203,7 @@ dependencies = [
  "historiador_chunker",
  "historiador_db",
  "historiador_llm",
+ "historiador_tools",
  "jsonwebtoken",
  "rand 0.8.5",
  "regex",
@@ -1293,6 +1294,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "historiador_tools"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

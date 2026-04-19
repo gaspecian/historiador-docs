@@ -25,6 +25,7 @@ path = "src/bin/load_test_seed.rs"
 historiador_db = { path = "../../crates/db" }
 historiador_chunker = { path = "../../crates/chunker" }
 historiador_llm = { path = "../../crates/llm" }
+historiador_tools = { path = "../../crates/tools" }
 
 tokio.workspace = true
 axum.workspace = true
