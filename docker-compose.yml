@@ -60,7 +60,7 @@ services:
           sleep 1
         done
         echo "[ollama] server ready, pulling models"
-        /bin/ollama pull "${OLLAMA_GEN_MODEL:-llama3.1:8b}"
+        /bin/ollama pull "${OLLAMA_GEN_MODEL:-qwen2.5:14b-instruct}"
         /bin/ollama pull "${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
         echo "[ollama] models ready"
         wait $$SERVE_PID

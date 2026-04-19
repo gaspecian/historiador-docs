@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::presentation::handler::admin::{
     analytics as admin_analytics, users as admin_users, workspace as admin_workspace,
 };
-use crate::presentation::handler::{auth, collections, editor, export, pages, setup};
+use crate::presentation::handler::{auth, collections, editor, editor_ws, export, pages, setup};
 use crate::state::AppState;
 
 pub fn auth_router() -> Router<Arc<AppState>> {
@@ -97,4 +97,10 @@ pub fn editor_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/draft", post(editor::draft))
         .route("/iterate", post(editor::iterate))
+        // Sprint 11 phase A3 — editor-v2 WebSocket. Gated on
+        // AppState.editor_v2_enabled inside the handler so the
+        // route registers unconditionally but 404s when the flag
+        // is off. That keeps the route table stable across
+        // deploys and makes the flag check testable.
+        .route("/ws", get(editor_ws::upgrade))
 }

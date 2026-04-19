@@ -7,6 +7,8 @@ use historiador_api::{
     app,
     infrastructure::crypto::raw::Cipher,
     infrastructure::llm::probe::HttpLlmProbe,
+    infrastructure::prompts::load_agent_prompt,
+    infrastructure::telemetry::editor::EditorMetrics,
     presentation::{BuildDeps, UseCases},
     state::AppState,
 };
@@ -54,6 +56,27 @@ async fn main() -> anyhow::Result<()> {
 
     let public_base_url =
         std::env::var("PUBLIC_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+
+    // Sprint 11 master flag. Default OFF — Sprint 4 SSE editor remains
+    // the only surface until the tier-A phases verify in staging.
+    let editor_v2_enabled = std::env::var("EDITOR_V2_ENABLED")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+
+    // Agent prompt — loaded once at boot, hashed for deploy auditing.
+    let prompt_version = std::env::var("PROMPT_VERSION").unwrap_or_else(|_| "v1".to_string());
+    let prompt_dir = std::env::var("PROMPT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("prompts/agent"));
+    let agent_prompt = std::sync::Arc::new(
+        load_agent_prompt(&prompt_version, &prompt_dir).context("failed to load agent prompt")?,
+    );
+    tracing::info!(
+        version = %agent_prompt.version,
+        hash = %agent_prompt.hash,
+        editor_v2_enabled,
+        "agent prompt loaded"
+    );
 
     // --- database pool + migrations (api is the only service that migrates) ---
     let pool = historiador_db::connect(&database_url)
@@ -166,6 +189,9 @@ async fn main() -> anyhow::Result<()> {
         text_generation_client,
         chronik,
         use_cases,
+        editor_v2_enabled,
+        agent_prompt,
+        editor_metrics: Arc::new(EditorMetrics::new()),
     });
 
     let app = app::build_router(state);

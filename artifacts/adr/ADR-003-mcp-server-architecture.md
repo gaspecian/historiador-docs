@@ -4,6 +4,8 @@
 **Date:** 2026-04-08
 **Deciders:** Gabriel Specian (Nexian Tech)
 
+> **Editorial update — 2026-04-19:** The implementation language referenced throughout this ADR (Node.js / Fastify, `@historiador/db-client` package naming) is stale. Per ADR-006, the MCP server is implemented in Rust with Axum, and the shared database layer is `crates/db` in the Cargo workspace. All architectural decisions in this ADR — standalone read-only service, two-port public/internal network model, no write path, bearer-token auth, < 2 s p95 — remain in force.
+
 ---
 
 ## Context

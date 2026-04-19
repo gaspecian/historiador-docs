@@ -21,6 +21,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** True for admins and authors; false for viewers. */
+  canEdit: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -127,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isAuthenticated: user !== null,
       isAdmin: user?.role === "admin",
+      canEdit: user?.role === "admin" || user?.role === "author",
       isLoading,
       login,
       logout,

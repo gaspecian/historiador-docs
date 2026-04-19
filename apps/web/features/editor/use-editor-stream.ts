@@ -37,6 +37,15 @@ export interface UseEditorStreamResult {
   generateDraft: (body: DraftRequest) => Promise<void>;
   /** Kick off an /editor/iterate stream using the current draft. */
   iterateDraft: (body: Omit<IterateRequest, "current_draft">) => Promise<void>;
+  /** Compose a block-level comment into an iterate instruction and
+   *  send it to the AI. Passes the line range so the AI can
+   *  pinpoint exactly what the user highlighted. */
+  submitBlockComment: (
+    blockSource: string,
+    startLine: number,
+    endLine: number,
+    commentText: string,
+  ) => Promise<void>;
   /** Overwrite the draft (e.g. restore from server, bail out). */
   setDraft: (value: string) => void;
 }
@@ -62,8 +71,24 @@ export function useEditorStream(
         const full = await collectStream(stream, (chunk) => {
           setLiveAssistant((prev) => prev + chunk);
         });
-        setDraft(full);
-        setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+        // The agent prompt splits its reply into <chat>/<canvas>
+        // tags; parse them so conversation goes to the messages
+        // list and document content goes to the draft pane. A
+        // pure-conversation turn carries no <canvas>, so the
+        // existing draft stays put.
+        const { chat, canvas } = splitChannels(full);
+        if (canvas.length > 0) {
+          setDraft(canvas);
+        }
+        const chatContent =
+          chat.length > 0
+            ? chat
+            : canvas.length > 0
+              ? "Rascunho atualizado — veja o canvas à direita."
+              : full.trim();
+        if (chatContent.length > 0) {
+          setMessages((prev) => [...prev, { role: "assistant", content: chatContent }]);
+        }
       } catch (e) {
         setMessages((prev) => [
           ...prev,
@@ -99,6 +124,39 @@ export function useEditorStream(
     [runStream, draft, streaming],
   );
 
+  const submitBlockComment = useCallback(
+    async (
+      blockSource: string,
+      startLine: number,
+      endLine: number,
+      commentText: string,
+    ) => {
+      if (!commentText.trim() || !draft || streaming) return;
+      // GitHub-PR-style instruction: the AI receives the comment,
+      // the quoted block, AND the exact line range so it can
+      // pinpoint what the user highlighted. Channel-tag contract
+      // lets the agent choose update / reply / both.
+      const snippet = blockSource.trim().slice(0, 240);
+      const lineLabel =
+        startLine === endLine
+          ? `a linha ${startLine}`
+          : `as linhas ${startLine}–${endLine}`;
+      const instruction =
+        `O usuário comentou ${lineLabel} do rascunho atual.\n\n` +
+        `Trecho comentado (linhas ${startLine}–${endLine}):\n` +
+        `>>>\n${snippet}\n<<<\n\n` +
+        `Comentário: "${commentText.trim()}"\n\n` +
+        `Avalie o comentário. Se fizer sentido, atualize o documento ` +
+        `inteiro em <canvas>. Responda em <chat> explicando brevemente ` +
+        `o que você mudou, em quais linhas, ou por que não fez sentido mudar.`;
+      await runStream(
+        `Comentário (linhas ${startLine}–${endLine}): ${commentText}`,
+        editorService.iterate({ instruction, current_draft: draft }),
+      );
+    },
+    [runStream, draft, streaming],
+  );
+
   return {
     draft,
     messages,
@@ -106,6 +164,7 @@ export function useEditorStream(
     liveAssistant,
     generateDraft,
     iterateDraft,
+    submitBlockComment,
     setDraft,
   };
 }
@@ -133,4 +192,40 @@ export async function collectStream(
     }
   }
   return buffer;
+}
+
+/**
+ * Mirrors `apps/api/src/application/editor/channels.rs`. Forgiving
+ * parser: case-insensitive tags, tolerates attributes on the open
+ * tag, handles arbitrary content (backticks, angle brackets) inside
+ * the tag body. If neither tag appears, the whole reply falls into
+ * the chat channel so content never gets silently dropped.
+ */
+function splitChannels(raw: string): { chat: string; canvas: string } {
+  const chat = extractTag(raw, "chat");
+  const canvas = extractTag(raw, "canvas");
+  if (chat === null && canvas === null) {
+    // Fallback: strip orphan tag markers so the user never sees raw
+    // protocol fragments when the agent violates the contract.
+    return { chat: stripOrphanTags(raw).trim(), canvas: "" };
+  }
+  return { chat: (chat ?? "").trim(), canvas: (canvas ?? "").trim() };
+}
+
+function stripOrphanTags(raw: string): string {
+  return raw.replace(/<\/?(chat|canvas)\s*>/gi, "");
+}
+
+function extractTag(raw: string, tag: string): string | null {
+  const lower = raw.toLowerCase();
+  const open = `<${tag}`;
+  const close = `</${tag}>`;
+  const openPos = lower.indexOf(open);
+  if (openPos < 0) return null;
+  // Skip past the `>` that closes the opening tag so attributes work.
+  const gt = raw.indexOf(">", openPos);
+  if (gt < 0) return null;
+  const closePos = lower.indexOf(close, gt + 1);
+  if (closePos < 0) return null;
+  return raw.slice(gt + 1, closePos);
 }

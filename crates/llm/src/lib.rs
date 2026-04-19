@@ -18,13 +18,15 @@ pub mod ollama;
 pub mod openai;
 pub mod stub;
 pub mod text_generation;
+pub mod tool_calling;
 
 // Re-export the most-used types at crate root for convenience.
 pub use anthropic::AnthropicTextGenerationClient;
 pub use ollama::{list_models as list_ollama_models, OllamaEmbeddingClient, OllamaTextClient};
 pub use openai::{OpenAiEmbeddingClient, OpenAiTextGenerationClient};
-pub use stub::{StubEmbeddingClient, StubTextGenerationClient};
+pub use stub::{StubEmbeddingClient, StubTextGenerationClient, StubToolCallingClient};
 pub use text_generation::{TextGenerationClient, TextStream};
+pub use tool_calling::{ToolCallChunk, ToolCallingClient, ToolStream, ToolStreamItem, Turn};
 
 #[derive(Debug, Error)]
 pub enum LlmError {

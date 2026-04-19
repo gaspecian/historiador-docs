@@ -1,34 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
-
-function Sparkle() {
-  return <span aria-hidden className="text-lg">✨</span>;
-}
-
-function ArrowRight() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      aria-hidden
-    >
-      <path d="M5 12h14M13 5l7 7-7 7" />
-    </svg>
-  );
-}
+import { CommentablePreview, type BlockComment } from "@/features/editor/review";
+import { SaveDialog } from "@/features/editor/save";
+import * as pagesService from "@/lib/services/pages";
+import type { PageVersionResponse } from "@historiador/types";
 
 export default function EditorPage() {
+  const searchParams = useSearchParams();
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
-  const { draft, messages, streaming, liveAssistant, generateDraft, iterateDraft } =
-    useEditorStream();
+  const {
+    draft,
+    messages,
+    streaming,
+    liveAssistant,
+    generateDraft,
+    iterateDraft,
+    submitBlockComment,
+    setDraft,
+  } = useEditorStream();
+
+  // When the URL carries ?page_id=... the user is editing an existing
+  // page — fetch its version and seed the draft buffer so they can
+  // iterate with the AI instead of starting from a blank brief. The
+  // Save dialog then UPDATEs the existing page instead of creating a
+  // new one (handled further down).
+  const existingPageId = searchParams?.get("page_id") ?? null;
+  const existingLanguage = searchParams?.get("lang") ?? null;
+  const [existingTitle, setExistingTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!existingPageId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pagesService.get(existingPageId);
+        if (cancelled) return;
+        const versions = page.versions as PageVersionResponse[];
+        const version =
+          (existingLanguage
+            ? versions.find((v) => v.language === existingLanguage)
+            : undefined) ?? versions[0];
+        if (version) {
+          setDraft(version.content_markdown);
+          setExistingTitle(version.title);
+        }
+      } catch {
+        // page not found / forbidden — fall through to blank editor.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [existingPageId, existingLanguage, setDraft]);
+
+  // GitHub-PR-style comments keyed by block index. The parent owns
+  // state so the commentable preview stays a pure render component.
+  // Reset when the draft is replaced wholesale — block indexes drift
+  // after an edit round-trip, so keeping stale anchors hurts more
+  // than losing the thread history.
+  const [commentsByBlock, setCommentsByBlock] = useState<
+    Record<number, Array<{ id: string; text: string; status: "pending" | "replied" | "resolved" }>>
+  >({});
+  // When the AI responds to a comment turn, mark pending comments
+  // on the affected block as replied so the UI reflects the cycle.
+  const lastCommentBlockRef = useRef<number | null>(null);
+  const prevStreamingRef = useRef(false);
+  useEffect(() => {
+    // Transition streaming:true → false means the AI just finished
+    // responding. Flip pending comments on the last-commented block
+    // to "replied".
+    if (prevStreamingRef.current && !streaming && lastCommentBlockRef.current !== null) {
+      const idx = lastCommentBlockRef.current;
+      setCommentsByBlock((prev) => {
+        const list = prev[idx];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [idx]: list.map((c) => (c.status === "pending" ? { ...c, status: "replied" } : c)),
+        };
+      });
+      lastCommentBlockRef.current = null;
+    }
+    prevStreamingRef.current = streaming;
+  }, [streaming]);
 
   const submitGenerate = async () => {
     if (!brief.trim() || streaming) return;
@@ -42,12 +100,45 @@ export default function EditorPage() {
     setInstruction("");
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(draft);
-  };
+  const handleBlockComment = useCallback(
+    (
+      blockIndex: number,
+      blockSource: string,
+      startLine: number,
+      endLine: number,
+      text: string,
+    ) => {
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setCommentsByBlock((prev) => {
+        const existing = prev[blockIndex] ?? [];
+        return {
+          ...prev,
+          [blockIndex]: [...existing, { id, text, status: "pending" }],
+        };
+      });
+      lastCommentBlockRef.current = blockIndex;
+      void submitBlockComment(blockSource, startLine, endLine, text);
+    },
+    [submitBlockComment]
+  );
+
+  const handleResolveComment = useCallback((blockIndex: number, commentId: string) => {
+    setCommentsByBlock((prev) => {
+      const list = prev[blockIndex];
+      if (!list) return prev;
+      return {
+        ...prev,
+        [blockIndex]: list.map((c) => (c.id === commentId ? { ...c, status: "resolved" } : c)),
+      };
+    });
+  }, []);
+
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   const loading = streaming;
-  const showCheckin = draft && !loading;
 
   return (
     <main className="grid h-full grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] bg-surface-page">
@@ -162,50 +253,28 @@ export default function EditorPage() {
             {draft ? "Rascunho" : "Sem documento ainda"}
           </div>
           {draft && (
-            <Button variant="secondary" size="sm" onClick={copyToClipboard}>
-              Copiar markdown
+            <Button
+              size="sm"
+              onClick={() => setSaveDialogOpen(true)}
+              disabled={streaming}
+            >
+              Salvar
             </Button>
           )}
         </header>
 
         <div className="flex-1 overflow-y-auto px-10 py-8">
           <div className="mx-auto" style={{ maxWidth: "var(--content-max)" }}>
-            {showCheckin && (
-              <div
-                className="relative mb-6 rounded-lg border border-primary-100 bg-surface-canvas p-5 shadow-sm"
-              >
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-lg"
-                  style={{ boxShadow: "0 0 0 3px var(--color-primary-50)" }}
-                />
-                <div className="mb-3 flex items-center gap-2">
-                  <Sparkle />
-                  <span className="text-sm font-semibold text-text-primary">
-                    Rascunho pronto — ficou como você imaginou?
-                  </span>
-                </div>
-                <div className="mb-3.5 text-[13px] leading-relaxed text-text-secondary">
-                  Você pode continuar refinando ou copiar o markdown. Suas alterações ficam no
-                  rascunho até você salvar.
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm">
-                    <span className="inline-flex items-center gap-1.5">
-                      Continuar escrevendo
-                      <ArrowRight />
-                    </span>
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={copyToClipboard}>
-                    Copiar markdown
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {draft ? (
-              <pre className="whitespace-pre-wrap break-words text-[15px] leading-[1.6] text-text-primary font-sans">
-                {draft}
-              </pre>
+              <CommentablePreview
+                markdown={normaliseDraftMarkdown(
+                  draft.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, ""),
+                )}
+                commentsByBlock={commentsByBlock as Record<number, BlockComment[]>}
+                onComment={handleBlockComment}
+                onResolve={handleResolveComment}
+                submitting={streaming}
+              />
             ) : (
               <div
                 className="text-text-tertiary"
@@ -217,6 +286,47 @@ export default function EditorPage() {
           </div>
         </div>
       </section>
+
+      <SaveDialog
+        open={saveDialogOpen}
+        markdown={draft}
+        pageId={existingPageId}
+        initialTitle={existingTitle ?? undefined}
+        language={existingLanguage ?? undefined}
+        onClose={() => setSaveDialogOpen(false)}
+      />
     </main>
   );
+}
+
+function normaliseDraftMarkdown(md: string): string {
+  const lines = md.split(/\r?\n/);
+  const out: string[] = [];
+  const isBlank = (s: string) => s.trim().length === 0;
+  const isAtxHeading = (s: string) => /^#{1,6}\s+\S/.test(s);
+  const isSetextUnderline = (s: string) => /^(=+|-+)\s*$/.test(s) && s.trim().length >= 2;
+  const isFence = (s: string) => /^```/.test(s.trimStart()) || /^~~~/.test(s.trimStart());
+  const isListItem = (s: string) => /^\s*(?:[-*+]\s+|\d+\.\s+)/.test(s);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const prev = out.length > 0 ? out[out.length - 1] : "";
+    const next = lines[i + 1] ?? "";
+
+    if (isAtxHeading(line) && out.length > 0 && !isBlank(prev)) out.push("");
+    if (isFence(line) && out.length > 0 && !isBlank(prev)) out.push("");
+
+    if (isSetextUnderline(line)) {
+      out.push(line);
+      if (!isBlank(next)) out.push("");
+      continue;
+    }
+
+    out.push(line);
+
+    if (isAtxHeading(line) && !isBlank(next)) out.push("");
+    if (isListItem(next) && !isBlank(line) && !isListItem(line)) out.push("");
+  }
+
+  return out.join("\n");
 }
