@@ -8,26 +8,6 @@ import { EditorV2 } from "@/features/editor/editor-v2";
 import { CommentablePreview, type BlockComment } from "@/features/editor/review";
 import { EDITOR_V2_ENABLED } from "@/lib/config";
 
-function Sparkle() {
-  return <span aria-hidden className="text-lg">✨</span>;
-}
-
-function ArrowRight() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      aria-hidden
-    >
-      <path d="M5 12h14M13 5l7 7-7 7" />
-    </svg>
-  );
-}
-
 export default function EditorPage() {
   // Sprint 11 flag-gated entry point. When the v2 editor ships on a
   // deploy, this dispatch swaps the whole surface over; the Sprint 4
@@ -165,7 +145,6 @@ function EditorPageLegacy() {
   };
 
   const loading = streaming;
-  const showCheckin = draft && !loading;
 
   return (
     <main className="grid h-full grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] bg-surface-page">
@@ -288,38 +267,6 @@ function EditorPageLegacy() {
 
         <div className="flex-1 overflow-y-auto px-10 py-8">
           <div className="mx-auto" style={{ maxWidth: "var(--content-max)" }}>
-            {showCheckin && (
-              <div
-                className="relative mb-6 rounded-lg border border-primary-100 bg-surface-canvas p-5 shadow-sm"
-              >
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-lg"
-                  style={{ boxShadow: "0 0 0 3px var(--color-primary-50)" }}
-                />
-                <div className="mb-3 flex items-center gap-2">
-                  <Sparkle />
-                  <span className="text-sm font-semibold text-text-primary">
-                    Rascunho pronto — ficou como você imaginou?
-                  </span>
-                </div>
-                <div className="mb-3.5 text-[13px] leading-relaxed text-text-secondary">
-                  Você pode continuar refinando ou copiar o markdown. Suas alterações ficam no
-                  rascunho até você salvar.
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm">
-                    <span className="inline-flex items-center gap-1.5">
-                      Continuar escrevendo
-                      <ArrowRight />
-                    </span>
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={copyToClipboard}>
-                    Copiar markdown
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {draft ? (
               <CommentablePreview
                 markdown={normaliseDraftMarkdown(
