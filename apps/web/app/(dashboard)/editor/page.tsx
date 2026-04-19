@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { marked } from "marked";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
 import { EditorV2 } from "@/features/editor/editor-v2";
@@ -232,9 +233,10 @@ function EditorPageLegacy() {
             )}
 
             {draft ? (
-              <pre className="whitespace-pre-wrap break-words text-[15px] leading-[1.6] text-text-primary font-sans">
-                {draft}
-              </pre>
+              <div
+                className="prose max-w-none text-text-primary"
+                dangerouslySetInnerHTML={{ __html: renderDraftMarkdown(draft) }}
+              />
             ) : (
               <div
                 className="text-text-tertiary"
@@ -248,4 +250,14 @@ function EditorPageLegacy() {
       </section>
     </main>
   );
+}
+
+function renderDraftMarkdown(md: string): string {
+  // Strip the `<!-- block:<uuid> -->` metadata comments emitted by
+  // the Sprint 11 serializer so they never appear as visible
+  // content in the legacy preview. The canvas-side BlockIdExtension
+  // owns ID bookkeeping; this pane is display-only.
+  const cleaned = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
+  const html = marked.parse(cleaned, { async: false, gfm: true });
+  return typeof html === "string" ? html : "";
 }
