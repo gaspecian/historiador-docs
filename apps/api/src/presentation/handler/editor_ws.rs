@@ -302,7 +302,7 @@ async fn run_socket(
 
                                 // Only user-initiated turns trigger an LLM reply.
                                 if role == "user" {
-                                    let assistant_reply = generate_reply(
+                                    let reply = generate_reply(
                                         &state,
                                         page_id,
                                         &language,
@@ -314,15 +314,32 @@ async fn run_socket(
                                     .await;
                                     review_pass_requested = false;
 
-                                    if let Some(reply_text) = assistant_reply {
+                                    if let Some(AssistantReply { text, mode }) = reply {
+                                        let chat_content = match mode {
+                                            PromptMode::Generation => {
+                                                // Write the drafted markdown to the
+                                                // canvas instead of dumping it in
+                                                // chat. The proposal-overlay pipeline
+                                                // takes over for per-block tool
+                                                // calls; this is the whole-document
+                                                // fallback path used while real
+                                                // providers still return
+                                                // LlmError::NotImplemented for tool
+                                                // calling.
+                                                write_canvas_draft(&state, page_id, &language, &text).await;
+                                                "Rascunho atualizado — veja o canvas.".to_string()
+                                            }
+                                            _ => text,
+                                        };
+
                                         seq += 1;
-                                        let reply = EditorMessage::Message {
+                                        let reply_env = EditorMessage::Message {
                                             seq,
                                             role: "assistant".into(),
-                                            content: reply_text.clone(),
+                                            content: chat_content.clone(),
                                         };
                                         sender
-                                            .send(Message::Text(serde_json::to_string(&reply)?))
+                                            .send(Message::Text(serde_json::to_string(&reply_env)?))
                                             .await?;
                                         persist_message(
                                             &state,
@@ -330,7 +347,7 @@ async fn run_socket(
                                             &language,
                                             author_id,
                                             "assistant",
-                                            &reply_text,
+                                            &chat_content,
                                         )
                                         .await;
                                     }
@@ -468,6 +485,11 @@ async fn persist_message(
     }
 }
 
+struct AssistantReply {
+    text: String,
+    mode: PromptMode,
+}
+
 /// Build a full rendered system prompt for the next turn and call
 /// the text-generation client to produce an assistant reply.
 /// Returns `None` on LLM failure so the caller does not fabricate a
@@ -481,7 +503,7 @@ async fn generate_reply(
     user_content: &str,
     skip_discovery: bool,
     review_pass: bool,
-) -> Option<String> {
+) -> Option<AssistantReply> {
     // Fetch canvas markdown for context. Missing page = empty canvas.
     let page_markdown = historiador_db::postgres::page_versions::find_by_page_and_language(
         &state.pool,
@@ -581,13 +603,51 @@ async fn generate_reply(
             if buf.trim().is_empty() {
                 None
             } else {
-                Some(buf)
+                Some(AssistantReply { text: buf, mode })
             }
         }
         Err(e) => {
             tracing::warn!(error = %e, "editor ws: LLM call failed");
             None
         }
+    }
+}
+
+/// Persist a fresh canvas draft produced in generation mode.
+///
+/// This is a whole-document overwrite on the legacy-prose fallback
+/// path — free-form LLMs do not (yet) return structured tool calls,
+/// so we skip the ADR-013 per-block overlay and write straight to
+/// `page_versions.content_markdown`. When a provider starts honouring
+/// `ToolCallingClient::generate_with_tools`, the block-op dispatcher
+/// takes over and this function stops being called.
+async fn write_canvas_draft(state: &AppState, page_id: Uuid, language: &str, markdown: &str) {
+    // Direct UPDATE on the existing (page_id, language) row. This
+    // path does NOT create a new version: if the author has not
+    // opened the page through the normal CRUD flow there is no
+    // row to update, and the write is a no-op. The v2 editor shell
+    // always binds to an existing page via `/editor?page_id=...`,
+    // so the row exists in practice.
+    let res = sqlx::query(
+        "UPDATE page_versions SET content_markdown = $1, updated_at = now() \
+         WHERE page_id = $2 AND language = $3",
+    )
+    .bind(markdown)
+    .bind(page_id)
+    .bind(language)
+    .execute(&state.pool)
+    .await;
+    match res {
+        Ok(r) if r.rows_affected() == 0 => {
+            tracing::warn!(
+                %page_id, language,
+                "editor ws: canvas draft write found no matching page_version row"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, %page_id, "editor ws: canvas draft write failed");
+        }
+        _ => {}
     }
 }
 

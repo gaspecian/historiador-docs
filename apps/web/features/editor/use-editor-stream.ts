@@ -62,8 +62,17 @@ export function useEditorStream(
         const full = await collectStream(stream, (chunk) => {
           setLiveAssistant((prev) => prev + chunk);
         });
+        // The conversation pane is for thinking, not for shipping the
+        // artefact. The generated markdown lands on the canvas; chat
+        // gets a short status so the timeline reads cleanly.
         setDraft(full);
-        setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Rascunho atualizado — veja o canvas à direita.",
+          },
+        ]);
       } catch (e) {
         setMessages((prev) => [
           ...prev,
