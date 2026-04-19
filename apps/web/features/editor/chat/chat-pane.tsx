@@ -17,11 +17,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 
-import { useEditorSocket, type OutlineSection } from "@/lib/editor-ws";
+import {
+  useEditorSocket,
+  type AutonomyMode,
+  type OutlineSection,
+} from "@/lib/editor-ws";
 
+import { CheckpointCard } from "../autonomy";
 import { OutlineCard } from "../outline";
 import { Composer } from "./composer";
 import { MessageList, type ChatMessage } from "./message-list";
+
+interface PendingCheckpoint {
+  summary: string;
+  opCount: number;
+  reason: string;
+}
 
 export interface ChatPaneProps {
   pageId: string;
@@ -88,11 +99,19 @@ export function ChatPane({
 
   const [latestOutline, setLatestOutline] = useState<OutlineSection[] | null>(null);
   const [outlineApproved, setOutlineApproved] = useState(false);
+  const [pendingCheckpoint, setPendingCheckpoint] = useState<PendingCheckpoint | null>(null);
 
   const handleOutline = useCallback((sections: OutlineSection[]) => {
     setLatestOutline(sections);
     setOutlineApproved(false);
   }, []);
+
+  const handleCheckpoint = useCallback(
+    (summary: string, opCount: number, reason: string) => {
+      setPendingCheckpoint({ summary, opCount, reason });
+    },
+    []
+  );
 
   const { status, send, sendRaw } = useEditorSocket({
     pageId,
@@ -103,7 +122,27 @@ export function ChatPane({
     onError: handleError,
     onOutline: handleOutline,
     onBlockOp: onProposal,
+    onCheckpoint: handleCheckpoint,
   });
+
+  const handleCheckpointDecision = useCallback(
+    (decision: "continue" | "revise" | "skip") => {
+      setPendingCheckpoint(null);
+      sendRaw({ type: "autonomy_decision", decision });
+    },
+    [sendRaw]
+  );
+
+  // Listen for autonomy-mode flips from the top bar (EditorV2 emits).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ mode: AutonomyMode }>).detail;
+      if (!detail) return;
+      sendRaw({ type: "autonomy_mode_changed", mode: detail.mode });
+    };
+    window.addEventListener("historiador:autonomy-change", handler);
+    return () => window.removeEventListener("historiador:autonomy-change", handler);
+  }, [sendRaw]);
 
   // Listen for block-op ack events emitted by the ProposalPanel
   // (which lives in EditorV2, outside this component tree). A custom
@@ -181,6 +220,18 @@ export function ChatPane({
               sections={latestOutline}
               onApprove={handleApproveOutline}
               approved={outlineApproved}
+            />
+          </div>
+        )}
+        {pendingCheckpoint && (
+          <div className="px-4 pb-3">
+            <CheckpointCard
+              summary={pendingCheckpoint.summary}
+              opCount={pendingCheckpoint.opCount}
+              reason={pendingCheckpoint.reason}
+              onContinue={() => handleCheckpointDecision("continue")}
+              onRevise={() => handleCheckpointDecision("revise")}
+              onSkip={() => handleCheckpointDecision("skip")}
             />
           </div>
         )}

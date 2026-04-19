@@ -10,6 +10,9 @@
 
 import { useCallback, useState } from "react";
 
+import type { AutonomyMode } from "@/lib/editor-ws";
+
+import { AutonomySelector } from "./autonomy";
 import { Canvas } from "./canvas";
 import { ChatPane } from "./chat";
 import { ProposalPanel, summariseOp, useProposalStore } from "./overlay";
@@ -51,8 +54,16 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
   // (to update these) lands with B2's inline toolbar.
   const [selectionText] = useState("");
   const [cursorBlockId] = useState<string | null>(null);
+  const [autonomyMode, setAutonomyMode] = useState<AutonomyMode>("propose");
 
   const proposals = useProposalStore();
+
+  const handleAutonomyChange = useCallback((next: AutonomyMode) => {
+    setAutonomyMode(next);
+    window.dispatchEvent(
+      new CustomEvent("historiador:autonomy-change", { detail: { mode: next } })
+    );
+  }, []);
 
   const handleProposal = useCallback(
     (proposalId: string, op: unknown) => {
@@ -87,9 +98,12 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
         <h1 className="t-label text-[var(--color-text-tertiary)] tracking-[var(--text-caps-tracking)] uppercase">
           Editor v2
         </h1>
-        <span className="t-body-sm text-[var(--color-text-tertiary)]">
-          {savedAt ? `Saved ${savedAt.toLocaleTimeString()}` : "Not saved yet"}
-        </span>
+        <div className="flex items-center gap-3">
+          <AutonomySelector mode={autonomyMode} onChange={handleAutonomyChange} />
+          <span className="t-body-sm text-[var(--color-text-tertiary)]">
+            {savedAt ? `Saved ${savedAt.toLocaleTimeString()}` : "Not saved yet"}
+          </span>
+        </div>
       </header>
       <SplitPane
         left={

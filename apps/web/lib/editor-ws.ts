@@ -56,6 +56,21 @@ export type EditorMessage =
   | {
       type: "outline_approved";
       sections: OutlineSection[];
+    }
+  | {
+      type: "autonomy_mode_changed";
+      mode: AutonomyMode;
+    }
+  | {
+      type: "autonomy_checkpoint";
+      seq: number;
+      summary: string;
+      op_count: number;
+      reason: "heading_boundary" | "op_threshold" | "timeout";
+    }
+  | {
+      type: "autonomy_decision";
+      decision: "continue" | "revise" | "skip";
     };
 
 export interface OutlineSection {
@@ -63,6 +78,8 @@ export interface OutlineSection {
   level?: number;
   bullets?: string[];
 }
+
+export type AutonomyMode = "propose" | "checkpointed" | "autonomous";
 
 export type EditorSocketStatus = "connecting" | "open" | "closed" | "error";
 
@@ -79,6 +96,10 @@ export interface UseEditorSocketArgs {
   onOutline?: (sections: OutlineSection[], revised: boolean) => void;
   /** Fired when the server pushes a block_op envelope (A10). */
   onBlockOp?: (proposalId: string, op: unknown) => void;
+  /** Fired when the server pushes an autonomy_checkpoint (A11). */
+  onCheckpoint?: (summary: string, opCount: number, reason: string) => void;
+  /** Fired when the autonomy mode changes (either direction). */
+  onAutonomyMode?: (mode: AutonomyMode) => void;
 }
 
 export interface UseEditorSocketResult {
@@ -105,6 +126,8 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
     onError,
     onOutline,
     onBlockOp,
+    onCheckpoint,
+    onAutonomyMode,
   } = args;
 
   const [status, setStatus] = useState<EditorSocketStatus>("closed");
@@ -215,6 +238,15 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
             }
             onBlockOp?.(msg.proposal_id, msg.op);
             break;
+          case "autonomy_checkpoint":
+            if (msg.seq > lastSeqRef.current) {
+              setLastSeq(msg.seq);
+            }
+            onCheckpoint?.(msg.summary, msg.op_count, msg.reason);
+            break;
+          case "autonomy_mode_changed":
+            onAutonomyMode?.(msg.mode);
+            break;
           default:
             // Unknown variant — drop silently.
             break;
@@ -250,7 +282,7 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [url, onMessage, onError, onOutline, onBlockOp]);
+  }, [url, onMessage, onError, onOutline, onBlockOp, onCheckpoint, onAutonomyMode]);
 
   const send = useCallback((role: string, content: string) => {
     const ws = socketRef.current;

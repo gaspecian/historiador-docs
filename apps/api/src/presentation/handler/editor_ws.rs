@@ -64,6 +64,9 @@ pub fn supported_variants() -> Vec<&'static str> {
         "outline_proposed",
         "outline_revised",
         "outline_approved",
+        "autonomy_mode_changed",
+        "autonomy_checkpoint",
+        "autonomy_decision",
     ]
 }
 
@@ -145,6 +148,24 @@ pub enum EditorMessage {
     OutlineApproved {
         sections: Vec<crate::application::editor::outline::OutlineSection>,
     },
+    /// Either direction: the autonomy mode for this page changed.
+    /// Client-originated when the user flips the selector; server-
+    /// originated when the workspace default kicks in or another
+    /// client changes the mode.
+    AutonomyModeChanged {
+        mode: crate::application::editor::autonomy::AutonomyMode,
+    },
+    /// Server → client: the batcher hit a boundary (heading change,
+    /// 5-op threshold, or 10-second timeout) and the agent is
+    /// waiting for a decision before drafting more.
+    AutonomyCheckpoint {
+        seq: u64,
+        summary: String,
+        op_count: u32,
+        reason: crate::application::editor::autonomy::CheckpointReason,
+    },
+    /// Client → server: user's decision at a checkpoint.
+    AutonomyDecision { decision: String },
 }
 
 // --- query params ---
