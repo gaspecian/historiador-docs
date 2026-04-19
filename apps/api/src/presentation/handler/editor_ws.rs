@@ -61,6 +61,9 @@ pub fn supported_variants() -> Vec<&'static str> {
         "block_op",
         "block_op_ack",
         "skip_discovery",
+        "outline_proposed",
+        "outline_revised",
+        "outline_approved",
     ]
 }
 
@@ -126,6 +129,22 @@ pub enum EditorMessage {
     /// US-11.01). Records a session flag so subsequent turns do not
     /// gate on intake questions.
     SkipDiscovery,
+    /// Server → client: the AI proposed an outline (A9 / ADR-015).
+    OutlineProposed {
+        seq: u64,
+        sections: Vec<crate::application::editor::outline::OutlineSection>,
+    },
+    /// Server → client: the AI revised an earlier outline in response
+    /// to a comment.
+    OutlineRevised {
+        seq: u64,
+        sections: Vec<crate::application::editor::outline::OutlineSection>,
+    },
+    /// Client → server: the author accepted an outline. Triggers the
+    /// seed-canvas dispatch downstream.
+    OutlineApproved {
+        sections: Vec<crate::application::editor::outline::OutlineSection>,
+    },
 }
 
 // --- query params ---

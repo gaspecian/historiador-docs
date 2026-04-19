@@ -17,8 +17,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 
-import { useEditorSocket } from "@/lib/editor-ws";
+import { useEditorSocket, type OutlineSection } from "@/lib/editor-ws";
 
+import { OutlineCard } from "../outline";
 import { Composer } from "./composer";
 import { MessageList, type ChatMessage } from "./message-list";
 
@@ -81,6 +82,14 @@ export function ChatPane({
     []
   );
 
+  const [latestOutline, setLatestOutline] = useState<OutlineSection[] | null>(null);
+  const [outlineApproved, setOutlineApproved] = useState(false);
+
+  const handleOutline = useCallback((sections: OutlineSection[]) => {
+    setLatestOutline(sections);
+    setOutlineApproved(false);
+  }, []);
+
   const { status, send, sendRaw } = useEditorSocket({
     pageId,
     language,
@@ -88,6 +97,7 @@ export function ChatPane({
     enabled: !disabled,
     onMessage: handleIncoming,
     onError: handleError,
+    onOutline: handleOutline,
   });
 
   const [discoverySkipped, setDiscoverySkipped] = useState(false);
@@ -95,6 +105,12 @@ export function ChatPane({
     setDiscoverySkipped(true);
     sendRaw({ type: "skip_discovery" });
   }, [sendRaw]);
+
+  const handleApproveOutline = useCallback(() => {
+    if (!latestOutline) return;
+    setOutlineApproved(true);
+    sendRaw({ type: "outline_approved", sections: latestOutline });
+  }, [latestOutline, sendRaw]);
 
   const sendUserTurn = useCallback(
     (content: string) => {
@@ -136,6 +152,15 @@ export function ChatPane({
       {header}
       <div className="flex-1 flex flex-col min-h-0">
         <MessageList messages={messages} />
+        {latestOutline && (
+          <div className="px-4 pb-3">
+            <OutlineCard
+              sections={latestOutline}
+              onApprove={handleApproveOutline}
+              approved={outlineApproved}
+            />
+          </div>
+        )}
         <Composer
           onSubmit={sendUserTurn}
           onSkipDiscovery={discoverySkipped ? undefined : handleSkipDiscovery}

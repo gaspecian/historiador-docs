@@ -50,6 +50,50 @@ pub fn block_op_tools() -> Vec<ToolSpec> {
     ]
 }
 
+/// Every tool the agent may call in Sprint 11, including the outline
+/// proposer used during the conversational intake flow (ADR-015).
+pub fn all_tools() -> Vec<ToolSpec> {
+    let mut tools = block_op_tools();
+    tools.push(propose_outline());
+    tools
+}
+
+pub fn propose_outline() -> ToolSpec {
+    ToolSpec {
+        name: "propose_outline",
+        description: "Propose a structured outline before writing any block. The user will approve, revise, or edit it inline before the canvas gains real content. Use only in conversation mode (before the canvas has content).",
+        input_schema: json!({
+            "type": "object",
+            "required": ["sections"],
+            "properties": {
+                "sections": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["heading"],
+                        "properties": {
+                            "heading": { "type": "string", "minLength": 1 },
+                            "level": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 6,
+                                "default": 2,
+                                "description": "H-level for the section heading."
+                            },
+                            "bullets": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Optional one-line bullets summarising the section."
+                            }
+                        }
+                    }
+                }
+            }
+        }),
+    }
+}
+
 pub fn insert_block() -> ToolSpec {
     ToolSpec {
         name: "insert_block",
