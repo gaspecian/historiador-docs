@@ -41,7 +41,8 @@ export type EditorMessage =
       type: "block_op_ack";
       proposal_id: string;
       decision: string;
-    };
+    }
+  | { type: "skip_discovery" };
 
 export type EditorSocketStatus = "connecting" | "open" | "closed" | "error";
 
@@ -60,6 +61,10 @@ export interface UseEditorSocketResult {
   status: EditorSocketStatus;
   lastSeq: number;
   send: (role: string, content: string) => void;
+  /** Send an arbitrary control envelope. Forward-compatible with the
+   *  ADR-012 "unknown variants are dropped" rule — callers can push
+   *  variants the server has not yet grown without breaking anything. */
+  sendRaw: (msg: EditorMessage) => void;
   protocolVersion: string | null;
   serverSupportedVariants: string[];
 }
@@ -208,10 +213,17 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
     ws.send(JSON.stringify(msg));
   }, []);
 
+  const sendRaw = useCallback((msg: EditorMessage) => {
+    const ws = socketRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(msg));
+  }, []);
+
   return {
     status,
     lastSeq,
     send,
+    sendRaw,
     protocolVersion,
     serverSupportedVariants,
   };

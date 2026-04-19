@@ -5,10 +5,12 @@ import { Send } from "lucide-react";
 
 export interface ComposerProps {
   onSubmit: (content: string) => void;
+  /** Called when the user clicks "Skip discovery". Hidden when null. */
+  onSkipDiscovery?: () => void;
   disabled?: boolean;
 }
 
-export function Composer({ onSubmit, disabled = false }: ComposerProps) {
+export function Composer({ onSubmit, onSkipDiscovery, disabled = false }: ComposerProps) {
   const [value, setValue] = useState("");
 
   const submit = useCallback(() => {
@@ -29,7 +31,17 @@ export function Composer({ onSubmit, disabled = false }: ComposerProps) {
   );
 
   return (
-    <div className="border-t border-[var(--color-surface-border)] p-3 bg-[var(--color-surface-page)]">
+    <div className="border-t border-[var(--color-surface-border)] p-3 bg-[var(--color-surface-page)] flex flex-col gap-2">
+      {onSkipDiscovery && (
+        <button
+          type="button"
+          onClick={onSkipDiscovery}
+          disabled={disabled}
+          className="self-start t-body-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-primary-600)] underline underline-offset-2 disabled:opacity-50"
+        >
+          Skip discovery — just write
+        </button>
+      )}
       <div className="flex gap-2 items-end">
         <textarea
           value={value}

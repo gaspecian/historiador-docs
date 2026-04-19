@@ -81,7 +81,7 @@ export function ChatPane({
     []
   );
 
-  const { status, send } = useEditorSocket({
+  const { status, send, sendRaw } = useEditorSocket({
     pageId,
     language,
     token,
@@ -89,6 +89,12 @@ export function ChatPane({
     onMessage: handleIncoming,
     onError: handleError,
   });
+
+  const [discoverySkipped, setDiscoverySkipped] = useState(false);
+  const handleSkipDiscovery = useCallback(() => {
+    setDiscoverySkipped(true);
+    sendRaw({ type: "skip_discovery" });
+  }, [sendRaw]);
 
   const sendUserTurn = useCallback(
     (content: string) => {
@@ -130,7 +136,11 @@ export function ChatPane({
       {header}
       <div className="flex-1 flex flex-col min-h-0">
         <MessageList messages={messages} />
-        <Composer onSubmit={sendUserTurn} disabled={disabled || status !== "open"} />
+        <Composer
+          onSubmit={sendUserTurn}
+          onSkipDiscovery={discoverySkipped ? undefined : handleSkipDiscovery}
+          disabled={disabled || status !== "open"}
+        />
       </div>
     </>
   );

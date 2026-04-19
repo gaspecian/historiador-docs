@@ -60,6 +60,7 @@ pub fn supported_variants() -> Vec<&'static str> {
         "tool_call",
         "block_op",
         "block_op_ack",
+        "skip_discovery",
     ]
 }
 
@@ -121,6 +122,10 @@ pub enum EditorMessage {
         proposal_id: String,
         decision: String,
     },
+    /// Client → server: the author clicked "Skip discovery" (A8 /
+    /// US-11.01). Records a session flag so subsequent turns do not
+    /// gate on intake questions.
+    SkipDiscovery,
 }
 
 // --- query params ---
