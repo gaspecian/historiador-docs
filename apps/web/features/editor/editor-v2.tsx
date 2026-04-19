@@ -160,6 +160,31 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
           >
             Revisar este doc
           </button>
+          <button
+            type="button"
+            onClick={() => setComposerOpen(true)}
+            className="inline-flex items-center gap-1.5 t-body-sm px-3 py-1.5 rounded-[var(--radius-md)] border border-[var(--color-surface-border)] hover:bg-[var(--color-surface-hover)]"
+          >
+            <svg
+              aria-hidden
+              width={14}
+              height={14}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Comentar
+            {comments.comments.length > 0 && (
+              <span className="t-body-sm text-[var(--color-text-tertiary)]">
+                ({comments.comments.length})
+              </span>
+            )}
+          </button>
           <AutonomySelector mode={autonomyMode} onChange={handleAutonomyChange} />
           <span className="t-body-sm text-[var(--color-text-tertiary)]">
             {savedAt ? `Saved ${savedAt.toLocaleTimeString()}` : "Not saved yet"}
