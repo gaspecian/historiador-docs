@@ -234,7 +234,7 @@ function EditorPageLegacy() {
 
             {draft ? (
               <div
-                className="prose max-w-none text-text-primary"
+                className="md-prose"
                 dangerouslySetInnerHTML={{ __html: renderDraftMarkdown(draft) }}
               />
             ) : (
@@ -255,9 +255,44 @@ function EditorPageLegacy() {
 function renderDraftMarkdown(md: string): string {
   // Strip the `<!-- block:<uuid> -->` metadata comments emitted by
   // the Sprint 11 serializer so they never appear as visible
-  // content in the legacy preview. The canvas-side BlockIdExtension
-  // owns ID bookkeeping; this pane is display-only.
+  // content. Then normalise whitespace so LLM output that skips
+  // blank lines between block-level constructs still parses as
+  // structured markdown (setext headings in particular break
+  // silently when no blank line follows the underline).
   const cleaned = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
-  const html = marked.parse(cleaned, { async: false, gfm: true });
+  const normalised = normaliseDraftMarkdown(cleaned);
+  const html = marked.parse(normalised, { async: false, gfm: true, breaks: false });
   return typeof html === "string" ? html : "";
+}
+
+function normaliseDraftMarkdown(md: string): string {
+  const lines = md.split(/\r?\n/);
+  const out: string[] = [];
+  const isBlank = (s: string) => s.trim().length === 0;
+  const isAtxHeading = (s: string) => /^#{1,6}\s+\S/.test(s);
+  const isSetextUnderline = (s: string) => /^(=+|-+)\s*$/.test(s) && s.trim().length >= 2;
+  const isFence = (s: string) => /^```/.test(s.trimStart()) || /^~~~/.test(s.trimStart());
+  const isListItem = (s: string) => /^\s*(?:[-*+]\s+|\d+\.\s+)/.test(s);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const prev = out.length > 0 ? out[out.length - 1] : "";
+    const next = lines[i + 1] ?? "";
+
+    if (isAtxHeading(line) && out.length > 0 && !isBlank(prev)) out.push("");
+    if (isFence(line) && out.length > 0 && !isBlank(prev)) out.push("");
+
+    if (isSetextUnderline(line)) {
+      out.push(line);
+      if (!isBlank(next)) out.push("");
+      continue;
+    }
+
+    out.push(line);
+
+    if (isAtxHeading(line) && !isBlank(next)) out.push("");
+    if (isListItem(next) && !isBlank(line) && !isListItem(line)) out.push("");
+  }
+
+  return out.join("\n");
 }

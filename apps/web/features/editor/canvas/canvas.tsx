@@ -59,7 +59,7 @@ export function Canvas({ initialMarkdown, onSave, onChange }: CanvasProps) {
     editorProps: {
       attributes: {
         class:
-          "prose max-w-none focus:outline-none min-h-[60vh] p-6 " +
+          "md-prose focus:outline-none min-h-[60vh] p-6 " +
           "bg-[var(--color-surface-canvas)] text-[var(--color-text-primary)] " +
           "rounded-[var(--radius-lg)] border border-[var(--color-surface-border)]",
       },
@@ -94,16 +94,76 @@ export function Canvas({ initialMarkdown, onSave, onChange }: CanvasProps) {
 
 /**
  * Markdown → HTML for Tiptap's initial content. Strips the
- * `<!-- block:<uuid> -->` comments (metadata, not content) before
- * handing the source to `marked` so the parser never emits them as
- * text. The BlockIdExtension re-mints IDs on the next transaction
- * and the server rebinds them on save via `crates/blocks`.
+ * `<!-- block:<uuid> -->` comments (metadata, not content), then
+ * normalises the source so LLM output without blank-line
+ * separators still parses as structured markdown, then hands it to
+ * `marked`. The BlockIdExtension mints fresh IDs on the next
+ * transaction; the server rebinds them on save via `crates/blocks`.
  *
  * `marked.parse` is called synchronously with `async: false` so the
  * return type is a `string` rather than a `Promise`.
  */
 function markdownToHtml(md: string): string {
   const withoutIdComments = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
-  const html = marked.parse(withoutIdComments, { async: false, gfm: true });
+  const normalised = normaliseMarkdown(withoutIdComments);
+  const html = marked.parse(normalised, { async: false, gfm: true, breaks: false });
   return typeof html === "string" ? html : "";
+}
+
+/**
+ * Make marked's life easier with LLM output that skips blank
+ * lines. Ensures a blank line sits between block-level constructs
+ * so setext headings, code fences, lists, and paragraphs don't run
+ * together. Does not mutate the structure of the content — only
+ * whitespace.
+ */
+function normaliseMarkdown(md: string): string {
+  const lines = md.split(/\r?\n/);
+  const out: string[] = [];
+  const isBlank = (s: string) => s.trim().length === 0;
+  const isAtxHeading = (s: string) => /^#{1,6}\s+\S/.test(s);
+  const isSetextUnderline = (s: string) => /^(=+|-+)\s*$/.test(s) && s.trim().length >= 2;
+  const isFence = (s: string) => /^```/.test(s.trimStart()) || /^~~~/.test(s.trimStart());
+  const isListItem = (s: string) => /^\s*(?:[-*+]\s+|\d+\.\s+)/.test(s);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const prev = out.length > 0 ? out[out.length - 1] : "";
+    const next = lines[i + 1] ?? "";
+
+    // Blank line before an ATX heading.
+    if (isAtxHeading(line) && out.length > 0 && !isBlank(prev)) {
+      out.push("");
+    }
+
+    // Blank line before a fenced code block opener.
+    if (isFence(line) && out.length > 0 && !isBlank(prev)) {
+      out.push("");
+    }
+
+    // Setext underline: ensure blank line AFTER so content that
+    // follows doesn't swallow the heading.
+    if (isSetextUnderline(line)) {
+      out.push(line);
+      if (!isBlank(next)) {
+        out.push("");
+      }
+      continue;
+    }
+
+    out.push(line);
+
+    // Blank line after an ATX heading.
+    if (isAtxHeading(line) && !isBlank(next)) {
+      out.push("");
+    }
+
+    // Blank line before a list when the previous non-list line was
+    // prose (skips the case where the list itself is continuing).
+    if (isListItem(next) && !isBlank(line) && !isListItem(line)) {
+      out.push("");
+    }
+  }
+
+  return out.join("\n");
 }
