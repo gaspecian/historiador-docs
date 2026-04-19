@@ -6,6 +6,7 @@ pub mod context;
 pub mod conversation;
 pub mod generate_draft;
 pub mod iterate_draft;
+pub mod prompt_template;
 pub mod prompts;
 
 pub use conversation::{
