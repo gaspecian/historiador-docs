@@ -15,6 +15,7 @@ import type { AutonomyMode } from "@/lib/editor-ws";
 import { AutonomySelector } from "./autonomy";
 import { Canvas } from "./canvas";
 import { ChatPane } from "./chat";
+import { CommentComposer, CommentPanel, useCommentStore } from "./comments";
 import { ProposalPanel, summariseOp, useProposalStore } from "./overlay";
 import { SplitPane } from "./split-pane";
 
@@ -57,6 +58,8 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
   const [autonomyMode, setAutonomyMode] = useState<AutonomyMode>("propose");
 
   const proposals = useProposalStore();
+  const comments = useCommentStore();
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const handleAutonomyChange = useCallback((next: AutonomyMode) => {
     setAutonomyMode(next);
@@ -77,6 +80,53 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
       });
     },
     [proposals]
+  );
+
+  const handleCommentPosted = useCallback(
+    (commentId: string, authorId: string, blockIds: string[], text: string) => {
+      comments.add({ commentId, authorId, blockIds, text });
+    },
+    [comments]
+  );
+
+  const handleCommentResolved = useCallback(
+    (commentId: string) => {
+      comments.resolve(commentId);
+    },
+    [comments]
+  );
+
+  const handleSubmitComment = useCallback(
+    (blockIds: string[], text: string) => {
+      const commentId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // Optimistic add — the server will echo back via the WS.
+      comments.add({
+        commentId,
+        authorId: "self",
+        blockIds,
+        text,
+      });
+      window.dispatchEvent(
+        new CustomEvent("historiador:comment-post", {
+          detail: { commentId, blockIds, text },
+        })
+      );
+      setComposerOpen(false);
+    },
+    [comments]
+  );
+
+  const handleResolveComment = useCallback(
+    (commentId: string) => {
+      comments.resolve(commentId);
+      window.dispatchEvent(
+        new CustomEvent("historiador:comment-resolve", { detail: { commentId } })
+      );
+    },
+    [comments]
   );
 
   const handleSave = useCallback(async (markdown: string) => {
@@ -126,6 +176,8 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
               selectionText={selectionText}
               cursorBlockId={cursorBlockId}
               onProposal={handleProposal}
+              onCommentPosted={handleCommentPosted}
+              onCommentResolved={handleCommentResolved}
             />
           ) : (
             <DemoChatPlaceholder />
@@ -137,11 +189,6 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
             <ProposalPanel
               proposals={proposals.proposals}
               onAccept={(id) => {
-                // The send happens via ChatPane's WS; to keep a single
-                // source of truth, we delegate through a DOM custom
-                // event that the ChatPane listens for. This sidesteps
-                // prop-drilling the `sendRaw` reference into EditorV2
-                // without needing a context provider yet.
                 proposals.resolve(id);
                 window.dispatchEvent(
                   new CustomEvent("historiador:block-op-ack", {
@@ -157,6 +204,19 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
                   })
                 );
               }}
+            />
+            {composerOpen && (
+              <CommentComposer
+                anchorBlockId={cursorBlockId}
+                onSubmit={handleSubmitComment}
+                onCancel={() => setComposerOpen(false)}
+              />
+            )}
+            <CommentPanel
+              comments={comments.comments}
+              onResolve={handleResolveComment}
+              onNew={() => setComposerOpen(true)}
+              disabled={!chatReady}
             />
           </div>
         }

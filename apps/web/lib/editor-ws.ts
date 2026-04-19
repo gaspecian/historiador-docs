@@ -113,6 +113,17 @@ export interface UseEditorSocketArgs {
   onCheckpoint?: (summary: string, opCount: number, reason: string) => void;
   /** Fired when the autonomy mode changes (either direction). */
   onAutonomyMode?: (mode: AutonomyMode) => void;
+  /** Fired when a comment_posted envelope arrives from the server
+   *  (either echoing a client-posted comment, or AI-originated
+   *  during review mode). */
+  onCommentPosted?: (
+    commentId: string,
+    authorId: string,
+    blockIds: string[],
+    text: string,
+  ) => void;
+  /** Fired when a comment_resolved envelope arrives. */
+  onCommentResolved?: (commentId: string) => void;
 }
 
 export interface UseEditorSocketResult {
@@ -141,6 +152,8 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
     onBlockOp,
     onCheckpoint,
     onAutonomyMode,
+    onCommentPosted,
+    onCommentResolved,
   } = args;
 
   const [status, setStatus] = useState<EditorSocketStatus>("closed");
@@ -260,6 +273,18 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
           case "autonomy_mode_changed":
             onAutonomyMode?.(msg.mode);
             break;
+          case "comment_posted":
+            if (msg.seq > lastSeqRef.current) {
+              setLastSeq(msg.seq);
+            }
+            onCommentPosted?.(msg.comment_id, "", msg.block_ids, msg.text);
+            break;
+          case "comment_resolved":
+            if (msg.seq > lastSeqRef.current) {
+              setLastSeq(msg.seq);
+            }
+            onCommentResolved?.(msg.comment_id);
+            break;
           default:
             // Unknown variant — drop silently.
             break;
@@ -295,7 +320,17 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [url, onMessage, onError, onOutline, onBlockOp, onCheckpoint, onAutonomyMode]);
+  }, [
+    url,
+    onMessage,
+    onError,
+    onOutline,
+    onBlockOp,
+    onCheckpoint,
+    onAutonomyMode,
+    onCommentPosted,
+    onCommentResolved,
+  ]);
 
   const send = useCallback((role: string, content: string) => {
     const ws = socketRef.current;

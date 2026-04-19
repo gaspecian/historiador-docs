@@ -46,6 +46,15 @@ export interface ChatPaneProps {
   /** Forward every incoming block_op to the parent so the overlay
    *  panel (lifted into EditorV2) can track pending proposals. */
   onProposal?: (proposalId: string, op: unknown) => void;
+  /** Forward incoming comment_posted envelopes to the parent store. */
+  onCommentPosted?: (
+    commentId: string,
+    authorId: string,
+    blockIds: string[],
+    text: string,
+  ) => void;
+  /** Forward incoming comment_resolved envelopes to the parent store. */
+  onCommentResolved?: (commentId: string) => void;
   /** Flag-off fallback: render the pane as disabled instead of opening a WS. */
   disabled?: boolean;
 }
@@ -57,6 +66,8 @@ export function ChatPane({
   selectionText,
   cursorBlockId,
   onProposal,
+  onCommentPosted,
+  onCommentResolved,
   disabled = false,
 }: ChatPaneProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -123,7 +134,45 @@ export function ChatPane({
     onOutline: handleOutline,
     onBlockOp: onProposal,
     onCheckpoint: handleCheckpoint,
+    onCommentPosted,
+    onCommentResolved,
   });
+
+  // Listen for comment post / resolve events emitted by the
+  // canvas-pane comment panel. Same decoupled DOM-event pattern as
+  // the block-op-ack and autonomy-change bridges.
+  useEffect(() => {
+    const postHandler = (e: Event) => {
+      const detail = (e as CustomEvent<{
+        commentId: string;
+        blockIds: string[];
+        text: string;
+      }>).detail;
+      if (!detail) return;
+      sendRaw({
+        type: "comment_posted",
+        seq: 0,
+        comment_id: detail.commentId,
+        block_ids: detail.blockIds,
+        text: detail.text,
+      });
+    };
+    const resolveHandler = (e: Event) => {
+      const detail = (e as CustomEvent<{ commentId: string }>).detail;
+      if (!detail) return;
+      sendRaw({
+        type: "comment_resolved",
+        seq: 0,
+        comment_id: detail.commentId,
+      });
+    };
+    window.addEventListener("historiador:comment-post", postHandler);
+    window.addEventListener("historiador:comment-resolve", resolveHandler);
+    return () => {
+      window.removeEventListener("historiador:comment-post", postHandler);
+      window.removeEventListener("historiador:comment-resolve", resolveHandler);
+    };
+  }, [sendRaw]);
 
   const handleCheckpointDecision = useCallback(
     (decision: "continue" | "revise" | "skip") => {
