@@ -27,6 +27,10 @@ export interface SaveDialogProps {
   markdown: string;
   /** BCP 47 language tag; defaults to pt-BR. */
   language?: string;
+  /** When set, Salvar calls PATCH /pages/:id instead of POST /pages. */
+  pageId?: string | null;
+  /** Initial title when updating — typically the existing version's title. */
+  initialTitle?: string;
   onClose: () => void;
   onSaved?: (page: PageResponse) => void;
 }
@@ -35,10 +39,13 @@ export function SaveDialog({
   open,
   markdown,
   language = "pt-BR",
+  pageId,
+  initialTitle,
   onClose,
   onSaved,
 }: SaveDialogProps) {
-  const [title, setTitle] = useState("");
+  const isUpdating = Boolean(pageId);
+  const [title, setTitle] = useState(initialTitle ?? "");
   const [collectionId, setCollectionId] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,12 +71,12 @@ export function SaveDialog({
 
   useEffect(() => {
     if (!open) {
-      setTitle("");
+      setTitle(initialTitle ?? "");
       setCollectionId("");
       setError(null);
       setSaving(false);
     }
-  }, [open]);
+  }, [open, initialTitle]);
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -84,12 +91,18 @@ export function SaveDialog({
     setError(null);
     setSaving(true);
     try {
-      const page = await pagesService.create({
-        title: trimmed,
-        content_markdown: markdown,
-        language,
-        collection_id: collectionId.length > 0 ? collectionId : null,
-      });
+      const page = isUpdating && pageId
+        ? await pagesService.update(pageId, {
+            title: trimmed,
+            content_markdown: markdown,
+            language,
+          })
+        : await pagesService.create({
+            title: trimmed,
+            content_markdown: markdown,
+            language,
+            collection_id: collectionId.length > 0 ? collectionId : null,
+          });
       onSaved?.(page);
       onClose();
     } catch (e) {
@@ -103,9 +116,13 @@ export function SaveDialog({
     <Dialog open={open} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="t-h3 mb-1">Salvar documento</h2>
+          <h2 className="t-h3 mb-1">
+            {isUpdating ? "Atualizar documento" : "Salvar documento"}
+          </h2>
           <p className="t-body-sm text-text-secondary">
-            Escolha um título e onde o documento vai ficar.
+            {isUpdating
+              ? "Você pode renomear o título; o conteúdo substitui a versão atual."
+              : "Escolha um título e onde o documento vai ficar."}
           </p>
         </div>
 
@@ -124,13 +141,15 @@ export function SaveDialog({
           }}
         />
 
-        <Select
-          label="Local (coleção)"
-          value={collectionId}
-          onChange={(e) => setCollectionId(e.target.value)}
-          options={options}
-          disabled={saving || collections.isLoading}
-        />
+        {!isUpdating && (
+          <Select
+            label="Local (coleção)"
+            value={collectionId}
+            onChange={(e) => setCollectionId(e.target.value)}
+            options={options}
+            disabled={saving || collections.isLoading}
+          />
+        )}
 
         {error && (
           <p className="t-body-sm text-red-600 whitespace-pre-wrap">{error}</p>

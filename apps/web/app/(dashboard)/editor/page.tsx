@@ -8,6 +8,8 @@ import { EditorV2 } from "@/features/editor/editor-v2";
 import { CommentablePreview, type BlockComment } from "@/features/editor/review";
 import { SaveDialog } from "@/features/editor/save";
 import { EDITOR_V2_ENABLED } from "@/lib/config";
+import * as pagesService from "@/lib/services/pages";
+import type { PageVersionResponse } from "@historiador/types";
 
 export default function EditorPage() {
   // Sprint 11 flag-gated entry point. When the v2 editor ships on a
@@ -50,6 +52,7 @@ function EditorV2Dispatcher() {
 }
 
 function EditorPageLegacy() {
+  const searchParams = useSearchParams();
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
   const {
@@ -60,7 +63,41 @@ function EditorPageLegacy() {
     generateDraft,
     iterateDraft,
     submitBlockComment,
+    setDraft,
   } = useEditorStream();
+
+  // When the URL carries ?page_id=... the user is editing an existing
+  // page — fetch its version and seed the draft buffer so they can
+  // iterate with the AI instead of starting from a blank brief. The
+  // Save dialog then UPDATEs the existing page instead of creating a
+  // new one (handled further down).
+  const existingPageId = searchParams?.get("page_id") ?? null;
+  const existingLanguage = searchParams?.get("lang") ?? null;
+  const [existingTitle, setExistingTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!existingPageId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pagesService.get(existingPageId);
+        if (cancelled) return;
+        const versions = page.versions as PageVersionResponse[];
+        const version =
+          (existingLanguage
+            ? versions.find((v) => v.language === existingLanguage)
+            : undefined) ?? versions[0];
+        if (version) {
+          setDraft(version.content_markdown);
+          setExistingTitle(version.title);
+        }
+      } catch {
+        // page not found / forbidden — fall through to blank editor.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [existingPageId, existingLanguage, setDraft]);
 
   // GitHub-PR-style comments keyed by block index. The parent owns
   // state so the commentable preview stays a pure render component.
@@ -295,6 +332,9 @@ function EditorPageLegacy() {
       <SaveDialog
         open={saveDialogOpen}
         markdown={draft}
+        pageId={existingPageId}
+        initialTitle={existingTitle ?? undefined}
+        language={existingLanguage ?? undefined}
         onClose={() => setSaveDialogOpen(false)}
       />
     </main>

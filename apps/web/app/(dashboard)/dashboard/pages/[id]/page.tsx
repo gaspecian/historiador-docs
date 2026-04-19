@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { marked } from "marked";
+import { Pencil } from "lucide-react";
 import * as adminService from "@/lib/services/admin";
 import * as pagesService from "@/lib/services/pages";
 import * as exportService from "@/lib/services/export";
-import { EditorPanel } from "@/components/editor/editor-panel";
+import { useAuth } from "@/lib/auth-context";
 import { LanguageTabs } from "@/components/pages/language-tabs";
 import { PublishConfirmModal } from "@/components/pages/publish-confirm-modal";
 import { VersionHistoryPanel } from "@/components/pages/version-history-panel";
@@ -26,9 +28,9 @@ export default function PageDetailPage() {
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null);
   const [workspaceLanguages, setWorkspaceLanguages] = useState<string[]>([]);
   const [primaryLanguage, setPrimaryLanguage] = useState<string>("en");
-  const [saving, setSaving] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const { canEdit } = useAuth();
 
   useEffect(() => {
     Promise.all([
@@ -69,22 +71,29 @@ export default function PageDetailPage() {
   const isMissingLanguage = activeLanguage && !activeVersion;
   const primaryVersion = page.versions.find((v) => v.language === primaryLanguage);
 
-  const handleSave = async (markdown: string) => {
-    setSaving(true);
-    try {
-      await pagesService.update(pageId, {
-        title: activeVersion?.title || primaryVersion?.title || "Untitled",
-        content_markdown: markdown,
-        language: activeLanguage ?? undefined,
-      });
-      // Refresh page data
-      const updated = await pagesService.get(pageId);
-      setPage(updated);
-    } catch {
-      // Alpha error handling
-    } finally {
-      setSaving(false);
-    }
+  const handleCreateBlank = async () => {
+    await pagesService.update(pageId, {
+      title: activeVersion?.title || primaryVersion?.title || "Untitled",
+      content_markdown: "",
+      language: activeLanguage ?? undefined,
+    });
+    setPage(await pagesService.get(pageId));
+  };
+
+  const handleCopyFromPrimary = async () => {
+    if (!primaryVersion) return;
+    await pagesService.update(pageId, {
+      title: activeVersion?.title || primaryVersion.title || "Untitled",
+      content_markdown: primaryVersion.content_markdown,
+      language: activeLanguage ?? undefined,
+    });
+    setPage(await pagesService.get(pageId));
+  };
+
+  const goToEditor = () => {
+    const params = new URLSearchParams({ page_id: pageId });
+    if (activeLanguage) params.set("lang", activeLanguage);
+    router.push(`/editor?${params.toString()}`);
   };
 
   const missingLanguages = workspaceLanguages.filter(
@@ -131,6 +140,14 @@ export default function PageDetailPage() {
           </Badge>
         </div>
         <div className="flex gap-2">
+          {canEdit && activeVersion && (
+            <Button size="sm" onClick={goToEditor} title="Abrir no editor">
+              <span className="inline-flex items-center gap-1.5">
+                <Pencil className="w-4 h-4" aria-hidden />
+                Editar
+              </span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -139,13 +156,15 @@ export default function PageDetailPage() {
           >
             History
           </Button>
-          <Button
-            variant={page.status === "draft" ? "primary" : "secondary"}
-            size="sm"
-            onClick={handlePublishClick}
-          >
-            {page.status === "draft" ? "Publish" : "Unpublish"}
-          </Button>
+          {canEdit && (
+            <Button
+              variant={page.status === "draft" ? "primary" : "secondary"}
+              size="sm"
+              onClick={handlePublishClick}
+            >
+              {page.status === "draft" ? "Publish" : "Unpublish"}
+            </Button>
+          )}
           <Dropdown
             trigger={<span aria-label="More actions">⋮</span>}
             items={[
@@ -177,45 +196,27 @@ export default function PageDetailPage() {
       {isMissingLanguage ? (
         <div className="border border-amber-200 rounded p-6 text-center space-y-3 bg-amber-50">
           <p className="text-sm text-amber-800">
-            No <strong>{activeLanguage}</strong> version exists yet.
+            Nenhuma versão em <strong>{activeLanguage}</strong> existe ainda.
           </p>
-          <div className="flex justify-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => handleSave("")}
-            >
-              Create blank version
-            </Button>
-            {primaryVersion && activeLanguage !== primaryLanguage && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => handleSave(primaryVersion.content_markdown)}
-              >
-                Copy from {primaryLanguage}
+          {canEdit && (
+            <div className="flex justify-center gap-3">
+              <Button variant="secondary" size="sm" onClick={handleCreateBlank}>
+                Criar versão em branco
               </Button>
-            )}
-          </div>
+              {primaryVersion && activeLanguage !== primaryLanguage && (
+                <Button variant="primary" size="sm" onClick={handleCopyFromPrimary}>
+                  Copiar de {primaryLanguage}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       ) : activeVersion ? (
-        <div className="border border-surface-border rounded p-4">
-          <pre className="whitespace-pre-wrap break-words font-mono text-sm">
-            {activeVersion.content_markdown}
-          </pre>
-        </div>
-      ) : null}
-
-      {/* Editor */}
-      <div className="border border-surface-border rounded p-4">
-        <h2 className="text-sm font-medium mb-3">AI Editor</h2>
-        <EditorPanel
-          initialContent={activeVersion?.content_markdown}
-          language={activeLanguage || undefined}
-          onSave={handleSave}
+        <article
+          className="md-prose border border-surface-border rounded-lg bg-surface-canvas p-8"
+          dangerouslySetInnerHTML={{ __html: renderPageMarkdown(activeVersion.content_markdown) }}
         />
-        {saving && <p className="text-xs text-text-tertiary mt-2">Saving...</p>}
-      </div>
+      ) : null}
 
       <PublishConfirmModal
         open={showPublishModal}
@@ -236,4 +237,10 @@ export default function PageDetailPage() {
       />
     </div>
   );
+}
+
+function renderPageMarkdown(md: string): string {
+  const cleaned = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
+  const html = marked.parse(cleaned, { async: false, gfm: true, breaks: false });
+  return typeof html === "string" ? html : "";
 }
