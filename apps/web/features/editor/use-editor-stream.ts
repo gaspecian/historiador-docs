@@ -162,9 +162,15 @@ function splitChannels(raw: string): { chat: string; canvas: string } {
   const chat = extractTag(raw, "chat");
   const canvas = extractTag(raw, "canvas");
   if (chat === null && canvas === null) {
-    return { chat: raw.trim(), canvas: "" };
+    // Fallback: strip orphan tag markers so the user never sees raw
+    // protocol fragments when the agent violates the contract.
+    return { chat: stripOrphanTags(raw).trim(), canvas: "" };
   }
   return { chat: (chat ?? "").trim(), canvas: (canvas ?? "").trim() };
+}
+
+function stripOrphanTags(raw: string): string {
+  return raw.replace(/<\/?(chat|canvas)\s*>/gi, "");
 }
 
 function extractTag(raw: string, tag: string): string | null {

@@ -39,14 +39,40 @@ pub fn parse(raw: &str) -> ChannelOutput {
             chat: String::new(),
             canvas: k.trim().to_string(),
         },
-        // Fallback: untagged reply falls entirely into chat. Better
-        // than silently dropping the content; the user sees that the
-        // agent failed to follow the contract.
+        // Fallback: untagged reply falls entirely into chat. Strip
+        // orphan close tags (`</chat>`, `</canvas>`) before emitting
+        // so a partial contract violation does not leak protocol
+        // markers into the user-visible pane.
         (None, None) => ChannelOutput {
-            chat: raw.trim().to_string(),
+            chat: strip_orphan_tags(raw).trim().to_string(),
             canvas: String::new(),
         },
     }
+}
+
+fn strip_orphan_tags(raw: &str) -> String {
+    // Whitespace-tolerant, case-insensitive removal of any standalone
+    // opening or closing channel tag. `raw` tends to be short, so the
+    // repeated replace is fine — and this only runs on the fallback
+    // path (malformed reply) anyway.
+    let mut out = raw.to_string();
+    for pattern in [
+        "</chat>",
+        "<chat>",
+        "</canvas>",
+        "<canvas>",
+        "</Chat>",
+        "<Chat>",
+        "</Canvas>",
+        "<Canvas>",
+        "</CHAT>",
+        "<CHAT>",
+        "</CANVAS>",
+        "<CANVAS>",
+    ] {
+        out = out.replace(pattern, "");
+    }
+    out
 }
 
 fn extract_tag(raw: &str, tag: &str) -> Option<String> {
@@ -126,9 +152,23 @@ mod tests {
     #[test]
     fn unterminated_tag_is_treated_as_missing() {
         // No `</chat>` close — should fall back to chat-only with
-        // the whole raw string.
+        // orphan markers stripped.
         let out = parse("<chat>never closes");
-        assert_eq!(out.chat, "<chat>never closes");
+        assert_eq!(out.chat, "never closes");
+        assert!(out.canvas.is_empty());
+    }
+
+    #[test]
+    fn orphan_close_tag_is_stripped_on_fallback() {
+        let out = parse("</chat> Claro, vou ajudar.");
+        assert_eq!(out.chat, "Claro, vou ajudar.");
+        assert!(out.canvas.is_empty());
+    }
+
+    #[test]
+    fn orphan_close_canvas_is_stripped_on_fallback() {
+        let out = parse("</canvas>texto solto");
+        assert_eq!(out.chat, "texto solto");
         assert!(out.canvas.is_empty());
     }
 }
