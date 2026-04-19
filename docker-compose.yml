@@ -12,7 +12,7 @@
 #
 # Services started by `docker compose up -d` (default):
 #   * postgres (5432)  — SQL store for workspaces, users, pages, chunks
-#   * ollama   (11434) — local Llama inference (llama3.2:1b pre-pulled)
+#   * ollama   (11434) — local inference (llama3.1:8b + nomic-embed-text pre-pulled)
 #   * chronik  (9092 Kafka, 6092 SQL REST) — event streaming, vector
 #     search, full-text search, and SQL analytics (ADR-007)
 #
@@ -55,9 +55,15 @@ services:
     command:
       - |
         /bin/ollama serve &
-        sleep 3
-        /bin/ollama pull ${OLLAMA_MODEL:-llama3.1:8b} || true
-        wait
+        SERVE_PID=$$!
+        until /bin/ollama list >/dev/null 2>&1; do
+          sleep 1
+        done
+        echo "[ollama] server ready, pulling models"
+        /bin/ollama pull "${OLLAMA_GEN_MODEL:-llama3.1:8b}"
+        /bin/ollama pull "${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
+        echo "[ollama] models ready"
+        wait $$SERVE_PID
     environment:
       OLLAMA_KEEP_ALIVE: "24h"
     volumes:
