@@ -140,3 +140,32 @@ impl TextGenerationClient for AnthropicTextGenerationClient {
         Ok(Box::pin(stream))
     }
 }
+
+/// Tool-calling placeholder for Anthropic.
+///
+/// Anthropic's Messages API carries tool calls as `tool_use` content
+/// blocks with a `name` and a JSON `input` object. Integration plan:
+///
+/// 1. Map each `historiador_tools::ToolSpec` to the `tools: [{name,
+///    description, input_schema}]` array on the request body.
+/// 2. Parse the streaming `content_block_start` /
+///    `content_block_delta` / `content_block_stop` events for
+///    `tool_use` blocks; buffer `input_json_delta` fragments until
+///    the block closes, then `serde_json::from_str` the accumulated
+///    string to produce the `arguments` Value.
+/// 3. Emit `ToolStreamItem::Text` for `text` deltas and
+///    `ToolStreamItem::ToolCall` when a `tool_use` block closes.
+///
+/// Until that wiring lands we return `NotImplemented` so the
+/// dispatcher falls back to text-only generation.
+#[async_trait]
+impl crate::tool_calling::ToolCallingClient for AnthropicTextGenerationClient {
+    async fn generate_with_tools(
+        &self,
+        _system_prompt: &str,
+        _messages: &[crate::tool_calling::Turn],
+        _tools: &[historiador_tools::ToolSpec],
+    ) -> Result<crate::tool_calling::ToolStream, LlmError> {
+        Err(LlmError::NotImplemented)
+    }
+}

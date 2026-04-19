@@ -1283,6 +1283,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "futures",
+ "historiador_tools",
  "reqwest",
  "serde",
  "serde_json",

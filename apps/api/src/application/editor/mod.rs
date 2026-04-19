@@ -1,6 +1,7 @@
 //! Editor use cases — draft generation, iteration, conversation
 //! persistence.
 
+pub mod block_ops;
 pub mod conversation;
 pub mod generate_draft;
 pub mod iterate_draft;

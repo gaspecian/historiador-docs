@@ -23,7 +23,25 @@ export type EditorMessage =
   | { type: "client_hello"; client_last_seq: number }
   | { type: "message"; seq: number; role: string; content: string }
   | { type: "ack"; client_ref: string; seq: number }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; message: string }
+  | {
+      type: "tool_call";
+      seq: number;
+      call_id: string;
+      name: string;
+      arguments: unknown;
+    }
+  | {
+      type: "block_op";
+      seq: number;
+      proposal_id: string;
+      op: unknown;
+    }
+  | {
+      type: "block_op_ack";
+      proposal_id: string;
+      decision: string;
+    };
 
 export type EditorSocketStatus = "connecting" | "open" | "closed" | "error";
 

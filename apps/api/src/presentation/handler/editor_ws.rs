@@ -51,7 +51,16 @@ const HEARTBEAT: Duration = Duration::from_secs(15);
 /// MUST tolerate receiving envelope types not in this list (forward
 /// compatibility); they MAY skip rendering them.
 pub fn supported_variants() -> Vec<&'static str> {
-    vec!["hello", "client_hello", "message", "ack", "error"]
+    vec![
+        "hello",
+        "client_hello",
+        "message",
+        "ack",
+        "error",
+        "tool_call",
+        "block_op",
+        "block_op_ack",
+    ]
 }
 
 // --- envelope types ---
@@ -89,6 +98,29 @@ pub enum EditorMessage {
     /// same as transport-level errors (protocol violations close the
     /// socket).
     Error { code: String, message: String },
+    /// Raw tool call emitted by the model (client-bound, informational
+    /// — the server immediately dispatches and emits a `block_op`).
+    /// Kept as its own variant so traces can distinguish "the model
+    /// asked to edit X" from "the server approved the edit".
+    ToolCall {
+        seq: u64,
+        call_id: String,
+        name: String,
+        arguments: serde_json::Value,
+    },
+    /// A proposed or applied block-level mutation. `proposal_id`
+    /// correlates with the `block_op_ack` the client sends when the
+    /// author approves or rejects.
+    BlockOp {
+        seq: u64,
+        proposal_id: String,
+        op: serde_json::Value,
+    },
+    /// Client → server: the author resolved a proposal (A10).
+    BlockOpAck {
+        proposal_id: String,
+        decision: String,
+    },
 }
 
 // --- query params ---

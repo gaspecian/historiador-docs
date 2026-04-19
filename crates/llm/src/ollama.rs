@@ -129,6 +129,29 @@ impl TextGenerationClient for OllamaTextClient {
     }
 }
 
+/// Tool-calling placeholder for Ollama.
+///
+/// Ollama's `/api/chat` endpoint supports a `tools` parameter and
+/// emits `tool_calls` inside message objects when the underlying
+/// model supports it (e.g., Llama 3.1+, Qwen 2.5). For models
+/// without native tool support, the provider-agnostic fallback is
+/// to instruct the model via the system prompt to emit a specific
+/// JSON schema and parse the response out.
+///
+/// Returns `NotImplemented` until the adapter is wired; the
+/// dispatcher falls back to text-only generation in the meantime.
+#[async_trait]
+impl crate::tool_calling::ToolCallingClient for OllamaTextClient {
+    async fn generate_with_tools(
+        &self,
+        _system_prompt: &str,
+        _messages: &[crate::tool_calling::Turn],
+        _tools: &[historiador_tools::ToolSpec],
+    ) -> Result<crate::tool_calling::ToolStream, LlmError> {
+        Err(LlmError::NotImplemented)
+    }
+}
+
 // ---------- embeddings ----------
 
 pub struct OllamaEmbeddingClient {

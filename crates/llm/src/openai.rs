@@ -152,3 +152,31 @@ impl TextGenerationClient for OpenAiTextGenerationClient {
         Ok(Box::pin(mapped))
     }
 }
+
+/// Tool-calling placeholder for OpenAI.
+///
+/// OpenAI's Chat Completions API carries tool calls as a per-choice
+/// `tool_calls` array with `function.name` and stringified
+/// `function.arguments`. Streaming deltas accumulate on the same
+/// index; a call is complete when the choice's `finish_reason` is
+/// `tool_calls` (or the final chunk arrives for that index).
+///
+/// Integration plan mirrors the Anthropic module:
+/// 1. Map `ToolSpec` → `tools: [{type: "function", function: {name,
+///    description, parameters: <input_schema>}}]`.
+/// 2. Track per-index accumulators for `function.arguments`; emit a
+///    `ToolStreamItem::ToolCall` once the tool call completes.
+/// 3. Text deltas flow through as `ToolStreamItem::Text`.
+///
+/// Returns `NotImplemented` until that wiring lands.
+#[async_trait]
+impl crate::tool_calling::ToolCallingClient for OpenAiTextGenerationClient {
+    async fn generate_with_tools(
+        &self,
+        _system_prompt: &str,
+        _messages: &[crate::tool_calling::Turn],
+        _tools: &[historiador_tools::ToolSpec],
+    ) -> Result<crate::tool_calling::ToolStream, LlmError> {
+        Err(LlmError::NotImplemented)
+    }
+}
