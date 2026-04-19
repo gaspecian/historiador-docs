@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useCollections } from "@/lib/use-collections";
+import { usePagesQuery } from "@/lib/queries";
 import { CollectionTree } from "@/components/collections/collection-tree";
 import { CreateCollectionDialog } from "@/components/collections/create-collection-dialog";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -20,7 +21,13 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { isAuthenticated, isAdmin, isLoading: authLoading } = useAuth();
   const collections = useCollections();
+  const pagesQuery = usePagesQuery(null);
   const [showCreateCollection, setShowCreateCollection] = useState(false);
+
+  // `/dashboard/pages/<id>` is the detail route; pull the id out so
+  // the sidebar can highlight the active page.
+  const activePageMatch = pathname.match(/^\/dashboard\/pages\/([^/?#]+)$/);
+  const activePageId = activePageMatch ? activePageMatch[1] : null;
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -120,9 +127,11 @@ export default function DashboardLayout({
 
           <CollectionTree
             tree={collections.tree}
+            pages={pagesQuery.data ?? []}
             selectedId={collections.selectedId}
+            activePageId={activePageId}
             expandedIds={collections.expandedIds}
-            isLoading={collections.isLoading}
+            isLoading={collections.isLoading || pagesQuery.isLoading}
             onSelect={handleCollectionSelect}
             onToggleExpand={collections.toggleExpanded}
           />
