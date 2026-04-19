@@ -83,7 +83,8 @@ export type EditorMessage =
       type: "comment_resolved";
       seq: number;
       comment_id: string;
-    };
+    }
+  | { type: "review_requested" };
 
 export interface OutlineSection {
   heading: string;

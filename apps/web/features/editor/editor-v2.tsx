@@ -100,6 +100,16 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
           Editor v2
         </h1>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("historiador:review-request"))
+            }
+            disabled={!chatReady}
+            className="t-body-sm px-3 py-1.5 rounded-[var(--radius-md)] border border-[var(--color-surface-border)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+          >
+            Revisar este doc
+          </button>
           <AutonomySelector mode={autonomyMode} onChange={handleAutonomyChange} />
           <span className="t-body-sm text-[var(--color-text-tertiary)]">
             {savedAt ? `Saved ${savedAt.toLocaleTimeString()}` : "Not saved yet"}

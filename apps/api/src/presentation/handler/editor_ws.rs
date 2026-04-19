@@ -69,6 +69,7 @@ pub fn supported_variants() -> Vec<&'static str> {
         "autonomy_decision",
         "comment_posted",
         "comment_resolved",
+        "review_requested",
     ]
 }
 
@@ -177,6 +178,10 @@ pub enum EditorMessage {
     },
     /// Either direction: a comment was resolved.
     CommentResolved { seq: u64, comment_id: String },
+    /// Client → server: the user clicked "Review this doc" (B5 /
+    /// US-11.11). The next agent turn runs in review mode — it may
+    /// only emit `comment_posted` events, never block ops.
+    ReviewRequested,
 }
 
 // --- query params ---

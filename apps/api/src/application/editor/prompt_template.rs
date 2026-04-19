@@ -20,6 +20,9 @@ pub enum PromptMode {
     Conversation,
     /// Generation mode. The agent may use canvas tools.
     Generation,
+    /// Review mode (B5 / US-11.11). Agent reads the canvas and
+    /// leaves `comment_posted` events; block ops are forbidden.
+    Review,
 }
 
 impl PromptMode {
@@ -38,6 +41,14 @@ impl PromptMode {
             PromptMode::Generation => {
                 "You are in generation mode. You may emit tool calls to modify the \
                  canvas. Work in sections; pause at headings in checkpointed mode."
+            }
+            PromptMode::Review => {
+                "You are in review mode. Read the canvas end-to-end and leave \
+                 `comment_posted` events against the blocks that need attention — \
+                 missing info, unclear wording, tone issues, factual doubts, or \
+                 concrete suggestions. Do NOT emit block-op tool calls in this turn. \
+                 Prefer scoping each comment to the smallest block or range that \
+                 captures the concern."
             }
         }
     }

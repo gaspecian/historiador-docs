@@ -144,6 +144,15 @@ export function ChatPane({
     return () => window.removeEventListener("historiador:autonomy-change", handler);
   }, [sendRaw]);
 
+  // Listen for "Revisar este doc" clicks (B5 / US-11.11).
+  useEffect(() => {
+    const handler = () => {
+      sendRaw({ type: "review_requested" });
+    };
+    window.addEventListener("historiador:review-request", handler);
+    return () => window.removeEventListener("historiador:review-request", handler);
+  }, [sendRaw]);
+
   // Listen for block-op ack events emitted by the ProposalPanel
   // (which lives in EditorV2, outside this component tree). A custom
   // DOM event keeps the two surfaces decoupled without needing a
