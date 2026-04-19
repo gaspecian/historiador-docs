@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
+import { EditorV2 } from "@/features/editor/editor-v2";
+import { EDITOR_V2_ENABLED } from "@/lib/config";
 
 function Sparkle() {
   return <span aria-hidden className="text-lg">✨</span>;
@@ -25,6 +27,14 @@ function ArrowRight() {
 }
 
 export default function EditorPage() {
+  // Sprint 11 flag-gated entry point. When the v2 editor ships on a
+  // deploy, this dispatch swaps the whole surface over; the Sprint 4
+  // SSE flow stays in place until the post-tier-A flag flip deletes
+  // it per ADR-009.
+  return EDITOR_V2_ENABLED ? <EditorV2 /> : <EditorPageLegacy />;
+}
+
+function EditorPageLegacy() {
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
   const { draft, messages, streaming, liveAssistant, generateDraft, iterateDraft } =
