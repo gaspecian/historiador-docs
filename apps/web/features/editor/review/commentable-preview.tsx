@@ -40,8 +40,17 @@ export interface CommentablePreviewProps {
   markdown: string;
   /** Per-block-index comment lists. Parent owns the state. */
   commentsByBlock: Record<number, BlockComment[]>;
-  /** Fired when the user submits a comment on a block. */
-  onComment: (blockIndex: number, blockSource: string, text: string) => void;
+  /** Fired when the user submits a comment on a block.
+   *  `startLine` / `endLine` are 1-based line numbers into the full
+   *  draft markdown so the AI can pinpoint exactly which lines are
+   *  under review. */
+  onComment: (
+    blockIndex: number,
+    blockSource: string,
+    startLine: number,
+    endLine: number,
+    text: string,
+  ) => void;
   /** Fired when the user resolves an existing comment. */
   onResolve: (blockIndex: number, commentId: string) => void;
   /** Suspend comment posting while the AI is processing the previous turn. */
@@ -55,15 +64,17 @@ export function CommentablePreview({
   onResolve,
   submitting = false,
 }: CommentablePreviewProps) {
-  const blocks = useMemo(() => splitBlocks(markdown), [markdown]);
+  const blocks = useMemo(() => splitBlocksWithLines(markdown), [markdown]);
 
   return (
     <div className="md-prose flex flex-col">
       {blocks.map((block, index) => (
         <CommentableBlockWrapper
-          key={`${index}-${block.slice(0, 20)}`}
+          key={`${index}-${block.source.slice(0, 20)}`}
           blockIndex={index}
-          source={block}
+          source={block.source}
+          startLine={block.startLine}
+          endLine={block.endLine}
           comments={commentsByBlock[index] ?? []}
           onComment={onComment}
           onResolve={onResolve}
@@ -77,6 +88,8 @@ export function CommentablePreview({
 function CommentableBlockWrapper({
   blockIndex,
   source,
+  startLine,
+  endLine,
   comments,
   onComment,
   onResolve,
@@ -84,6 +97,8 @@ function CommentableBlockWrapper({
 }: {
   blockIndex: number;
   source: string;
+  startLine: number;
+  endLine: number;
   comments: BlockComment[];
   onComment: CommentablePreviewProps["onComment"];
   onResolve: CommentablePreviewProps["onResolve"];
@@ -101,10 +116,13 @@ function CommentableBlockWrapper({
   const submit = useCallback(() => {
     const text = value.trim();
     if (!text) return;
-    onComment(blockIndex, source, text);
+    onComment(blockIndex, source, startLine, endLine, text);
     setValue("");
     setComposerOpen(false);
-  }, [blockIndex, onComment, source, value]);
+  }, [blockIndex, onComment, source, startLine, endLine, value]);
+
+  const lineLabel =
+    startLine === endLine ? `Linha ${startLine}` : `Linhas ${startLine}–${endLine}`;
 
   const openComments = comments.filter((c) => c.status !== "resolved");
 
@@ -140,6 +158,9 @@ function CommentableBlockWrapper({
           ))}
           {composerOpen && (
             <div className="rounded-[var(--radius-md)] border border-[var(--color-primary-600)] bg-[var(--color-surface-canvas)] p-3 flex flex-col gap-2">
+              <span className="t-body-sm text-[var(--color-text-secondary)]">
+                Comentando {lineLabel}
+              </span>
               <textarea
                 autoFocus
                 value={value}
@@ -227,44 +248,79 @@ function CommentCard({
   );
 }
 
+export interface BlockSpan {
+  /** Trimmed markdown source for this block. */
+  source: string;
+  /** 1-based line number of the block's first non-blank line in the full draft. */
+  startLine: number;
+  /** 1-based line number of the block's last non-blank line in the full draft. */
+  endLine: number;
+}
+
 /**
  * Split raw markdown into top-level blocks the way marked itself
  * does: consecutive non-blank lines form a block, blank lines
  * separate blocks. Keeps fenced code regions intact by not
- * splitting inside a fence.
+ * splitting inside a fence. Records 1-based line numbers for each
+ * block so the caller can pass them to the AI when a comment is
+ * posted.
  */
-export function splitBlocks(md: string): string[] {
+export function splitBlocksWithLines(md: string): BlockSpan[] {
   const lines = md.split(/\r?\n/);
-  const blocks: string[] = [];
+  const blocks: BlockSpan[] = [];
   let current: string[] = [];
+  let currentStart: number | null = null;
+  let currentEnd: number | null = null;
   let inFence = false;
 
   const flush = () => {
-    if (current.length === 0) return;
+    if (current.length === 0) {
+      currentStart = null;
+      currentEnd = null;
+      return;
+    }
     const joined = current.join("\n").trim();
-    if (joined.length > 0) {
-      blocks.push(joined);
+    if (joined.length > 0 && currentStart !== null && currentEnd !== null) {
+      blocks.push({ source: joined, startLine: currentStart, endLine: currentEnd });
     }
     current = [];
+    currentStart = null;
+    currentEnd = null;
   };
 
-  for (const line of lines) {
+  lines.forEach((line, idx) => {
+    const lineNumber = idx + 1;
     if (/^\s*(?:```|~~~)/.test(line)) {
       inFence = !inFence;
+      if (currentStart === null) currentStart = lineNumber;
+      currentEnd = lineNumber;
       current.push(line);
       if (!inFence) flush();
-      continue;
+      return;
     }
     if (inFence) {
+      if (currentStart === null) currentStart = lineNumber;
+      currentEnd = lineNumber;
       current.push(line);
-      continue;
+      return;
     }
     if (line.trim() === "") {
       flush();
     } else {
+      if (currentStart === null) currentStart = lineNumber;
+      currentEnd = lineNumber;
       current.push(line);
     }
-  }
+  });
   flush();
   return blocks;
+}
+
+/**
+ * Back-compat shim — callers that only need the source strings.
+ * Delegates to `splitBlocksWithLines` so there is one source of
+ * truth for the splitting rules.
+ */
+export function splitBlocks(md: string): string[] {
+  return splitBlocksWithLines(md).map((b) => b.source);
 }

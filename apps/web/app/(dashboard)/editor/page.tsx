@@ -125,7 +125,13 @@ function EditorPageLegacy() {
   };
 
   const handleBlockComment = useCallback(
-    (blockIndex: number, blockSource: string, text: string) => {
+    (
+      blockIndex: number,
+      blockSource: string,
+      startLine: number,
+      endLine: number,
+      text: string,
+    ) => {
       const id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
@@ -138,7 +144,7 @@ function EditorPageLegacy() {
         };
       });
       lastCommentBlockRef.current = blockIndex;
-      void submitBlockComment(blockSource, text);
+      void submitBlockComment(blockSource, startLine, endLine, text);
     },
     [submitBlockComment]
   );

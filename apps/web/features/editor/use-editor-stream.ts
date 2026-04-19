@@ -38,10 +38,14 @@ export interface UseEditorStreamResult {
   /** Kick off an /editor/iterate stream using the current draft. */
   iterateDraft: (body: Omit<IterateRequest, "current_draft">) => Promise<void>;
   /** Compose a block-level comment into an iterate instruction and
-   *  send it to the AI. The agent reads the current draft + the
-   *  comment context and decides whether to update the canvas or
-   *  just answer in chat. */
-  submitBlockComment: (blockSource: string, commentText: string) => Promise<void>;
+   *  send it to the AI. Passes the line range so the AI can
+   *  pinpoint exactly what the user highlighted. */
+  submitBlockComment: (
+    blockSource: string,
+    startLine: number,
+    endLine: number,
+    commentText: string,
+  ) => Promise<void>;
   /** Overwrite the draft (e.g. restore from server, bail out). */
   setDraft: (value: string) => void;
 }
@@ -121,23 +125,32 @@ export function useEditorStream(
   );
 
   const submitBlockComment = useCallback(
-    async (blockSource: string, commentText: string) => {
+    async (
+      blockSource: string,
+      startLine: number,
+      endLine: number,
+      commentText: string,
+    ) => {
       if (!commentText.trim() || !draft || streaming) return;
-      // Compose a GitHub-PR-style instruction: quote the targeted
-      // block so the agent knows exactly where the comment is, then
-      // ask it to either update the doc or reply in chat (the
-      // channel-tag contract gives it both options).
+      // GitHub-PR-style instruction: the AI receives the comment,
+      // the quoted block, AND the exact line range so it can
+      // pinpoint what the user highlighted. Channel-tag contract
+      // lets the agent choose update / reply / both.
       const snippet = blockSource.trim().slice(0, 240);
+      const lineLabel =
+        startLine === endLine
+          ? `a linha ${startLine}`
+          : `as linhas ${startLine}–${endLine}`;
       const instruction =
-        `O usuário comentou no seguinte trecho do documento:\n\n` +
+        `O usuário comentou ${lineLabel} do rascunho atual.\n\n` +
+        `Trecho comentado (linhas ${startLine}–${endLine}):\n` +
         `>>>\n${snippet}\n<<<\n\n` +
         `Comentário: "${commentText.trim()}"\n\n` +
-        `Avalie o comentário. Se fizer sentido, ` +
-        `atualize o documento inteiro em <canvas>. ` +
-        `Responda em <chat> explicando brevemente o que você mudou ` +
-        `ou por que não fez sentido mudar.`;
+        `Avalie o comentário. Se fizer sentido, atualize o documento ` +
+        `inteiro em <canvas>. Responda em <chat> explicando brevemente ` +
+        `o que você mudou, em quais linhas, ou por que não fez sentido mudar.`;
       await runStream(
-        `Comentário: ${commentText}`,
+        `Comentário (linhas ${startLine}–${endLine}): ${commentText}`,
         editorService.iterate({ instruction, current_draft: draft }),
       );
     },
