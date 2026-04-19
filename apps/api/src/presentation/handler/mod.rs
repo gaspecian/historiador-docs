@@ -5,6 +5,7 @@ pub mod admin;
 pub mod auth;
 pub mod collections;
 pub mod editor;
+pub mod editor_ws;
 pub mod export;
 pub mod health;
 pub mod pages;
