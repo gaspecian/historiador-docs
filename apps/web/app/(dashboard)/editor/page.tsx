@@ -4,54 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
-import { EditorV2 } from "@/features/editor/editor-v2";
 import { CommentablePreview, type BlockComment } from "@/features/editor/review";
 import { SaveDialog } from "@/features/editor/save";
-import { EDITOR_V2_ENABLED } from "@/lib/config";
 import * as pagesService from "@/lib/services/pages";
 import type { PageVersionResponse } from "@historiador/types";
 
 export default function EditorPage() {
-  // Sprint 11 flag-gated entry point. When the v2 editor ships on a
-  // deploy, this dispatch swaps the whole surface over; the Sprint 4
-  // SSE flow stays in place until the post-tier-A flag flip deletes
-  // it per ADR-009.
-  //
-  // Override: `?v2=1` in the URL forces the v2 surface regardless of
-  // the compile-time flag. `NEXT_PUBLIC_EDITOR_V2` gets baked in at
-  // build time, so if it was set after `pnpm dev` started the page
-  // will keep rendering legacy until a restart. The URL override
-  // bypasses that.
-  return <EditorRouter />;
-}
-
-function EditorRouter() {
-  const params = useSearchParams();
-  const urlOverride = params?.get("v2");
-  const forceV2 = urlOverride === "1" || urlOverride === "true";
-  const useV2 = forceV2 || EDITOR_V2_ENABLED;
-  return useV2 ? <EditorV2Dispatcher /> : <EditorPageLegacy />;
-}
-
-function EditorV2Dispatcher() {
-  // Page + language bind via URL: /editor?page_id=...&lang=pt-BR
-  // Token read from localStorage (auth-context stores access_token
-  // there — the WS handshake expects it via query string per ADR-012).
-  // Lazy initialiser avoids the "setState inside effect" lint; the
-  // token is synchronously available on the client, and SSR renders
-  // with `undefined` because `window` is not defined — both paths
-  // produce stable markup.
-  const params = useSearchParams();
-  const pageId = params?.get("page_id") ?? undefined;
-  const language = params?.get("lang") ?? undefined;
-  const [token] = useState<string | undefined>(() => {
-    if (typeof window === "undefined") return undefined;
-    return window.localStorage.getItem("access_token") ?? undefined;
-  });
-  return <EditorV2 pageId={pageId} language={language} token={token} />;
-}
-
-function EditorPageLegacy() {
   const searchParams = useSearchParams();
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
