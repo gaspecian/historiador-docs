@@ -67,6 +67,8 @@ pub fn supported_variants() -> Vec<&'static str> {
         "autonomy_mode_changed",
         "autonomy_checkpoint",
         "autonomy_decision",
+        "comment_posted",
+        "comment_resolved",
     ]
 }
 
@@ -166,6 +168,15 @@ pub enum EditorMessage {
     },
     /// Client → server: user's decision at a checkpoint.
     AutonomyDecision { decision: String },
+    /// Either direction: a comment was posted.
+    CommentPosted {
+        seq: u64,
+        comment_id: String,
+        block_ids: Vec<String>,
+        text: String,
+    },
+    /// Either direction: a comment was resolved.
+    CommentResolved { seq: u64, comment_id: String },
 }
 
 // --- query params ---

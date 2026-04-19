@@ -3,6 +3,7 @@
 
 pub mod autonomy;
 pub mod block_ops;
+pub mod comments;
 pub mod context;
 pub mod conversation;
 pub mod generate_draft;

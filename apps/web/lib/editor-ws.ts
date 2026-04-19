@@ -71,6 +71,18 @@ export type EditorMessage =
   | {
       type: "autonomy_decision";
       decision: "continue" | "revise" | "skip";
+    }
+  | {
+      type: "comment_posted";
+      seq: number;
+      comment_id: string;
+      block_ids: string[];
+      text: string;
+    }
+  | {
+      type: "comment_resolved";
+      seq: number;
+      comment_id: string;
     };
 
 export interface OutlineSection {
