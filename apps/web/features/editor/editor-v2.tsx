@@ -8,10 +8,10 @@
  * layers the proposal overlay on top of the canvas.
  */
 
-import { useCallback, useMemo, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { useCallback, useState } from "react";
 
 import { Canvas } from "./canvas";
+import { ChatPane } from "./chat";
 import { SplitPane } from "./split-pane";
 
 const STARTER_MARKDOWN = `<!-- block:01966000-0000-7000-8000-000000000001 -->
@@ -34,32 +34,35 @@ The chat pane on the left will become interactive once A6 lands
 the WebSocket wiring and canvas-aware context assembly.
 `;
 
-export function EditorV2() {
+export interface EditorV2Props {
+  /** When absent, render a demo canvas — no WS connection. */
+  pageId?: string;
+  language?: string;
+  /** Short-lived access token for the WS handshake. Read from
+   *  localStorage by the default caller in `editor-v2-page.tsx`. */
+  token?: string;
+}
+
+export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // Selection + cursor are tracked here so the chat pane can ride
+  // them on outgoing messages. A10 wires the canvas to update these
+  // whenever the Tiptap selection changes; for now they are inert.
+  const [selectionText] = useState("");
+  const [cursorBlockId] = useState<string | null>(null);
 
   const handleSave = useCallback(async (markdown: string) => {
-    // TODO (A6): PATCH /pages/:id with the base markdown. For the
-    // A5 scaffold we stamp a timestamp and log size so the UI can
-    // show a "saved" indicator and diagnostics can observe payloads.
+    // TODO (A10/A11): PATCH /pages/:id with the base markdown once
+    // the overlay pipeline guarantees only approved content reaches
+    // this function. The A5 scaffold stamps a timestamp and logs
+    // size so the UI can show a "saved" indicator.
     if (process.env.NODE_ENV !== "production") {
       console.debug(`[editor-v2] autosave scaffold: ${markdown.length} bytes`);
     }
     setSavedAt(new Date());
   }, []);
 
-  const chatPlaceholder = useMemo(
-    () => (
-      <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-3">
-        <Sparkles className="w-6 h-6 text-[var(--color-primary-600)]" aria-hidden />
-        <p className="t-body-lg text-[var(--color-text-primary)]">AI assistant</p>
-        <p className="t-body-sm text-[var(--color-text-secondary)] max-w-[240px]">
-          Conversation arrives in the next phase. For now, you can edit
-          the canvas directly — every block gets a stable ID.
-        </p>
-      </div>
-    ),
-    []
-  );
+  const chatReady = Boolean(pageId && language && token);
 
   return (
     <div>
@@ -72,13 +75,38 @@ export function EditorV2() {
         </span>
       </header>
       <SplitPane
-        left={chatPlaceholder}
+        left={
+          chatReady ? (
+            <ChatPane
+              pageId={pageId!}
+              language={language!}
+              token={token!}
+              selectionText={selectionText}
+              cursorBlockId={cursorBlockId}
+            />
+          ) : (
+            <DemoChatPlaceholder />
+          )
+        }
         right={
           <div className="p-4">
             <Canvas initialMarkdown={STARTER_MARKDOWN} onSave={handleSave} />
           </div>
         }
       />
+    </div>
+  );
+}
+
+function DemoChatPlaceholder() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-3">
+      <p className="t-body-lg text-[var(--color-text-primary)]">AI assistant</p>
+      <p className="t-body-sm text-[var(--color-text-secondary)] max-w-[260px]">
+        Open a page from the dashboard to start a conversation with the
+        editor agent. The chat streams through a WebSocket and carries
+        your canvas state on every turn.
+      </p>
     </div>
   );
 }

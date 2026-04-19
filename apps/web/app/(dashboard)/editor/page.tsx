@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
 import { EditorV2 } from "@/features/editor/editor-v2";
@@ -31,7 +32,25 @@ export default function EditorPage() {
   // deploy, this dispatch swaps the whole surface over; the Sprint 4
   // SSE flow stays in place until the post-tier-A flag flip deletes
   // it per ADR-009.
-  return EDITOR_V2_ENABLED ? <EditorV2 /> : <EditorPageLegacy />;
+  return EDITOR_V2_ENABLED ? <EditorV2Dispatcher /> : <EditorPageLegacy />;
+}
+
+function EditorV2Dispatcher() {
+  // Page + language bind via URL: /editor?page_id=...&lang=pt-BR
+  // Token read from localStorage (auth-context stores access_token
+  // there — the WS handshake expects it via query string per ADR-012).
+  // Lazy initialiser avoids the "setState inside effect" lint; the
+  // token is synchronously available on the client, and SSR renders
+  // with `undefined` because `window` is not defined — both paths
+  // produce stable markup.
+  const params = useSearchParams();
+  const pageId = params?.get("page_id") ?? undefined;
+  const language = params?.get("lang") ?? undefined;
+  const [token] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return window.localStorage.getItem("access_token") ?? undefined;
+  });
+  return <EditorV2 pageId={pageId} language={language} token={token} />;
 }
 
 function EditorPageLegacy() {

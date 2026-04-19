@@ -2,6 +2,7 @@
 //! persistence.
 
 pub mod block_ops;
+pub mod context;
 pub mod conversation;
 pub mod generate_draft;
 pub mod iterate_draft;
