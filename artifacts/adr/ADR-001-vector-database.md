@@ -1,8 +1,11 @@
 # ADR-001: Vector Database Selection — VexFS
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-007](ADR-007-chronik-stream.md)
 **Date:** 2026-04-08
+**Superseded:** 2026-04-12
 **Deciders:** Gabriel Specian (Nexian Tech), VexFS core team
+
+> ⚠️ This ADR has been superseded. The vector store was changed from VexFS to Chronik-Stream, which provides vector search, full-text search, streaming, and SQL analytics in a single Rust binary. See ADR-007 for the current decision.
 
 ---
 
