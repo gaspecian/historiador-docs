@@ -3,6 +3,7 @@
 
 pub mod autonomy;
 pub mod block_ops;
+pub mod channels;
 pub mod comments;
 pub mod context;
 pub mod conversation;

@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{interval, Duration};
 use uuid::Uuid;
 
+use crate::application::editor::channels::{parse as parse_channels, ChannelOutput};
 use crate::application::editor::context::{assemble, ContextInputs, HistoryTurn, OutlineEntry};
 use crate::application::editor::intake::{determine_mode, IntakeState};
 use crate::application::editor::outline::{latest_approved_outline, to_context_entries};
@@ -314,42 +315,47 @@ async fn run_socket(
                                     .await;
                                     review_pass_requested = false;
 
-                                    if let Some(AssistantReply { text, mode }) = reply {
-                                        let chat_content = match mode {
-                                            PromptMode::Generation => {
-                                                // Write the drafted markdown to the
-                                                // canvas instead of dumping it in
-                                                // chat. The proposal-overlay pipeline
-                                                // takes over for per-block tool
-                                                // calls; this is the whole-document
-                                                // fallback path used while real
-                                                // providers still return
-                                                // LlmError::NotImplemented for tool
-                                                // calling.
-                                                write_canvas_draft(&state, page_id, &language, &text).await;
-                                                "Rascunho atualizado — veja o canvas.".to_string()
-                                            }
-                                            _ => text,
-                                        };
+                                    if let Some(text) = reply {
+                                        // The agent v1 prompt mandates
+                                        // <chat>/<canvas> tags. Route each
+                                        // channel to its surface; the runtime
+                                        // never infers placement from mode —
+                                        // the model owns the split.
+                                        let ChannelOutput {
+                                            chat: chat_part,
+                                            canvas: canvas_part,
+                                        } = parse_channels(&text);
 
-                                        seq += 1;
-                                        let reply_env = EditorMessage::Message {
-                                            seq,
-                                            role: "assistant".into(),
-                                            content: chat_content.clone(),
-                                        };
-                                        sender
-                                            .send(Message::Text(serde_json::to_string(&reply_env)?))
-                                            .await?;
-                                        persist_message(
-                                            &state,
-                                            page_id,
-                                            &language,
-                                            author_id,
-                                            "assistant",
-                                            &chat_content,
-                                        )
-                                        .await;
+                                        if !canvas_part.is_empty() {
+                                            write_canvas_draft(
+                                                &state,
+                                                page_id,
+                                                &language,
+                                                &canvas_part,
+                                            )
+                                            .await;
+                                        }
+
+                                        if !chat_part.is_empty() {
+                                            seq += 1;
+                                            let reply_env = EditorMessage::Message {
+                                                seq,
+                                                role: "assistant".into(),
+                                                content: chat_part.clone(),
+                                            };
+                                            sender
+                                                .send(Message::Text(serde_json::to_string(&reply_env)?))
+                                                .await?;
+                                            persist_message(
+                                                &state,
+                                                page_id,
+                                                &language,
+                                                author_id,
+                                                "assistant",
+                                                &chat_part,
+                                            )
+                                            .await;
+                                        }
                                     }
                                 }
                             }
@@ -485,16 +491,13 @@ async fn persist_message(
     }
 }
 
-struct AssistantReply {
-    text: String,
-    mode: PromptMode,
-}
-
 /// Build a full rendered system prompt for the next turn and call
 /// the text-generation client to produce an assistant reply.
 /// Returns `None` on LLM failure so the caller does not fabricate a
 /// response — the user sees a transport error via the client's
-/// existing error handling instead of silently-dropped data.
+/// existing error handling instead of silently-dropped data. The
+/// returned string is the raw model output; the caller runs the
+/// `<chat>`/`<canvas>` channel parser on it.
 async fn generate_reply(
     state: &AppState,
     page_id: Uuid,
@@ -503,7 +506,7 @@ async fn generate_reply(
     user_content: &str,
     skip_discovery: bool,
     review_pass: bool,
-) -> Option<AssistantReply> {
+) -> Option<String> {
     // Fetch canvas markdown for context. Missing page = empty canvas.
     let page_markdown = historiador_db::postgres::page_versions::find_by_page_and_language(
         &state.pool,
@@ -603,7 +606,7 @@ async fn generate_reply(
             if buf.trim().is_empty() {
                 None
             } else {
-                Some(AssistantReply { text: buf, mode })
+                Some(buf)
             }
         }
         Err(e) => {
