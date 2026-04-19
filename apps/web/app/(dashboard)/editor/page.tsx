@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { marked } from "marked";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
 import { EditorV2 } from "@/features/editor/editor-v2";
+import { CommentablePreview, type BlockComment } from "@/features/editor/review";
 import { EDITOR_V2_ENABLED } from "@/lib/config";
 
 function Sparkle() {
@@ -71,8 +71,46 @@ function EditorV2Dispatcher() {
 function EditorPageLegacy() {
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
-  const { draft, messages, streaming, liveAssistant, generateDraft, iterateDraft } =
-    useEditorStream();
+  const {
+    draft,
+    messages,
+    streaming,
+    liveAssistant,
+    generateDraft,
+    iterateDraft,
+    submitBlockComment,
+  } = useEditorStream();
+
+  // GitHub-PR-style comments keyed by block index. The parent owns
+  // state so the commentable preview stays a pure render component.
+  // Reset when the draft is replaced wholesale — block indexes drift
+  // after an edit round-trip, so keeping stale anchors hurts more
+  // than losing the thread history.
+  const [commentsByBlock, setCommentsByBlock] = useState<
+    Record<number, Array<{ id: string; text: string; status: "pending" | "replied" | "resolved" }>>
+  >({});
+  // When the AI responds to a comment turn, mark pending comments
+  // on the affected block as replied so the UI reflects the cycle.
+  const lastCommentBlockRef = useRef<number | null>(null);
+  const prevStreamingRef = useRef(false);
+  useEffect(() => {
+    // Transition streaming:true → false means the AI just finished
+    // responding. Flip pending comments on the last-commented block
+    // to "replied".
+    if (prevStreamingRef.current && !streaming && lastCommentBlockRef.current !== null) {
+      const idx = lastCommentBlockRef.current;
+      setCommentsByBlock((prev) => {
+        const list = prev[idx];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [idx]: list.map((c) => (c.status === "pending" ? { ...c, status: "replied" } : c)),
+        };
+      });
+      lastCommentBlockRef.current = null;
+    }
+    prevStreamingRef.current = streaming;
+  }, [streaming]);
 
   const submitGenerate = async () => {
     if (!brief.trim() || streaming) return;
@@ -85,6 +123,36 @@ function EditorPageLegacy() {
     await iterateDraft({ instruction });
     setInstruction("");
   };
+
+  const handleBlockComment = useCallback(
+    (blockIndex: number, blockSource: string, text: string) => {
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setCommentsByBlock((prev) => {
+        const existing = prev[blockIndex] ?? [];
+        return {
+          ...prev,
+          [blockIndex]: [...existing, { id, text, status: "pending" }],
+        };
+      });
+      lastCommentBlockRef.current = blockIndex;
+      void submitBlockComment(blockSource, text);
+    },
+    [submitBlockComment]
+  );
+
+  const handleResolveComment = useCallback((blockIndex: number, commentId: string) => {
+    setCommentsByBlock((prev) => {
+      const list = prev[blockIndex];
+      if (!list) return prev;
+      return {
+        ...prev,
+        [blockIndex]: list.map((c) => (c.id === commentId ? { ...c, status: "resolved" } : c)),
+      };
+    });
+  }, []);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(draft);
@@ -247,9 +315,14 @@ function EditorPageLegacy() {
             )}
 
             {draft ? (
-              <div
-                className="md-prose"
-                dangerouslySetInnerHTML={{ __html: renderDraftMarkdown(draft) }}
+              <CommentablePreview
+                markdown={normaliseDraftMarkdown(
+                  draft.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, ""),
+                )}
+                commentsByBlock={commentsByBlock as Record<number, BlockComment[]>}
+                onComment={handleBlockComment}
+                onResolve={handleResolveComment}
+                submitting={streaming}
               />
             ) : (
               <div
@@ -264,19 +337,6 @@ function EditorPageLegacy() {
       </section>
     </main>
   );
-}
-
-function renderDraftMarkdown(md: string): string {
-  // Strip the `<!-- block:<uuid> -->` metadata comments emitted by
-  // the Sprint 11 serializer so they never appear as visible
-  // content. Then normalise whitespace so LLM output that skips
-  // blank lines between block-level constructs still parses as
-  // structured markdown (setext headings in particular break
-  // silently when no blank line follows the underline).
-  const cleaned = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
-  const normalised = normaliseDraftMarkdown(cleaned);
-  const html = marked.parse(normalised, { async: false, gfm: true, breaks: false });
-  return typeof html === "string" ? html : "";
 }
 
 function normaliseDraftMarkdown(md: string): string {
