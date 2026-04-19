@@ -35,8 +35,13 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{interval, Duration};
 use uuid::Uuid;
 
+use crate::application::editor::context::{assemble, ContextInputs, HistoryTurn, OutlineEntry};
+use crate::application::editor::intake::{determine_mode, IntakeState};
+use crate::application::editor::outline::{latest_approved_outline, to_context_entries};
+use crate::application::editor::prompt_template::{render_prompt, PromptMode};
 use crate::infrastructure::auth::jwt;
 use crate::state::AppState;
+use historiador_tools::block_op_tools;
 
 /// Protocol version. Bumped when the envelope gains a breaking change
 /// (e.g., a renamed required field). Additions that follow the
@@ -243,6 +248,12 @@ async fn run_socket(
 
     let mut seq = server_last_seq;
     let mut client_synced = false;
+    // Session-scoped intake state. Skip-discovery flips the flag so
+    // subsequent turns do not gate on the intake questions. Outline
+    // approvals and canvas content are re-read from storage on every
+    // turn so the LLM always sees fresh state.
+    let mut skip_discovery = false;
+    let mut review_pass_requested = false;
 
     loop {
         tokio::select! {
@@ -268,7 +279,17 @@ async fn run_socket(
                                     client_synced = true;
                                 }
                             }
+                            EditorMessage::SkipDiscovery => {
+                                skip_discovery = true;
+                                tracing::debug!(%page_id, %author_id, "skip_discovery flipped on");
+                            }
+                            EditorMessage::ReviewRequested => {
+                                review_pass_requested = true;
+                                tracing::debug!(%page_id, %author_id, "review_requested");
+                            }
                             EditorMessage::Message { role, content, .. } => {
+                                // Echo the user's turn with a real seq so the
+                                // client can reconcile the optimistic copy.
                                 seq += 1;
                                 let stored = EditorMessage::Message {
                                     seq,
@@ -278,9 +299,46 @@ async fn run_socket(
                                 sender.send(Message::Text(serde_json::to_string(&stored)?))
                                     .await?;
                                 persist_message(&state, page_id, &language, author_id, &role, &content).await;
+
+                                // Only user-initiated turns trigger an LLM reply.
+                                if role == "user" {
+                                    let assistant_reply = generate_reply(
+                                        &state,
+                                        page_id,
+                                        &language,
+                                        author_id,
+                                        &content,
+                                        skip_discovery,
+                                        review_pass_requested,
+                                    )
+                                    .await;
+                                    review_pass_requested = false;
+
+                                    if let Some(reply_text) = assistant_reply {
+                                        seq += 1;
+                                        let reply = EditorMessage::Message {
+                                            seq,
+                                            role: "assistant".into(),
+                                            content: reply_text.clone(),
+                                        };
+                                        sender
+                                            .send(Message::Text(serde_json::to_string(&reply)?))
+                                            .await?;
+                                        persist_message(
+                                            &state,
+                                            page_id,
+                                            &language,
+                                            author_id,
+                                            "assistant",
+                                            &reply_text,
+                                        )
+                                        .await;
+                                    }
+                                }
                             }
                             // All other variants are silently ignored for now —
-                            // they will be handled by later phases.
+                            // block_op / comment / autonomy dispatch lands in
+                            // follow-up phases.
                             _ => {}
                         }
                     }
@@ -407,6 +465,129 @@ async fn persist_message(
     .await
     {
         tracing::warn!(error = %e, %page_id, %author_id, "editor ws: persist failed");
+    }
+}
+
+/// Build a full rendered system prompt for the next turn and call
+/// the text-generation client to produce an assistant reply.
+/// Returns `None` on LLM failure so the caller does not fabricate a
+/// response — the user sees a transport error via the client's
+/// existing error handling instead of silently-dropped data.
+async fn generate_reply(
+    state: &AppState,
+    page_id: Uuid,
+    language: &str,
+    author_id: Uuid,
+    user_content: &str,
+    skip_discovery: bool,
+    review_pass: bool,
+) -> Option<String> {
+    // Fetch canvas markdown for context. Missing page = empty canvas.
+    let page_markdown = historiador_db::postgres::page_versions::find_by_page_and_language(
+        &state.pool,
+        page_id,
+        language,
+    )
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v.content_markdown)
+    .unwrap_or_default();
+
+    // Pull the transcript so we can hand the LLM recent history AND
+    // derive the outline state.
+    let transcript = historiador_db::postgres::editor_conversations::find_by_key(
+        &state.pool,
+        page_id,
+        language,
+        author_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .map(|row| row.messages)
+    .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+
+    let outline_sections = latest_approved_outline(&transcript);
+    let outline_approved = outline_sections.is_some();
+    let outline_entries: Vec<OutlineEntry> = outline_sections
+        .as_deref()
+        .map(to_context_entries)
+        .unwrap_or_default();
+
+    let recent_history: Vec<HistoryTurn> = transcript
+        .as_array()
+        .map(|array| {
+            array
+                .iter()
+                .filter_map(|entry| {
+                    let role = entry.get("role")?.as_str()?.to_string();
+                    let content = entry.get("content")?.as_str()?.to_string();
+                    Some(HistoryTurn { role, content })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let canvas_has_content = !page_markdown.trim().is_empty();
+
+    let intake_state = IntakeState {
+        canvas_has_content,
+        outline_approved,
+        skip_discovery,
+    };
+
+    // Review overrides normal intake/conversation/generation gating.
+    let mode = if review_pass {
+        PromptMode::Review
+    } else {
+        determine_mode(intake_state, /* user_requested_generation = */ false)
+    };
+
+    let context = assemble(ContextInputs {
+        selection_text: None,
+        cursor_block_id: None,
+        canvas_markdown: page_markdown,
+        outline: outline_entries,
+        recent_history,
+    });
+
+    let tools = block_op_tools();
+    let rendered = render_prompt(&state.agent_prompt.body, mode, &tools, &context.text);
+
+    tracing::debug!(
+        bytes = rendered.len(),
+        mode = ?mode,
+        context_bytes = context.bytes,
+        "editor ws: calling LLM"
+    );
+
+    match state
+        .text_generation_client
+        .generate_text_stream(&rendered, user_content)
+        .await
+    {
+        Ok(mut stream) => {
+            let mut buf = String::new();
+            while let Some(chunk) = stream.next().await {
+                match chunk {
+                    Ok(text) => buf.push_str(&text),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "editor ws: LLM stream error");
+                        return None;
+                    }
+                }
+            }
+            if buf.trim().is_empty() {
+                None
+            } else {
+                Some(buf)
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "editor ws: LLM call failed");
+            None
+        }
     }
 }
 
