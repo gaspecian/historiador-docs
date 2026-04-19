@@ -32,6 +32,9 @@ export interface ChatPaneProps {
   selectionText: string;
   /** Block the cursor is currently in. Null when the canvas has no focus. */
   cursorBlockId: string | null;
+  /** Forward every incoming block_op to the parent so the overlay
+   *  panel (lifted into EditorV2) can track pending proposals. */
+  onProposal?: (proposalId: string, op: unknown) => void;
   /** Flag-off fallback: render the pane as disabled instead of opening a WS. */
   disabled?: boolean;
 }
@@ -42,6 +45,7 @@ export function ChatPane({
   token,
   selectionText,
   cursorBlockId,
+  onProposal,
   disabled = false,
 }: ChatPaneProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -98,7 +102,26 @@ export function ChatPane({
     onMessage: handleIncoming,
     onError: handleError,
     onOutline: handleOutline,
+    onBlockOp: onProposal,
   });
+
+  // Listen for block-op ack events emitted by the ProposalPanel
+  // (which lives in EditorV2, outside this component tree). A custom
+  // DOM event keeps the two surfaces decoupled without needing a
+  // context provider.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ proposalId: string; decision: string }>).detail;
+      if (!detail) return;
+      sendRaw({
+        type: "block_op_ack",
+        proposal_id: detail.proposalId,
+        decision: detail.decision,
+      });
+    };
+    window.addEventListener("historiador:block-op-ack", handler);
+    return () => window.removeEventListener("historiador:block-op-ack", handler);
+  }, [sendRaw]);
 
   const [discoverySkipped, setDiscoverySkipped] = useState(false);
   const handleSkipDiscovery = useCallback(() => {

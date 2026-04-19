@@ -12,6 +12,7 @@ import { useCallback, useState } from "react";
 
 import { Canvas } from "./canvas";
 import { ChatPane } from "./chat";
+import { ProposalPanel, summariseOp, useProposalStore } from "./overlay";
 import { SplitPane } from "./split-pane";
 
 const STARTER_MARKDOWN = `<!-- block:01966000-0000-7000-8000-000000000001 -->
@@ -46,18 +47,34 @@ export interface EditorV2Props {
 export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   // Selection + cursor are tracked here so the chat pane can ride
-  // them on outgoing messages. A10 wires the canvas to update these
-  // whenever the Tiptap selection changes; for now they are inert.
+  // them on outgoing messages. Wiring the Tiptap selection listener
+  // (to update these) lands with B2's inline toolbar.
   const [selectionText] = useState("");
   const [cursorBlockId] = useState<string | null>(null);
 
+  const proposals = useProposalStore();
+
+  const handleProposal = useCallback(
+    (proposalId: string, op: unknown) => {
+      const { summary, kind } = summariseOp(op);
+      proposals.add({
+        proposalId,
+        kind,
+        summary,
+        raw: op,
+      });
+    },
+    [proposals]
+  );
+
   const handleSave = useCallback(async (markdown: string) => {
-    // TODO (A10/A11): PATCH /pages/:id with the base markdown once
-    // the overlay pipeline guarantees only approved content reaches
-    // this function. The A5 scaffold stamps a timestamp and logs
-    // size so the UI can show a "saved" indicator.
+    // The proposal overlay lives outside the canvas's base state, so
+    // `markdown` here is the user-approved base only — this is the
+    // ADR-013 "unapproved content never auto-saves" invariant,
+    // enforced by the type signature (Canvas.onSave receives only
+    // the base serialisation).
     if (process.env.NODE_ENV !== "production") {
-      console.debug(`[editor-v2] autosave scaffold: ${markdown.length} bytes`);
+      console.debug(`[editor-v2] autosave base: ${markdown.length} bytes`);
     }
     setSavedAt(new Date());
   }, []);
@@ -83,20 +100,46 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
               token={token!}
               selectionText={selectionText}
               cursorBlockId={cursorBlockId}
+              onProposal={handleProposal}
             />
           ) : (
             <DemoChatPlaceholder />
           )
         }
         right={
-          <div className="p-4">
+          <div className="p-4 flex flex-col gap-3">
             <Canvas initialMarkdown={STARTER_MARKDOWN} onSave={handleSave} />
+            <ProposalPanel
+              proposals={proposals.proposals}
+              onAccept={(id) => {
+                // The send happens via ChatPane's WS; to keep a single
+                // source of truth, we delegate through a DOM custom
+                // event that the ChatPane listens for. This sidesteps
+                // prop-drilling the `sendRaw` reference into EditorV2
+                // without needing a context provider yet.
+                proposals.resolve(id);
+                window.dispatchEvent(
+                  new CustomEvent("historiador:block-op-ack", {
+                    detail: { proposalId: id, decision: "accepted" },
+                  })
+                );
+              }}
+              onReject={(id) => {
+                proposals.resolve(id);
+                window.dispatchEvent(
+                  new CustomEvent("historiador:block-op-ack", {
+                    detail: { proposalId: id, decision: "rejected" },
+                  })
+                );
+              }}
+            />
           </div>
         }
       />
     </div>
   );
 }
+
 
 function DemoChatPlaceholder() {
   return (

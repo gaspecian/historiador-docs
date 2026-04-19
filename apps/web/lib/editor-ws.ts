@@ -77,6 +77,8 @@ export interface UseEditorSocketArgs {
   onError?: (err: Extract<EditorMessage, { type: "error" }>) => void;
   /** Fired when the server proposes or revises an outline (A9). */
   onOutline?: (sections: OutlineSection[], revised: boolean) => void;
+  /** Fired when the server pushes a block_op envelope (A10). */
+  onBlockOp?: (proposalId: string, op: unknown) => void;
 }
 
 export interface UseEditorSocketResult {
@@ -94,7 +96,16 @@ export interface UseEditorSocketResult {
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
 
 export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResult {
-  const { pageId, language, token, enabled = true, onMessage, onError, onOutline } = args;
+  const {
+    pageId,
+    language,
+    token,
+    enabled = true,
+    onMessage,
+    onError,
+    onOutline,
+    onBlockOp,
+  } = args;
 
   const [status, setStatus] = useState<EditorSocketStatus>("closed");
   const [lastSeq, setLastSeq] = useState<number>(0);
@@ -198,6 +209,12 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
             }
             onOutline?.(msg.sections, true);
             break;
+          case "block_op":
+            if (msg.seq > lastSeqRef.current) {
+              setLastSeq(msg.seq);
+            }
+            onBlockOp?.(msg.proposal_id, msg.op);
+            break;
           default:
             // Unknown variant — drop silently.
             break;
@@ -233,7 +250,7 @@ export function useEditorSocket(args: UseEditorSocketArgs): UseEditorSocketResul
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [url, onMessage, onError, onOutline]);
+  }, [url, onMessage, onError, onOutline, onBlockOp]);
 
   const send = useCallback((role: string, content: string) => {
     const ws = socketRef.current;
