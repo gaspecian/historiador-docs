@@ -15,7 +15,8 @@
 
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useCallback, useEffect, useRef } from "react";
+import { marked } from "marked";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { BlockIdExtension } from "./block-id-extension";
 import { serializeCanvas } from "./markdown";
@@ -32,13 +33,13 @@ export interface CanvasProps {
 }
 
 export function Canvas({ initialMarkdown, onSave, onChange }: CanvasProps) {
-  // We intentionally do not parse `initialMarkdown` through
-  // prosemirror-markdown here. The server-side BlockTree serializer
-  // is authoritative; the first cut of A5 shows the raw markdown in
-  // a prose-mirror-friendly form by using Tiptap's own parser for
-  // headings / paragraphs. Richer round-trip ships alongside A10
-  // when proposals need precise anchoring.
-  const initialHtml = markdownToPlainHtml(initialMarkdown);
+  // Parse markdown → HTML once per new document. `marked` handles
+  // the full GFM subset the server's BlockTree supports; we strip
+  // `<!-- block:<uuid> -->` comments first so Tiptap does not see
+  // them as content (our BlockIdExtension mints fresh IDs on the
+  // next transaction, and the server's parse_markdown will bind
+  // the IDs back on save per the A2 round-trip).
+  const initialHtml = useMemo(() => markdownToHtml(initialMarkdown), [initialMarkdown]);
 
   const saveTimerRef = useRef<number | null>(null);
   const latestMarkdownRef = useRef<string>(initialMarkdown);
@@ -92,35 +93,17 @@ export function Canvas({ initialMarkdown, onSave, onChange }: CanvasProps) {
 }
 
 /**
- * Minimal markdown → HTML for the initial Tiptap content. Handles
- * headings and paragraphs; anything more exotic falls through as a
- * paragraph. This is *display-only* — the server's BlockTree is the
- * source of truth for structure, so lossy rendering here is OK
- * until A10 upgrades the round-trip.
+ * Markdown → HTML for Tiptap's initial content. Strips the
+ * `<!-- block:<uuid> -->` comments (metadata, not content) before
+ * handing the source to `marked` so the parser never emits them as
+ * text. The BlockIdExtension re-mints IDs on the next transaction
+ * and the server rebinds them on save via `crates/blocks`.
+ *
+ * `marked.parse` is called synchronously with `async: false` so the
+ * return type is a `string` rather than a `Promise`.
  */
-function markdownToPlainHtml(md: string): string {
-  const blocks = md.split(/\n\s*\n/);
-  return blocks
-    .map((block) => {
-      const trimmed = block.trim();
-      if (trimmed.length === 0) return "";
-      // Strip block-id HTML comments — they are metadata, not content.
-      const withoutIdComment = trimmed.replace(/^\s*<!--\s*block:[0-9a-fA-F-]+\s*-->\s*/m, "");
-      if (withoutIdComment.length === 0) return "";
-      const headingMatch = withoutIdComment.match(/^(#{1,6})\s+(.*)$/);
-      if (headingMatch) {
-        const level = headingMatch[1].length;
-        return `<h${level}>${escapeHtml(headingMatch[2])}</h${level}>`;
-      }
-      return `<p>${escapeHtml(withoutIdComment)}</p>`;
-    })
-    .filter(Boolean)
-    .join("");
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+function markdownToHtml(md: string): string {
+  const withoutIdComments = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
+  const html = marked.parse(withoutIdComments, { async: false, gfm: true });
+  return typeof html === "string" ? html : "";
 }
