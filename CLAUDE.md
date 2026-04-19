@@ -19,7 +19,7 @@ apps/
   mcp/          Axum MCP server       (port 3002, externally exposed, read-only)
   web/          Next.js 16 + React 19 (port 3000, Tailwind 4)
 crates/
-  db/           Shared Postgres (sqlx) + VexFS clients; owns migrations
+  db/           Shared Postgres (sqlx) + Chronik-Stream clients; owns migrations
   chunker/      Structure-aware markdown chunker (comrak AST)
   llm/          EmbeddingClient + TextGenerationClient traits; OpenAI, Anthropic, Ollama, stub impls
 packages/
@@ -37,11 +37,25 @@ The frontend (`apps/web`) proxies `/api/*` requests to the Axum API via a Next.j
 Violating any of these breaks the architecture. Read the linked ADR before proposing changes:
 
 - **MCP server has zero write access.** The Postgres role `historiador_mcp` has SELECT-only grants on a whitelisted subset of tables. The MCP binary uses `DATABASE_URL_READONLY`. Docker/env config must never leak write credentials to MCP. See [ADR-003](artifacts/adr/ADR-003-mcp-server-architecture.md).
-- **VexFS is the retrieval source of truth; PostgreSQL is the content/metadata source of truth.** Chunk embeddings live in VexFS; page markdown, users, collections, and language config live in PostgreSQL. Do not duplicate. See [ADR-001](artifacts/adr/ADR-001-vector-database.md).
+- **Chronik-Stream is the retrieval source of truth; PostgreSQL is the content/metadata source of truth.** Chunk embeddings live in Chronik-Stream; page markdown, users, collections, and language config live in PostgreSQL. Do not duplicate. [ADR-007](artifacts/adr/ADR-007-chronik-stream.md) supersedes [ADR-001](artifacts/adr/ADR-001-vector-database.md) — Chronik replaced VexFS and is now implemented.
 - **Chunks are structure-aware, never fixed-size.** The chunker walks the markdown AST at heading boundaries (H1→H2→H3) and never splits mid-section. Code blocks, tables, and lists are atomic. See [ADR-002](artifacts/adr/ADR-002-chunking-strategy.md).
 - **Every chunk carries a `language` field (BCP 47).** Language is a workspace-level setting configured at installation. The `page_versions` table is keyed by `(page_id, language)`. See [ADR-005](artifacts/adr/ADR-005-multilingual-architecture.md).
 - **OpenAPI is the single source of truth for the API contract.** `apps/api` uses `utoipa` annotations to emit `openapi.yaml` at build time; `openapi-typescript` generates `packages/types/generated/`. Never hand-edit generated types. Never add an API route without a `#[utoipa::path]` annotation.
 - **ADR-006 supersedes ADR-004** (Rust backend was chosen over Node.js). Read the relevant ADR before making architectural suggestions — these decisions are settled unless the user explicitly reopens them.
+
+## AI Editor (Sprint 11 — in progress)
+
+Sprints 01–10 are shipped. Sprint 11 (current branch `feature/sprint-11`) is designing/building the AI editor across ADRs 008–016. Before touching editor transport, canvas state, LLM tool calls, or proposal/comment flows, read the relevant ADR:
+
+- [ADR-008](artifacts/adr/ADR-008-split-pane-editor.md) — split-pane editor layout
+- [ADR-009](artifacts/adr/ADR-009-websocket-transport-reaffirm.md) — WebSocket transport (reaffirms the move off SSE from v1.0)
+- [ADR-010](artifacts/adr/ADR-010-canvas-block-tree.md) — canvas block tree model
+- [ADR-011](artifacts/adr/ADR-011-llm-tool-calling.md) — LLM tool calling contract
+- [ADR-012](artifacts/adr/ADR-012-editor-message-envelope.md) — editor message envelope
+- [ADR-013](artifacts/adr/ADR-013-proposal-overlay.md) — proposal overlay
+- [ADR-014](artifacts/adr/ADR-014-autonomy-modes.md) — autonomy modes
+- [ADR-015](artifacts/adr/ADR-015-outline-event.md) — outline event
+- [ADR-016](artifacts/adr/ADR-016-inline-comments.md) — inline comments
 
 ## Development Commands
 
@@ -55,17 +69,17 @@ Violating any of these breaks the architecture. Read the linked ADR before propo
 
 ```bash
 cp .env.example .env              # first time only; never commit .env
-docker compose up -d              # Postgres (5432) + Ollama (11434)
+docker compose up -d              # Postgres (5432), Ollama (11434), Chronik (9092 Kafka / 6092 SQL)
 cargo run -p historiador_api --bin api   # API on :3001 (runs migrations on boot)
 # In another terminal:
 cd apps/web && pnpm dev           # Next.js on :3000
 ```
 
-VexFS is opt-in: `scripts/setup-vexfs.sh` to vendor, then `docker compose --profile vector up -d`.
-
 ### First-run setup
 
 Until the setup wizard completes, all API endpoints (except `/health`, `/setup/init`, `/setup/probe`, `/docs/`) return `423 Locked`. Open `http://localhost:3000` to run the wizard, or POST to `/setup/init` directly (see README for curl examples).
+
+Supported `llm_provider` values: `"ollama"`, `"openai"`, `"anthropic"`, and `"test"`. The `"test"` provider skips all LLM validation — use it to complete setup in E2E tests or when working offline without configuring a real model.
 
 ### Rust
 
@@ -123,6 +137,17 @@ Three parallel jobs (`.github/workflows/ci.yml`):
 ### Docker builds
 
 `Dockerfile.rust` uses cargo-chef for dependency layer caching. Select binary with `--build-arg BIN_NAME=api|mcp`.
+
+## MCP protocol surface
+
+`POST /mcp` speaks [Model Context Protocol](https://modelcontextprotocol.io/) over JSON-RPC 2.0 (protocol version `2025-03-26`): `initialize`, `tools/list`, `tools/call`. It exposes a single `query` tool whose `inputSchema` accepts `query` (required), `language` (BCP 47, optional), and `top_k` (1–20, default 5). Auth is `Authorization: Bearer <token>` with constant-time SHA-256 comparison against the stored digest. `POST /query` is an internal REST alias used by the web UI and is *not* part of the MCP public contract.
+
+## Reference docs
+
+- [docs/security.md](docs/security.md) — security posture, dependency audit, constant-time MCP token comparison, Postgres role separation.
+- [docs/performance.md](docs/performance.md) — p95 < 2 s target for 1,000 queries over 10,000 chunks; load-test script at `scripts/load-test/run.sh`.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — local setup, OpenAPI → TypeScript pipeline, PR conventions.
+- [CHANGELOG.md](CHANGELOG.md) — canonical "Known Limitations" list for v1.0.
 
 ## Conventions
 
