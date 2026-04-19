@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
 import { EditorV2 } from "@/features/editor/editor-v2";
 import { CommentablePreview, type BlockComment } from "@/features/editor/review";
+import { SaveDialog } from "@/features/editor/save";
 import { EDITOR_V2_ENABLED } from "@/lib/config";
 
 export default function EditorPage() {
@@ -140,9 +141,7 @@ function EditorPageLegacy() {
     });
   }, []);
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(draft);
-  };
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   const loading = streaming;
 
@@ -259,8 +258,12 @@ function EditorPageLegacy() {
             {draft ? "Rascunho" : "Sem documento ainda"}
           </div>
           {draft && (
-            <Button variant="secondary" size="sm" onClick={copyToClipboard}>
-              Copiar markdown
+            <Button
+              size="sm"
+              onClick={() => setSaveDialogOpen(true)}
+              disabled={streaming}
+            >
+              Salvar
             </Button>
           )}
         </header>
@@ -288,6 +291,12 @@ function EditorPageLegacy() {
           </div>
         </div>
       </section>
+
+      <SaveDialog
+        open={saveDialogOpen}
+        markdown={draft}
+        onClose={() => setSaveDialogOpen(false)}
+      />
     </main>
   );
 }
