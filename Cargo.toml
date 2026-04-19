@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "apps/api",
     "apps/mcp",
+    "crates/blocks",
     "crates/chunker",
     "crates/db",
     "crates/llm",
@@ -64,7 +65,7 @@ comrak = "0.29"
 async_zip = { version = "0.0.17", features = ["tokio", "deflate"] }
 
 # --- misc ---
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 

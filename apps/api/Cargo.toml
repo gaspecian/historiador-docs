@@ -21,11 +21,18 @@ path = "src/bin/gen-openapi.rs"
 name = "load-test-seed"
 path = "src/bin/load_test_seed.rs"
 
+# Sprint 11 phase A2 — one-shot backfill of block-ID comments into
+# existing page_versions.content_markdown rows. Idempotent.
+[[bin]]
+name = "backfill-block-ids"
+path = "src/bin/backfill_block_ids.rs"
+
 [dependencies]
 historiador_db = { path = "../../crates/db" }
 historiador_chunker = { path = "../../crates/chunker" }
 historiador_llm = { path = "../../crates/llm" }
 historiador_tools = { path = "../../crates/tools" }
+historiador_blocks = { path = "../../crates/blocks" }
 
 tokio.workspace = true
 axum.workspace = true
