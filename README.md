@@ -43,7 +43,7 @@ Docker Compose roda apenas a infra (Postgres + Ollama). API, MCP e frontend roda
 
 ```bash
 # Clonar o repositorio
-git clone https://github.com/lspecian/historiador-doc.git
+git clone https://github.com/gaspecian/historiador-doc.git
 cd historiador-doc
 
 # Criar o .env local a partir do exemplo
