@@ -13,6 +13,7 @@ pub mod outline;
 pub mod prompt_template;
 pub mod prompts;
 pub mod readiness;
+pub mod summary;
 
 pub use conversation::{
     LoadEditorConversationUseCase, SaveEditorConversationCommand, SaveEditorConversationUseCase,
