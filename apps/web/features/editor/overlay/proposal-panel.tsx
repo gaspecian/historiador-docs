@@ -70,6 +70,11 @@ export function ProposalPanel({ proposals, onAccept, onReject }: ProposalPanelPr
             <p className="t-body-sm text-[var(--color-text-primary)] whitespace-pre-wrap break-words">
               {p.summary}
             </p>
+            {p.rationale && (
+              <p className="t-body-sm italic text-[var(--color-text-secondary)] mt-1">
+                “{p.rationale}”
+              </p>
+            )}
             {p.blockId && (
               <p className="t-body-sm text-[var(--color-text-tertiary)] font-mono text-[11px] mt-1">
                 {p.blockId}

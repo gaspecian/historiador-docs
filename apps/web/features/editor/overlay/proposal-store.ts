@@ -23,6 +23,10 @@ export interface Proposal {
   summary: string;
   /** Target block ID, if any (absent for append with multiple blocks). */
   blockId?: string;
+  /** Author-facing rationale — present only when kind === "suggest"
+   *  (B4 / US-11.12). Shown as a muted caption so the user knows
+   *  why the AI is suggesting the change. */
+  rationale?: string;
   /** Full op payload as received from the server; opaque to the UI. */
   raw: unknown;
 }
@@ -68,10 +72,20 @@ export function useProposalStore(): ProposalStore {
  * not need to be perfect — the overlay card shows it in muted text
  * next to Accept/Reject controls.
  */
-export function summariseOp(op: unknown): { summary: string; kind: ProposalKind } {
-  const typed = op as { kind?: string; block?: { text?: string; heading?: string } } | null;
+export function summariseOp(op: unknown): {
+  summary: string;
+  kind: ProposalKind;
+  rationale?: string;
+} {
+  const typed = op as {
+    kind?: string;
+    block?: { text?: string; heading?: string };
+    suggested_block?: { text?: string; heading?: string };
+    rationale?: string;
+  } | null;
   const kind = (typed?.kind ?? "insert") as ProposalKind;
-  const text = typed?.block?.text ?? typed?.block?.heading ?? "";
+  const block = typed?.suggested_block ?? typed?.block;
+  const text = block?.text ?? block?.heading ?? "";
   const trimmed = text.length > 80 ? `${text.slice(0, 77)}…` : text;
   const label = trimmed.length > 0 ? `: "${trimmed}"` : "";
   const verb: Record<ProposalKind, string> = {
@@ -81,5 +95,9 @@ export function summariseOp(op: unknown): { summary: string; kind: ProposalKind 
     delete: "Remover bloco",
     suggest: "Sugerir mudança",
   };
-  return { kind, summary: `${verb[kind] ?? "Editar"}${label}` };
+  return {
+    kind,
+    summary: `${verb[kind] ?? "Editar"}${label}`,
+    rationale: kind === "suggest" ? typed?.rationale : undefined,
+  };
 }

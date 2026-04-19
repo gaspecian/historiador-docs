@@ -67,11 +67,12 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
 
   const handleProposal = useCallback(
     (proposalId: string, op: unknown) => {
-      const { summary, kind } = summariseOp(op);
+      const { summary, kind, rationale } = summariseOp(op);
       proposals.add({
         proposalId,
         kind,
         summary,
+        rationale,
         raw: op,
       });
     },
