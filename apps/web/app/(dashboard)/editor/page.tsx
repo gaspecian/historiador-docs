@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useEditorStream } from "@/features/editor";
 import { CommentablePreview, type BlockComment } from "@/features/editor/review";
 import { SaveDialog } from "@/features/editor/save";
 import * as pagesService from "@/lib/services/pages";
-import type { PageVersionResponse } from "@historiador/types";
+import type { PageResponse, PageVersionResponse } from "@historiador/types";
 
 export default function EditorPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [brief, setBrief] = useState("");
   const [instruction, setInstruction] = useState("");
   const {
@@ -29,20 +30,29 @@ export default function EditorPage() {
   // iterate with the AI instead of starting from a blank brief. The
   // Save dialog then UPDATEs the existing page instead of creating a
   // new one (handled further down).
-  const existingPageId = searchParams?.get("page_id") ?? null;
-  const existingLanguage = searchParams?.get("lang") ?? null;
+  const urlPageId = searchParams?.get("page_id") ?? null;
+  const urlLanguage = searchParams?.get("lang") ?? null;
+  // After a first create, we promote the freshly-saved page to in-memory
+  // edit state so subsequent "Salvar" clicks PATCH instead of POSTing
+  // and hitting the unique-slug constraint.
+  const [savedPageId, setSavedPageId] = useState<string | null>(urlPageId);
+  const [savedLanguage, setSavedLanguage] = useState<string | null>(urlLanguage);
   const [existingTitle, setExistingTitle] = useState<string | null>(null);
   useEffect(() => {
-    if (!existingPageId) return;
+    setSavedPageId(urlPageId);
+    setSavedLanguage(urlLanguage);
+  }, [urlPageId, urlLanguage]);
+  useEffect(() => {
+    if (!urlPageId) return;
     let cancelled = false;
     (async () => {
       try {
-        const page = await pagesService.get(existingPageId);
+        const page = await pagesService.get(urlPageId);
         if (cancelled) return;
         const versions = page.versions as PageVersionResponse[];
         const version =
-          (existingLanguage
-            ? versions.find((v) => v.language === existingLanguage)
+          (urlLanguage
+            ? versions.find((v) => v.language === urlLanguage)
             : undefined) ?? versions[0];
         if (version) {
           setDraft(version.content_markdown);
@@ -55,7 +65,27 @@ export default function EditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [existingPageId, existingLanguage, setDraft]);
+  }, [urlPageId, urlLanguage, setDraft]);
+
+  const handleSaved = useCallback(
+    (page: PageResponse) => {
+      setSavedPageId(page.id);
+      const version =
+        (savedLanguage
+          ? page.versions.find((v) => v.language === savedLanguage)
+          : undefined) ?? page.versions[0];
+      if (version) {
+        setSavedLanguage(version.language);
+        setExistingTitle(version.title);
+      }
+      const lang = version?.language ?? savedLanguage ?? "";
+      const qs = new URLSearchParams();
+      qs.set("page_id", page.id);
+      if (lang) qs.set("lang", lang);
+      router.replace(`/editor?${qs.toString()}`);
+    },
+    [router, savedLanguage],
+  );
 
   // GitHub-PR-style comments keyed by block index. The parent owns
   // state so the commentable preview stays a pure render component.
@@ -290,10 +320,11 @@ export default function EditorPage() {
       <SaveDialog
         open={saveDialogOpen}
         markdown={draft}
-        pageId={existingPageId}
+        pageId={savedPageId}
         initialTitle={existingTitle ?? undefined}
-        language={existingLanguage ?? undefined}
+        language={savedLanguage ?? undefined}
         onClose={() => setSaveDialogOpen(false)}
+        onSaved={handleSaved}
       />
     </main>
   );
