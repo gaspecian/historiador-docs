@@ -1,8 +1,10 @@
 "use client";
 
 // Backwards-compatible wrapper around the TanStack Query hook. Keeps
-// expansion / selection state local (purely UI) while routing data
-// through the shared query cache.
+// expansion state local (purely UI) while routing data through the
+// shared query cache. Selection state lives in
+// CollectionSelectionContext so it can be shared across the dashboard
+// layout and the pages list view.
 
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,7 +12,6 @@ import { queryKeys, useCollectionsQuery } from "@/lib/queries";
 
 export function useCollections() {
   const qc = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const query = useCollectionsQuery();
@@ -31,8 +32,6 @@ export function useCollections() {
   return {
     collections: query.data ?? [],
     tree: query.tree,
-    selectedId,
-    setSelectedId,
     expandedIds,
     toggleExpanded,
     isLoading: query.isLoading,

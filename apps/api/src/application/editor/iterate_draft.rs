@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use historiador_llm::{TextGenerationClient, TextStream};
+use historiador_llm::{TextGenerationClient, TextStream, Turn};
 
 use super::prompts;
 use crate::domain::error::ApplicationError;
@@ -11,6 +11,9 @@ use crate::domain::value::{Actor, Role};
 pub struct IterateDraftCommand {
     pub current_draft: String,
     pub instruction: String,
+    /// Prior conversation turns (oldest first). Already capped by the
+    /// handler before reaching the use case.
+    pub history: Vec<Turn>,
 }
 
 pub struct IterateStream {
@@ -43,7 +46,11 @@ impl IterateDraftUseCase {
 
         let stream = self
             .text_gen
-            .generate_text_stream(prompts::ITERATE_SYSTEM_PROMPT, &user_prompt)
+            .generate_text_stream_with_history(
+                prompts::ITERATE_SYSTEM_PROMPT,
+                &cmd.history,
+                &user_prompt,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("LLM error: {e}"))?;
 

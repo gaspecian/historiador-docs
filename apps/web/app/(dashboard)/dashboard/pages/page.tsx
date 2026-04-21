@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as adminService from "@/lib/services/admin";
+import { useCollectionSelection } from "@/lib/collection-selection-context";
 import { usePages } from "@/lib/use-pages";
 import { PageList } from "@/components/pages/page-list";
 import { SearchBar } from "@/components/pages/search-bar";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 
 export default function PagesPage() {
   const router = useRouter();
-  const [selectedCollectionId] = useState<string | null>(null);
+  const { selectedId: selectedCollectionId } = useCollectionSelection();
   const { pages, isLoading, refresh, search } = usePages(selectedCollectionId);
   const [workspaceLanguages, setWorkspaceLanguages] = useState<string[]>([]);
 

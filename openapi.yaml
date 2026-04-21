@@ -463,7 +463,7 @@ paths:
           format: uuid
       responses:
         '200':
-          description: pages list
+          description: pages list — filtered to `collection_id` when provided, all workspace pages otherwise
           content:
             application/json:
               schema:
@@ -1136,6 +1136,15 @@ components:
       properties:
         brief:
           type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
+          description: |-
+            Prior conversation turns the client has already shown, oldest
+            first. Optional so older clients (and the existing `curl`
+            examples) keep working. The server caps total turns and
+            characters before forwarding to the LLM.
         language:
           type:
           - string
@@ -1190,6 +1199,13 @@ components:
       properties:
         current_draft:
           type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
+          description: |-
+            Prior conversation turns the client has already shown, oldest
+            first. See `DraftRequest::history`.
         instruction:
           type: string
     LlmPatchRequest:

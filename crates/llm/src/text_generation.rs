@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 
+use crate::tool_calling::Turn;
 use crate::LlmError;
 
 /// Owned stream of text chunks. Implementations return `Box::pin(...)`.
@@ -22,6 +23,20 @@ pub trait TextGenerationClient: Send + Sync {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<TextStream, LlmError>;
+
+    /// Stream text chunks with a prior conversation transcript included.
+    /// `history` is the turns the client has already shown (oldest first);
+    /// `user_prompt` is the new user turn the model should reply to.
+    /// Default impl ignores history and forwards to `generate_text_stream`,
+    /// so providers that haven't opted in keep working unchanged.
+    async fn generate_text_stream_with_history(
+        &self,
+        system_prompt: &str,
+        _history: &[Turn],
+        user_prompt: &str,
+    ) -> Result<TextStream, LlmError> {
+        self.generate_text_stream(system_prompt, user_prompt).await
+    }
 
     /// Collect the streamed output into a single `String`. Default
     /// implementation consumes `generate_text_stream` to completion.

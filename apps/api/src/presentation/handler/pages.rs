@@ -146,7 +146,7 @@ pub struct SearchPagesQuery {
     path = "/pages",
     params(ListPagesQuery),
     responses(
-        (status = 200, description = "pages list", body = Vec<PageResponse>),
+        (status = 200, description = "pages list — filtered to `collection_id` when provided, all workspace pages otherwise", body = Vec<PageResponse>),
         (status = 401, description = "unauthorized"),
     ),
     security(("bearer" = [])),
