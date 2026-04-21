@@ -5,6 +5,10 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useCollections } from "@/lib/use-collections";
+import {
+  CollectionSelectionProvider,
+  useCollectionSelection,
+} from "@/lib/collection-selection-context";
 import { usePagesQuery } from "@/lib/queries";
 import { CollectionTree } from "@/components/collections/collection-tree";
 import { CreateCollectionDialog } from "@/components/collections/create-collection-dialog";
@@ -17,10 +21,23 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  return (
+    <CollectionSelectionProvider>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </CollectionSelectionProvider>
+  );
+}
+
+function DashboardLayoutInner({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, isAdmin, isLoading: authLoading } = useAuth();
   const collections = useCollections();
+  const { selectedId, setSelectedId } = useCollectionSelection();
   const pagesQuery = usePagesQuery(null);
   const [showCreateCollection, setShowCreateCollection] = useState(false);
 
@@ -46,7 +63,7 @@ export default function DashboardLayout({
   if (!isAuthenticated) return null;
 
   const handleCollectionSelect = (id: string | null) => {
-    collections.setSelectedId(id);
+    setSelectedId(id);
     // Navigate to pages view if not already there
     if (!pathname.startsWith("/dashboard/pages") || pathname.includes("/dashboard/pages/")) {
       router.push("/dashboard/pages");
@@ -128,7 +145,7 @@ export default function DashboardLayout({
           <CollectionTree
             tree={collections.tree}
             pages={pagesQuery.data ?? []}
-            selectedId={collections.selectedId}
+            selectedId={selectedId}
             activePageId={activePageId}
             expandedIds={collections.expandedIds}
             isLoading={collections.isLoading || pagesQuery.isLoading}
@@ -153,12 +170,12 @@ export default function DashboardLayout({
         {/* Top bar */}
         <header className="flex h-14 items-center justify-between bg-surface-canvas border-b border-surface-border px-6 gap-4">
           <div className="text-[13px] text-text-secondary flex-1">
-            {collections.selectedId
+            {selectedId
               ? (
                 <span>
                   <span className="text-text-disabled">/ </span>
                   <span className="font-medium text-text-primary">
-                    {collections.collections.find((c) => c.id === collections.selectedId)?.name ?? "Collection"}
+                    {collections.collections.find((c) => c.id === selectedId)?.name ?? "Collection"}
                   </span>
                 </span>
               )
