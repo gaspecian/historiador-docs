@@ -3,9 +3,9 @@
 use async_openai::{
     config::OpenAIConfig,
     types::{
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
-        CreateEmbeddingRequestArgs,
+        ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+        CreateChatCompletionRequestArgs, CreateEmbeddingRequestArgs,
     },
     Client,
 };
@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 
 use crate::text_generation::{TextGenerationClient, TextStream};
+use crate::tool_calling::Turn;
 use crate::{Embedding, EmbeddingClient, LlmError};
 
 /// OpenAI embedding client using `text-embedding-3-small` (1536 dims).
@@ -104,7 +105,19 @@ impl TextGenerationClient for OpenAiTextGenerationClient {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<TextStream, LlmError> {
-        let messages: Vec<ChatCompletionRequestMessage> = vec![
+        self.generate_text_stream_with_history(system_prompt, &[], user_prompt)
+            .await
+    }
+
+    async fn generate_text_stream_with_history(
+        &self,
+        system_prompt: &str,
+        history: &[Turn],
+        user_prompt: &str,
+    ) -> Result<TextStream, LlmError> {
+        let mut messages: Vec<ChatCompletionRequestMessage> =
+            Vec::with_capacity(1 + history.len() + 1);
+        messages.push(
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(system_prompt)
                 .build()
@@ -112,6 +125,35 @@ impl TextGenerationClient for OpenAiTextGenerationClient {
                     message: format!("failed to build system message: {e}"),
                 })?
                 .into(),
+        );
+        for turn in history {
+            match turn.role.as_str() {
+                "user" => messages.push(
+                    ChatCompletionRequestUserMessageArgs::default()
+                        .content(turn.content.clone())
+                        .build()
+                        .map_err(|e| LlmError::Api {
+                            message: format!("failed to build user history message: {e}"),
+                        })?
+                        .into(),
+                ),
+                "assistant" => messages.push(
+                    ChatCompletionRequestAssistantMessageArgs::default()
+                        .content(turn.content.clone())
+                        .build()
+                        .map_err(|e| LlmError::Api {
+                            message: format!("failed to build assistant history message: {e}"),
+                        })?
+                        .into(),
+                ),
+                _ => {
+                    // Silently drop unrecognised roles (e.g. "system" sneaking
+                    // into history): OpenAI only accepts user/assistant after
+                    // the initial system turn we already prepended.
+                }
+            }
+        }
+        messages.push(
             ChatCompletionRequestUserMessageArgs::default()
                 .content(user_prompt)
                 .build()
@@ -119,7 +161,7 @@ impl TextGenerationClient for OpenAiTextGenerationClient {
                     message: format!("failed to build user message: {e}"),
                 })?
                 .into(),
-        ];
+        );
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)

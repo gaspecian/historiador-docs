@@ -9,6 +9,7 @@ import { useCallback, useState } from "react";
 import * as editorService from "@/lib/services/editor";
 import type { EditorEvent } from "@/lib/services/editor";
 import type {
+  ConversationMessageDto,
   DraftRequest,
   IterateRequest,
 } from "@historiador/types";
@@ -105,12 +106,24 @@ export function useEditorStream(
     [],
   );
 
+  // Map the in-memory transcript to the wire DTO. Called at request
+  // build time — the new user turn is NOT included here (it rides in
+  // `brief` / `instruction`); only prior turns ship as history.
+  const toHistoryDtos = useCallback(
+    (): ConversationMessageDto[] =>
+      messages.map((m) => ({ role: m.role, content: m.content, ts: Date.now() })),
+    [messages],
+  );
+
   const generateDraft = useCallback(
     async (body: DraftRequest) => {
       if (!body.brief.trim() || streaming) return;
-      await runStream(body.brief, editorService.draft(body));
+      await runStream(
+        body.brief,
+        editorService.draft({ ...body, history: toHistoryDtos() }),
+      );
     },
-    [runStream, streaming],
+    [runStream, streaming, toHistoryDtos],
   );
 
   const iterateDraft = useCallback(
@@ -118,10 +131,14 @@ export function useEditorStream(
       if (!body.instruction.trim() || !draft || streaming) return;
       await runStream(
         `Refine: ${body.instruction}`,
-        editorService.iterate({ ...body, current_draft: draft }),
+        editorService.iterate({
+          ...body,
+          current_draft: draft,
+          history: toHistoryDtos(),
+        }),
       );
     },
-    [runStream, draft, streaming],
+    [runStream, draft, streaming, toHistoryDtos],
   );
 
   const submitBlockComment = useCallback(
@@ -151,10 +168,14 @@ export function useEditorStream(
         `o que você mudou, em quais linhas, ou por que não fez sentido mudar.`;
       await runStream(
         `Comentário (linhas ${startLine}–${endLine}): ${commentText}`,
-        editorService.iterate({ instruction, current_draft: draft }),
+        editorService.iterate({
+          instruction,
+          current_draft: draft,
+          history: toHistoryDtos(),
+        }),
       );
     },
-    [runStream, draft, streaming],
+    [runStream, draft, streaming, toHistoryDtos],
   );
 
   return {

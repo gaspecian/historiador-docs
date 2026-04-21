@@ -608,6 +608,13 @@ export interface components {
         };
         DraftRequest: {
             brief: string;
+            /**
+             * @description Prior conversation turns the client has already shown, oldest
+             *     first. Optional so older clients (and the existing `curl`
+             *     examples) keep working. The server caps total turns and
+             *     characters before forwarding to the LLM.
+             */
+            history?: components["schemas"]["ConversationMessageDto"][];
             language?: string | null;
         };
         /**
@@ -633,6 +640,11 @@ export interface components {
         };
         IterateRequest: {
             current_draft: string;
+            /**
+             * @description Prior conversation turns the client has already shown, oldest
+             *     first. See `DraftRequest::history`.
+             */
+            history?: components["schemas"]["ConversationMessageDto"][];
             instruction: string;
         };
         LlmPatchRequest: {
@@ -1684,7 +1696,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description pages list */
+            /** @description pages list — filtered to `collection_id` when provided, all workspace pages otherwise */
             200: {
                 headers: {
                     [name: string]: unknown;

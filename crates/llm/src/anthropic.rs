@@ -15,6 +15,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio_util::io::StreamReader;
 
 use crate::text_generation::{TextGenerationClient, TextStream};
+use crate::tool_calling::Turn;
 use crate::LlmError;
 
 /// Anthropic text generation client using the Messages API.
@@ -80,14 +81,38 @@ impl TextGenerationClient for AnthropicTextGenerationClient {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<TextStream, LlmError> {
+        self.generate_text_stream_with_history(system_prompt, &[], user_prompt)
+            .await
+    }
+
+    async fn generate_text_stream_with_history(
+        &self,
+        system_prompt: &str,
+        history: &[Turn],
+        user_prompt: &str,
+    ) -> Result<TextStream, LlmError> {
+        let mut messages: Vec<Message> = Vec::with_capacity(history.len() + 1);
+        for turn in history {
+            // Anthropic's Messages API rejects any role other than
+            // "user" or "assistant" inside `messages` (the system
+            // prompt is its own top-level field). Drop the rest.
+            if turn.role == "user" || turn.role == "assistant" {
+                messages.push(Message {
+                    role: turn.role.clone(),
+                    content: turn.content.clone(),
+                });
+            }
+        }
+        messages.push(Message {
+            role: "user".to_string(),
+            content: user_prompt.to_string(),
+        });
+
         let body = MessagesRequest {
             model: self.model.clone(),
             max_tokens: 4096,
             system: system_prompt.to_string(),
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: user_prompt.to_string(),
-            }],
+            messages,
             stream: true,
         };
 

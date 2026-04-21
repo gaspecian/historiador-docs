@@ -20,6 +20,7 @@ use tokio::sync::OnceCell;
 use tokio_util::io::StreamReader;
 
 use crate::text_generation::{TextGenerationClient, TextStream};
+use crate::tool_calling::Turn;
 use crate::{Embedding, EmbeddingClient, LlmError};
 
 fn default_http_client() -> Client {
@@ -64,6 +65,35 @@ struct GenerateRequest<'a> {
 struct GenerateChunk {
     #[serde(default)]
     response: String,
+    #[serde(default)]
+    done: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ChatMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(Serialize)]
+struct ChatRequest<'a> {
+    model: &'a str,
+    messages: Vec<ChatMessage<'a>>,
+    stream: bool,
+}
+
+#[derive(Deserialize)]
+struct ChatChunkMessage {
+    #[serde(default)]
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct ChatChunk {
+    #[serde(default)]
+    message: Option<ChatChunkMessage>,
     #[serde(default)]
     done: bool,
     #[serde(default)]
@@ -118,6 +148,86 @@ impl TextGenerationClient for OllamaTextClient {
                 }
                 if !chunk.response.is_empty() {
                     yield chunk.response;
+                }
+                if chunk.done {
+                    break;
+                }
+            }
+        };
+
+        Ok(Box::pin(stream))
+    }
+
+    async fn generate_text_stream_with_history(
+        &self,
+        system_prompt: &str,
+        history: &[Turn],
+        user_prompt: &str,
+    ) -> Result<TextStream, LlmError> {
+        // History path switches to /api/chat, which takes a messages
+        // array and preserves role separation for the model. The
+        // no-history path stays on /api/generate above so existing
+        // single-turn callers keep their exact semantics.
+        let url = format!("{}/api/chat", self.base_url);
+        let mut messages: Vec<ChatMessage> = Vec::with_capacity(2 + history.len());
+        messages.push(ChatMessage {
+            role: "system",
+            content: system_prompt,
+        });
+        for turn in history {
+            if turn.role == "user" || turn.role == "assistant" {
+                messages.push(ChatMessage {
+                    role: turn.role.as_str(),
+                    content: turn.content.as_str(),
+                });
+            }
+        }
+        messages.push(ChatMessage {
+            role: "user",
+            content: user_prompt,
+        });
+
+        let body = ChatRequest {
+            model: &self.model,
+            messages,
+            stream: true,
+        };
+
+        let resp = self.http.post(&url).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(LlmError::Api {
+                message: format!("Ollama API {status}: {text}"),
+            });
+        }
+
+        let byte_stream = resp
+            .bytes_stream()
+            .map(|r| r.map_err(std::io::Error::other));
+        let reader = StreamReader::new(byte_stream);
+        let mut lines = reader.lines();
+
+        let stream = try_stream! {
+            while let Some(line) = lines
+                .next_line()
+                .await
+                .map_err(|e| LlmError::Api { message: format!("ollama stream read: {e}") })?
+            {
+                if line.is_empty() {
+                    continue;
+                }
+                let chunk: ChatChunk = serde_json::from_str(&line)
+                    .map_err(|e| LlmError::Api {
+                        message: format!("ollama ndjson parse: {e}"),
+                    })?;
+                if let Some(err) = chunk.error {
+                    Err(LlmError::Api { message: format!("ollama: {err}") })?;
+                }
+                if let Some(msg) = chunk.message {
+                    if !msg.content.is_empty() {
+                        yield msg.content;
+                    }
                 }
                 if chunk.done {
                     break;

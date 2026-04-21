@@ -33,6 +33,17 @@ use crate::domain::value::Language;
 use crate::presentation::error::ApiError;
 use crate::presentation::extractor::AuthUser;
 use crate::state::AppState;
+use historiador_llm::Turn;
+
+/// Maximum number of prior conversation turns we forward to the LLM.
+/// Caps prompt size; the oldest turns are dropped if the client sends
+/// more. The cap sits on the handler boundary so the cost decision is
+/// HTTP-surface-visible rather than buried inside the use case.
+const MAX_HISTORY_TURNS: usize = 20;
+
+/// Cumulative character cap across all forwarded turns (after the turn
+/// cap is applied). Trims from the oldest end until below the budget.
+const MAX_HISTORY_CHARS: usize = 20_000;
 
 // ---- DTOs ----
 
@@ -42,6 +53,12 @@ pub struct DraftRequest {
     pub brief: String,
     #[validate(length(min = 2, max = 35))]
     pub language: Option<String>,
+    /// Prior conversation turns the client has already shown, oldest
+    /// first. Optional so older clients (and the existing `curl`
+    /// examples) keep working. The server caps total turns and
+    /// characters before forwarding to the LLM.
+    #[serde(default)]
+    pub history: Vec<ConversationMessageDto>,
 }
 
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
@@ -50,6 +67,41 @@ pub struct IterateRequest {
     pub current_draft: String,
     #[validate(length(min = 1, max = 5000))]
     pub instruction: String,
+    /// Prior conversation turns the client has already shown, oldest
+    /// first. See `DraftRequest::history`.
+    #[serde(default)]
+    pub history: Vec<ConversationMessageDto>,
+}
+
+/// Trim the incoming history to the per-turn and per-character caps
+/// and map it into the LLM-facing `Turn` type. Drops turns whose role
+/// is not "user" or "assistant"; a later LLM-side filter also guards
+/// against bad input, but trimming here keeps the byte budget honest.
+fn prepare_history(dtos: Vec<ConversationMessageDto>) -> Vec<Turn> {
+    let filtered: Vec<Turn> = dtos
+        .into_iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .map(|m| Turn {
+            role: m.role,
+            content: m.content,
+        })
+        .collect();
+
+    // Keep the newest MAX_HISTORY_TURNS entries.
+    let mut trimmed: Vec<Turn> = if filtered.len() > MAX_HISTORY_TURNS {
+        filtered[filtered.len() - MAX_HISTORY_TURNS..].to_vec()
+    } else {
+        filtered
+    };
+
+    // Drop from the oldest end until we're under the character budget.
+    let mut total: usize = trimmed.iter().map(|t| t.content.len()).sum();
+    while total > MAX_HISTORY_CHARS && !trimmed.is_empty() {
+        let dropped = trimmed.remove(0);
+        total = total.saturating_sub(dropped.content.len());
+    }
+
+    trimmed
 }
 
 type SseResponse = Sse<std::pin::Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>>>;
@@ -82,6 +134,8 @@ pub async fn draft(
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
+    let history = prepare_history(body.history);
+
     let prepared = state
         .use_cases
         .generate_draft
@@ -90,6 +144,7 @@ pub async fn draft(
             GenerateDraftCommand {
                 brief: body.brief,
                 language: body.language,
+                history,
             },
         )
         .await?;
@@ -158,6 +213,8 @@ pub async fn iterate(
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
+    let history = prepare_history(body.history);
+
     let prepared = state
         .use_cases
         .iterate_draft
@@ -166,6 +223,7 @@ pub async fn iterate(
             IterateDraftCommand {
                 current_draft: body.current_draft,
                 instruction: body.instruction,
+                history,
             },
         )
         .await?;
