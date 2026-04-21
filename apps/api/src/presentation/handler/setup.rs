@@ -99,6 +99,27 @@ pub async fn init(
     }))
 }
 
+// ---- status (public readiness probe) ----
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct SetupStatusResponse {
+    pub setup_complete: bool,
+}
+
+#[utoipa::path(
+    get,
+    path = "/setup/status",
+    responses(
+        (status = 200, description = "setup readiness flag", body = SetupStatusResponse),
+    ),
+    tag = "setup"
+)]
+pub async fn status(State(state): State<Arc<AppState>>) -> Json<SetupStatusResponse> {
+    Json(SetupStatusResponse {
+        setup_complete: state.setup_complete.load(Ordering::Acquire),
+    })
+}
+
 // ---- probe (test connection without completing setup) ----
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]

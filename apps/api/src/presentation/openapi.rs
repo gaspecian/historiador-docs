@@ -15,6 +15,7 @@ use crate::presentation::handler::{auth, collections, editor, export, health, pa
 #[openapi(
     paths(
         health::handler,
+        setup::status,
         setup::init,
         setup::probe,
         setup::ollama_models,
@@ -54,6 +55,7 @@ use crate::presentation::handler::{auth, collections, editor, export, health, pa
     ),
     components(schemas(
         health::HealthResponse,
+        setup::SetupStatusResponse,
         setup::SetupRequest,
         setup::SetupResponse,
         setup::ProbeRequest,

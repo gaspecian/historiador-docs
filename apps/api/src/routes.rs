@@ -24,6 +24,7 @@ pub fn auth_router() -> Router<Arc<AppState>> {
 
 pub fn setup_router() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/status", get(setup::status))
         .route("/init", post(setup::init))
         .route("/probe", post(setup::probe))
         .route("/ollama-models", post(setup::ollama_models))

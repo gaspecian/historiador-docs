@@ -31,6 +31,7 @@ export type RegenerateTokenResponse = components["schemas"]["RegenerateTokenResp
 export type Role = components["schemas"]["Role"];
 export type SetupRequest = components["schemas"]["SetupRequest"];
 export type SetupResponse = components["schemas"]["SetupResponse"];
+export type SetupStatusResponse = components["schemas"]["SetupStatusResponse"];
 export type TokenResponse = components["schemas"]["TokenResponse"];
 export type UpdatePageRequest = components["schemas"]["UpdatePageRequest"];
 export type UserResponse = components["schemas"]["UserResponse"];

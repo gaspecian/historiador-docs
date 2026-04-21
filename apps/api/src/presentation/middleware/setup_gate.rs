@@ -22,7 +22,7 @@ use crate::state::AppState;
 fn is_allowed_pre_setup(path: &str) -> bool {
     matches!(
         path,
-        "/health" | "/setup/init" | "/setup/probe" | "/setup/ollama-models"
+        "/health" | "/setup/status" | "/setup/init" | "/setup/probe" | "/setup/ollama-models"
     )
 }
 

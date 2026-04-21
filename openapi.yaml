@@ -959,6 +959,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProbeResponse'
+  /setup/status:
+    get:
+      tags:
+      - setup
+      operationId: status
+      responses:
+        '200':
+          description: setup readiness flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupStatusResponse'
 components:
   schemas:
     ActivateRequest:
@@ -1538,6 +1550,13 @@ components:
         workspace_id:
           type: string
           format: uuid
+    SetupStatusResponse:
+      type: object
+      required:
+      - setup_complete
+      properties:
+        setup_complete:
+          type: boolean
     TokenResponse:
       type: object
       required:
