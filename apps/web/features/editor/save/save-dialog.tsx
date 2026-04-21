@@ -17,8 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import * as pagesService from "@/lib/services/pages";
 import { useCollectionsQuery } from "@/lib/queries/use-collections";
+import {
+  useCreatePageMutation,
+  useUpdatePageMutation,
+} from "@/lib/queries/use-pages";
 import type { PageResponse, TreeNode } from "@historiador/types";
 
 export interface SaveDialogProps {
@@ -51,6 +54,8 @@ export function SaveDialog({
   const [error, setError] = useState<string | null>(null);
 
   const collections = useCollectionsQuery();
+  const createMutation = useCreatePageMutation();
+  const updateMutation = useUpdatePageMutation();
 
   const options = useMemo(() => {
     const flat: Array<{ value: string; label: string }> = [
@@ -92,12 +97,15 @@ export function SaveDialog({
     setSaving(true);
     try {
       const page = isUpdating && pageId
-        ? await pagesService.update(pageId, {
-            title: trimmed,
-            content_markdown: markdown,
-            language,
+        ? await updateMutation.mutateAsync({
+            id: pageId,
+            body: {
+              title: trimmed,
+              content_markdown: markdown,
+              language,
+            },
           })
-        : await pagesService.create({
+        : await createMutation.mutateAsync({
             title: trimmed,
             content_markdown: markdown,
             language,

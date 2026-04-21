@@ -112,8 +112,12 @@ pub async fn search(pool: &PgPool, workspace_id: Uuid, query: &str) -> anyhow::R
     Ok(rows)
 }
 
-/// List pages in a collection (or at the workspace root if collection_id
-/// is None), ordered by creation date.
+/// List pages in a workspace, ordered by creation date.
+///
+/// When `collection_id` is `Some(id)`, the result is strictly filtered to
+/// that collection. When `None`, every page in the workspace is returned
+/// regardless of its collection — the sidebar renders the full tree
+/// client-side, and the "all pages" view needs workspace-wide results.
 pub async fn list_by_collection(
     pool: &PgPool,
     workspace_id: Uuid,
@@ -134,7 +138,7 @@ pub async fn list_by_collection(
         None => {
             sqlx::query_as::<_, Page>(
                 "SELECT * FROM pages \
-                 WHERE workspace_id = $1 AND collection_id IS NULL \
+                 WHERE workspace_id = $1 \
                  ORDER BY created_at",
             )
             .bind(workspace_id)
