@@ -7,18 +7,12 @@
 //! variable. Both rules are enforced by convention in this crate and by
 //! the `historiador_mcp` Postgres role at the DB layer.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{
-    middleware,
-    routing::{get, post},
-    Router,
-};
 use sha2::{Digest, Sha256};
-use std::net::SocketAddr;
 use tokio::signal;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use historiador_db::{
@@ -26,17 +20,12 @@ use historiador_db::{
     vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
 };
 
-mod application;
-mod auth;
-mod health;
-mod infrastructure;
-mod jsonrpc;
-mod query;
-mod state;
-
-use application::SearchChunksUseCase;
-use infrastructure::PostgresChunkMetadataReader;
-use state::McpState;
+use historiador_mcp::{
+    application::SearchChunksUseCase,
+    build_router,
+    infrastructure::PostgresChunkMetadataReader,
+    state::McpState,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -97,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) if allow_in_memory => {
                     tracing::warn!(
                         error = %e,
-                        "⚠️  Chronik init failed — MCP falling back to in-memory vector \
+                        "Chronik init failed — MCP falling back to in-memory vector \
                          store because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
                          DATA WILL BE LOST ON RESTART. Do not use this in production."
                     );
@@ -115,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
         }
         _ if allow_in_memory => {
             tracing::warn!(
-                "⚠️  MCP: CHRONIK_SQL_URL not set — using in-memory vector store \
+                "MCP: CHRONIK_SQL_URL not set — using in-memory vector store \
                  because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
                  DATA WILL BE LOST ON RESTART. Do not use this in production."
             );
@@ -150,22 +139,7 @@ async fn main() -> anyhow::Result<()> {
         workspace_id,
     });
 
-    // Routes: /health is public; /mcp (JSON-RPC 2.0 MCP protocol) and
-    // /query (internal custom REST alias, kept for the web UI) both
-    // require bearer token.
-    let authed_routes = Router::new()
-        .route("/mcp", post(jsonrpc::handler))
-        .route("/query", post(query::handler))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::bearer_auth,
-        ));
-
-    let app = Router::new()
-        .route("/health", get(health::handler))
-        .merge(authed_routes)
-        .with_state(state)
-        .layer(TraceLayer::new_for_http());
+    let app = build_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "mcp server listening");
