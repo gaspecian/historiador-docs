@@ -56,7 +56,7 @@ pub struct ZeroResultQuery {
 impl ChronikClient {
     /// Execute a SQL query against the Chronik DataFusion REST API.
     pub async fn query_sql(&self, sql: &str) -> anyhow::Result<SqlResponse> {
-        let url = format!("{}/api/v1/sql", self.base_url);
+        let url = format!("{}/_sql", self.base_url);
 
         let resp = self
             .http
