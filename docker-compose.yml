@@ -96,6 +96,7 @@ services:
       CHRONIK_DATA_DIR: /var/lib/chronik
       OPENAI_API_KEY: ${EMBEDDING_API_KEY:-}
       CHRONIK_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      CHRONIK_DEFAULT_VECTOR_ENABLED: true
       # Topic configurations with per-topic capability flags.
       CHRONIK_TOPICS: >-
         published-pages:vector,fulltext;
