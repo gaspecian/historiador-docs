@@ -38,8 +38,12 @@ pub async fn enrich_chunk_results(
     // Build a VALUES list so the query is one round-trip.
     // Note: "offset" is a SQL reserved word in some dialects; we use the
     // alias `chronik_offset_value` to avoid any parsing ambiguity.
-    let mut sql =
-        String::from("WITH refs(chronik_partition_value, chronik_offset_value) AS (VALUES ");
+    // RECURSIVE applies to the whole WITH clause so the `coll_path` CTE
+    // can self-reference for the collections-tree walk; `refs` is a
+    // non-recursive VALUES list and is unaffected.
+    let mut sql = String::from(
+        "WITH RECURSIVE refs(chronik_partition_value, chronik_offset_value) AS (VALUES ",
+    );
     for i in 0..refs.len() {
         if i > 0 {
             sql.push(',');
