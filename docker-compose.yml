@@ -90,7 +90,7 @@ services:
     user: "0:0"
     security_opt:
       - seccomp:unconfined
-    command: ["start", "--bind", "0.0.0.0", "--data-dir", "/var/lib/chronik"]
+    command: ["start", "--bind", "0.0.0.0", "--advertise", "127.0.0.1", "--data-dir", "/var/lib/chronik"]
     environment:
       RUST_LOG: info
       CHRONIK_DATA_DIR: /var/lib/chronik

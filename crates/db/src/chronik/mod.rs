@@ -14,6 +14,7 @@
 //! | `page-events`          | Streaming + SQL    | Audit log; webhook notifications   |
 
 pub mod analytics;
+pub mod kafka_producer;
 pub mod producer;
 pub mod search;
 
