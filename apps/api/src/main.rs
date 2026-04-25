@@ -114,8 +114,12 @@ async fn main() -> anyhow::Result<()> {
     let (vector_store, chronik): (Arc<dyn VectorStore>, Option<ChronikClient>) = match chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
-            let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER")
-                .unwrap_or_else(|_| "localhost:9092".to_string());
+            // API always needs Kafka. Default to localhost:9092 for dev convenience;
+            // production sets CHRONIK_KAFKA_BROKER explicitly.
+            let kafka_broker = Some(
+                std::env::var("CHRONIK_KAFKA_BROKER")
+                    .unwrap_or_else(|_| "localhost:9092".to_string()),
+            );
 
             match ChronikClient::new(ChronikConfig {
                 base_url: url,
@@ -169,29 +173,35 @@ async fn main() -> anyhow::Result<()> {
     // Ensure Chronik topics exist with the right configuration at boot.
     // Idempotent: ensure_topic tolerates "already exists" from the broker.
     if let Some(ref chronik_client) = chronik {
-        let kafka = chronik_client.kafka_producer.clone();
-
-        // published-pages: vector + full-text indexing (chunk pipeline).
-        if let Err(e) = kafka
-            .ensure_topic(
-                historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
-                /*partitions*/ 6,
-                Some(historiador_db::chronik::kafka_producer::published_pages_topic_config()),
-            )
-            .await
-        {
-            tracing::error!(error = %e, "failed to ensure published-pages topic — chunk pipeline writes will fail");
-        }
-
-        // Streaming-only topics (no vector indexing).
-        for topic in [
-            historiador_db::chronik::producer::topics::PAGE_EVENTS,
-            historiador_db::chronik::producer::topics::MCP_QUERIES,
-            historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
-        ] {
-            if let Err(e) = kafka.ensure_topic(topic, /*partitions*/ 3, None).await {
-                tracing::warn!(%topic, error = %e, "failed to ensure topic");
+        if let Some(ref kafka) = chronik_client.kafka_producer {
+            // published-pages: vector + full-text indexing (chunk pipeline).
+            if let Err(e) = kafka
+                .ensure_topic(
+                    historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
+                    /*partitions*/ 6,
+                    Some(historiador_db::chronik::kafka_producer::published_pages_topic_config()),
+                )
+                .await
+            {
+                tracing::error!(error = %e, "failed to ensure published-pages topic — chunk pipeline writes will fail");
             }
+
+            // Streaming-only topics (no vector indexing).
+            for topic in [
+                historiador_db::chronik::producer::topics::PAGE_EVENTS,
+                historiador_db::chronik::producer::topics::MCP_QUERIES,
+                historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
+            ] {
+                if let Err(e) = kafka.ensure_topic(topic, /*partitions*/ 3, None).await {
+                    tracing::warn!(%topic, error = %e, "failed to ensure topic");
+                }
+            }
+        } else {
+            tracing::error!(
+                "API requires CHRONIK_KAFKA_BROKER but kafka_producer is None — \
+                 topic provisioning skipped; chunk pipeline writes will fail"
+            );
+            std::process::exit(1);
         }
     }
 

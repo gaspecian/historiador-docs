@@ -128,8 +128,12 @@ async fn main() -> anyhow::Result<()> {
     let vector_store: Arc<dyn VectorStore> = match &chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
-            let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER")
-                .unwrap_or_else(|_| "localhost:9092".to_string());
+            // MCP is read-only (ADR-003) and must not connect to Kafka in
+            // production topologies where Kafka is not reachable from the MCP
+            // container. kafka_broker defaults to None; set CHRONIK_KAFKA_BROKER
+            // only if you explicitly want the MCP process to reach the broker
+            // (e.g. for future write-capable MCP scenarios).
+            let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER").ok();
             match ChronikClient::new(ChronikConfig {
                 base_url: url.clone(),
                 search_base_url: search_url,

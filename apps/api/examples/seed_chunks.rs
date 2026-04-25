@@ -77,8 +77,10 @@ async fn main() -> anyhow::Result<()> {
         total, dim, search_url, batch_size
     );
 
-    let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER")
-        .unwrap_or_else(|_| "localhost:9092".to_string());
+    let kafka_broker = Some(
+        std::env::var("CHRONIK_KAFKA_BROKER")
+            .unwrap_or_else(|_| "localhost:9092".to_string()),
+    );
     let client = ChronikClient::new(ChronikConfig {
         base_url: search_url.clone(),
         search_base_url: search_url.clone(),
