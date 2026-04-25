@@ -30,5 +30,5 @@ async fn produce_returns_partition_and_offset() {
         .expect("produce");
 
     assert_eq!(record.partition, 0);
-    assert!(record.offset >= 0);
+    assert_eq!(record.offset, 0);
 }

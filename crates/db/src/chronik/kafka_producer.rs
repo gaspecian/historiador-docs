@@ -13,17 +13,26 @@
 //! REST admin API. The `ensure_topic` method accepts an optional
 //! `topic_config` parameter for forward-compatibility but silently ignores
 //! it at this layer. Task 4 handles Chronik topic config via REST.
+//!
+//! # Performance note
+//!
+//! `KafkaProducer` caches `PartitionClient` instances keyed by `(topic,
+//! partition)` so that repeated `produce` calls (e.g. streaming chunks for a
+//! single page) incur only one metadata round-trip per (topic, partition)
+//! pair. The cache is shared across all clones of a `KafkaProducer` via an
+//! inner `Arc`.
 
 use std::collections::BTreeMap;
-use std::hash::Hash;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
-use rskafka::client::partition::{Compression, UnknownTopicHandling};
+use rskafka::client::partition::{Compression, PartitionClient, UnknownTopicHandling};
 use rskafka::client::{Client, ClientBuilder};
 use rskafka::record::Record;
 use serde_json::Value;
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Error)]
 pub enum KafkaProducerError {
@@ -50,9 +59,20 @@ pub struct ProducedRecord {
     pub offset: i64,
 }
 
+/// Shared, clone-safe inner state for `KafkaProducer`.
+struct Inner {
+    client: Arc<Client>,
+    /// Cached partition clients keyed by `(topic_name, partition_index)`.
+    /// Populated lazily on first `produce` call for each (topic, partition).
+    partition_clients: Mutex<HashMap<(String, i32), Arc<PartitionClient>>>,
+    /// Cached partition counts keyed by topic name.
+    /// Populated lazily on first `produce` call for each topic.
+    partition_counts: Mutex<HashMap<String, i32>>,
+}
+
 #[derive(Clone)]
 pub struct KafkaProducer {
-    client: Arc<Client>,
+    inner: Arc<Inner>,
 }
 
 impl KafkaProducer {
@@ -64,13 +84,18 @@ impl KafkaProducer {
             .map_err(|e| KafkaProducerError::Client(e.to_string()))?;
 
         Ok(Self {
-            client: Arc::new(client),
+            inner: Arc::new(Inner {
+                client: Arc::new(client),
+                partition_clients: Mutex::new(HashMap::new()),
+                partition_counts: Mutex::new(HashMap::new()),
+            }),
         })
     }
 
     /// Ensure a topic exists with at least `partitions` partitions.
     ///
-    /// This is idempotent: if the topic already exists, no error is returned.
+    /// This is idempotent: if the topic already exists (including a race where
+    /// two callers both attempt creation concurrently), no error is returned.
     ///
     /// The `topic_config` argument is accepted for API forward-compatibility
     /// but is not applied at this layer — `rskafka` 0.5.0 does not expose
@@ -84,6 +109,7 @@ impl KafkaProducer {
     ) -> Result<(), KafkaProducerError> {
         // Check if the topic already exists.
         let existing = self
+            .inner
             .client
             .list_topics()
             .await
@@ -96,11 +122,12 @@ impl KafkaProducer {
 
         // Create the topic with replication_factor=1 (single-broker dev setup).
         let controller = self
+            .inner
             .client
             .controller_client()
             .map_err(|e| KafkaProducerError::Admin(e.to_string()))?;
 
-        controller
+        match controller
             .create_topic(
                 topic,
                 partitions,
@@ -108,7 +135,22 @@ impl KafkaProducer {
                 /*timeout_ms*/ 5_000i32,
             )
             .await
-            .map_err(|e| KafkaProducerError::Admin(e.to_string()))?;
+        {
+            Ok(_) => {}
+            Err(e) => {
+                let msg = e.to_string();
+                // Two concurrent callers may both pass the `list_topics` check
+                // above; treat "already exists" from the broker as success.
+                if msg.contains("TOPIC_ALREADY_EXISTS")
+                    || msg.contains("TopicAlreadyExistsException")
+                    || msg.to_lowercase().contains("already exists")
+                {
+                    // Idempotent — another caller won the race; topic exists.
+                } else {
+                    return Err(KafkaProducerError::Admin(msg));
+                }
+            }
+        }
 
         Ok(())
     }
@@ -118,6 +160,10 @@ impl KafkaProducer {
     /// The target partition is selected by hashing the key modulo the number of
     /// partitions advertised in cluster metadata. For single-partition topics this
     /// always yields partition 0.
+    ///
+    /// `PartitionClient` instances are cached per `(topic, partition)` pair so
+    /// that repeated calls (e.g. streaming chunks for a page) incur at most one
+    /// metadata round-trip per pair rather than one per call.
     pub async fn produce(
         &self,
         topic: &str,
@@ -126,21 +172,51 @@ impl KafkaProducer {
     ) -> Result<ProducedRecord, KafkaProducerError> {
         let value_bytes = serde_json::to_vec(payload)?;
 
-        // Resolve how many partitions this topic has so we can hash-select one.
-        let topics = self
-            .client
-            .list_topics()
-            .await
-            .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
+        // Resolve partition count from cache; fetch from broker only on miss.
+        let num_partitions = {
+            let mut counts = self.inner.partition_counts.lock().await;
+            if let Some(&n) = counts.get(topic) {
+                n
+            } else {
+                let topics = self
+                    .inner
+                    .client
+                    .list_topics()
+                    .await
+                    .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
 
-        let num_partitions = topics
-            .iter()
-            .find(|t| t.name == topic)
-            .map(|t| t.partitions.len() as i32)
-            .unwrap_or(1)
-            .max(1);
+                let n = topics
+                    .iter()
+                    .find(|t| t.name == topic)
+                    .map(|t| t.partitions.len() as i32)
+                    .unwrap_or(1)
+                    .max(1);
+
+                counts.insert(topic.to_owned(), n);
+                n
+            }
+        };
 
         let partition = select_partition(key, num_partitions);
+
+        // Resolve partition client from cache; create only on miss.
+        let partition_client = {
+            let cache_key = (topic.to_owned(), partition);
+            let mut clients = self.inner.partition_clients.lock().await;
+            if let Some(pc) = clients.get(&cache_key) {
+                Arc::clone(pc)
+            } else {
+                let pc = self
+                    .inner
+                    .client
+                    .partition_client(topic, partition, UnknownTopicHandling::Retry)
+                    .await
+                    .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
+                let pc = Arc::new(pc);
+                clients.insert(cache_key, Arc::clone(&pc));
+                pc
+            }
+        };
 
         let record = Record {
             key: Some(key.as_bytes().to_vec()),
@@ -149,14 +225,8 @@ impl KafkaProducer {
             timestamp: Utc::now(),
         };
 
-        let partition_client = self
-            .client
-            .partition_client(topic, partition, UnknownTopicHandling::Retry)
-            .await
-            .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
-
         let offsets = partition_client
-            .produce(vec![record], Compression::NoCompression)
+            .produce(vec![record], Compression::Snappy)
             .await
             .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
 
@@ -175,7 +245,7 @@ impl KafkaProducer {
 /// Uses [`std::collections::hash_map::DefaultHasher`] (stable, no extra deps).
 /// For single-partition topics this always returns 0.
 fn select_partition(key: &str, num_partitions: i32) -> i32 {
-    use std::hash::Hasher;
+    use std::hash::{Hash, Hasher};
 
     if num_partitions <= 1 {
         return 0;
