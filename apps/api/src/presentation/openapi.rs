@@ -9,12 +9,15 @@ use crate::infrastructure::llm::probe as llm_probe;
 use crate::presentation::handler::admin::{
     analytics as admin_analytics, users as admin_users, workspace as admin_workspace,
 };
-use crate::presentation::handler::{auth, collections, editor, export, health, pages, setup};
+use crate::presentation::handler::{
+    auth, collections, editor, export, health, health_ready, pages, setup,
+};
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         health::handler,
+        health_ready::handler,
         setup::status,
         setup::init,
         setup::probe,
@@ -55,6 +58,7 @@ use crate::presentation::handler::{auth, collections, editor, export, health, pa
     ),
     components(schemas(
         health::HealthResponse,
+        health_ready::ReadyResponse,
         setup::SetupStatusResponse,
         setup::SetupRequest,
         setup::SetupResponse,
