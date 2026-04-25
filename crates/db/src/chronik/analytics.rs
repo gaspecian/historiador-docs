@@ -61,7 +61,7 @@ impl ChronikClient {
         let resp = self
             .http
             .post(&url)
-            .json(&serde_json::json!({ "sql": sql }))
+            .json(&serde_json::json!({ "query": sql }))
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("chronik sql request failed: {e}"))?;
@@ -192,14 +192,37 @@ impl ChronikClient {
     /// `published-pages` topic. Used by the boot-time backfill to
     /// compute the set of versions that still need to be pushed.
     ///
-    /// Returns an empty list if the topic exists but is empty. Errors
-    /// (Chronik down, SQL parse failure) bubble up so the caller can
-    /// retry / fail loudly — backfill cannot proceed without an
-    /// authoritative synced-set.
+    /// Returns an empty list if the topic exists but is empty, OR if
+    /// the topic has no messages yet (Chronik's DataFusion catalog
+    /// only registers topics as queryable tables once they contain
+    /// at least one record — an empty topic surfaces as "table not
+    /// found", which we treat as "no synced records yet").
+    ///
+    /// Other errors (Chronik down, network failure, malformed SQL)
+    /// bubble up so the caller can retry / fail loudly — backfill
+    /// cannot proceed without an authoritative synced-set.
+    ///
+    /// Implementation note: Chronik's DataFusion view exposes Kafka
+    /// records as `(_topic, _partition, _offset, _timestamp, _key,
+    /// _value)`. The chunk payload is JSON inside `_value`; we extract
+    /// `page_version_id` via `regexp_match`. The table name is
+    /// `published_pages` (DataFusion converts the dash in the topic
+    /// name to an underscore for the SQL identifier).
     pub async fn list_synced_page_version_ids(&self) -> anyhow::Result<Vec<String>> {
-        let resp = self
-            .query_sql("SELECT DISTINCT page_version_id FROM \"published-pages\"")
-            .await?;
+        let sql = "SELECT DISTINCT \
+                   regexp_match(_value::TEXT, '\"page_version_id\":\"([^\"]+)\"')[1] \
+                     AS page_version_id \
+                   FROM published_pages";
+        let resp = match self.query_sql(sql).await {
+            Ok(r) => r,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("not found") || msg.contains("Table not found") {
+                    return Ok(Vec::new());
+                }
+                return Err(e);
+            }
+        };
 
         Ok(resp
             .rows
