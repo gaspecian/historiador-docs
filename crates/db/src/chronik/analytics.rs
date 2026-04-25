@@ -187,4 +187,28 @@ impl ChronikClient {
             },
         })
     }
+
+    /// Returns every `page_version_id` currently present in the
+    /// `published-pages` topic. Used by the boot-time backfill to
+    /// compute the set of versions that still need to be pushed.
+    ///
+    /// Returns an empty list if the topic exists but is empty. Errors
+    /// (Chronik down, SQL parse failure) bubble up so the caller can
+    /// retry / fail loudly — backfill cannot proceed without an
+    /// authoritative synced-set.
+    pub async fn list_synced_page_version_ids(&self) -> anyhow::Result<Vec<String>> {
+        let resp = self
+            .query_sql("SELECT DISTINCT page_version_id FROM \"published-pages\"")
+            .await?;
+
+        Ok(resp
+            .rows
+            .into_iter()
+            .filter_map(|row| {
+                row.get("page_version_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect())
+    }
 }
