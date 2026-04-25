@@ -1,12 +1,13 @@
-//! Semantic-search use case: query string → embedding → vector search
-//! → metadata enrichment → `SearchChunksResult`.
+//! Semantic-search use case: query string → Chronik vector search →
+//! Postgres metadata enrichment → `SearchChunksResult`.
+//!
+//! The `EmbeddingClient` is no longer involved on the read side —
+//! Chronik embeds the query using the topic's configured model so
+//! both write and read sides agree on the embedding space.
 
 use std::sync::Arc;
 
-use uuid::Uuid;
-
 use historiador_db::vector_store::{SearchFilters, VectorStore};
-use historiador_llm::EmbeddingClient;
 
 use super::port::ChunkMetadataReader;
 use super::McpError;
@@ -35,90 +36,53 @@ pub struct SearchChunksResult {
 }
 
 pub struct SearchChunksUseCase {
-    embedding_client: Arc<dyn EmbeddingClient>,
     vector_store: Arc<dyn VectorStore>,
     metadata: Arc<dyn ChunkMetadataReader>,
 }
 
 impl SearchChunksUseCase {
-    pub fn new(
-        embedding_client: Arc<dyn EmbeddingClient>,
-        vector_store: Arc<dyn VectorStore>,
-        metadata: Arc<dyn ChunkMetadataReader>,
-    ) -> Self {
-        Self {
-            embedding_client,
-            vector_store,
-            metadata,
-        }
+    pub fn new(vector_store: Arc<dyn VectorStore>, metadata: Arc<dyn ChunkMetadataReader>) -> Self {
+        Self { vector_store, metadata }
     }
 
     pub async fn execute(&self, cmd: SearchChunksCommand) -> Result<SearchChunksResult, McpError> {
         let language_filter_applied = cmd.language.is_some();
         let top_k = cmd.top_k.clamp(1, 20);
 
-        // 1. Embed the query.
-        let embeddings = self
-            .embedding_client
-            .embed(std::slice::from_ref(&cmd.query))
-            .await
-            .map_err(|e| anyhow::anyhow!("embedding failed: {e}"))?;
-
-        let query_vector = match embeddings.first() {
-            Some(e) => e.vector.clone(),
-            None => {
-                return Ok(SearchChunksResult {
-                    chunks: vec![],
-                    language_filter_applied,
-                })
-            }
-        };
-
-        // 2. Vector search.
         let filters = SearchFilters {
             language: cmd.language,
             ..Default::default()
         };
-        let chunk_refs = self
-            .vector_store
-            .search(&query_vector, filters, top_k)
-            .await
-            .map_err(|e| anyhow::anyhow!("vector store search failed: {e}"))?;
 
-        if chunk_refs.is_empty() {
-            return Ok(SearchChunksResult {
-                chunks: vec![],
-                language_filter_applied,
-            });
+        let hits = self
+            .vector_store
+            .search(&cmd.query, filters, top_k)
+            .await
+            .map_err(|e| anyhow::anyhow!("chronik search failed: {e}"))?;
+
+        if hits.is_empty() {
+            return Ok(SearchChunksResult { chunks: vec![], language_filter_applied });
         }
 
-        // 3. Enrich with metadata.
-        let pv_ids: Vec<Uuid> = chunk_refs
-            .iter()
-            .filter_map(|r| Uuid::parse_str(&r.page_version_id).ok())
-            .collect();
-        let meta_map = self.metadata.enrich_many(&pv_ids).await?;
+        let refs: Vec<(i32, i64)> = hits.iter().map(|h| (h.partition, h.offset)).collect();
+        let meta_map = self.metadata.enrich_many(&refs).await?;
 
-        // 4. Merge.
-        let chunks = chunk_refs
+        let chunks = hits
             .into_iter()
-            .map(|cr| {
-                let pv_id = Uuid::parse_str(&cr.page_version_id).ok();
-                let meta = pv_id.and_then(|id| meta_map.get(&id));
-                SearchChunkResult {
-                    content: cr.content,
-                    heading_path: cr.heading_path,
-                    page_title: meta.map(|m| m.page_title.clone()).unwrap_or_default(),
-                    collection_path: meta.map(|m| m.collection_path.clone()).unwrap_or_default(),
-                    score: cr.score,
-                    language: cr.language,
-                }
+            .filter_map(|h| {
+                let key = (h.partition, h.offset);
+                let m = meta_map.get(&key)?;
+                Some(SearchChunkResult {
+                    content: m.content_markdown.clone(),
+                    heading_path: m.heading_path.clone(),
+                    page_title: m.page_title.clone(),
+                    collection_path: m.collection_path.clone(),
+                    score: h.score,
+                    language: m.language.clone(),
+                })
             })
             .collect();
 
-        Ok(SearchChunksResult {
-            chunks,
-            language_filter_applied,
-        })
+        Ok(SearchChunksResult { chunks, language_filter_applied })
     }
 }
