@@ -25,3 +25,6 @@ chrono.workspace = true
 argon2.workspace = true
 utoipa.workspace = true
 
+# --- Chronik-Stream Kafka producer ---
+rskafka = { version = "0.5", default-features = false, features = ["compression-snappy"] }
+
