@@ -128,10 +128,15 @@ async fn main() -> anyhow::Result<()> {
     let vector_store: Arc<dyn VectorStore> = match &chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
+            let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER")
+                .unwrap_or_else(|_| "localhost:9092".to_string());
             match ChronikClient::new(ChronikConfig {
                 base_url: url.clone(),
                 search_base_url: search_url,
-            }) {
+                kafka_broker,
+            })
+            .await
+            {
                 Ok(client) => {
                     tracing::info!("MCP vector store: Chronik-Stream");
                     Arc::new(ChronikVectorStore::new(client))

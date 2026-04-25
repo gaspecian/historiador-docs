@@ -240,6 +240,19 @@ impl KafkaProducer {
     }
 }
 
+/// Topic configuration matching the chunk pipeline expectations.
+/// Mirrors VECTOR_SEARCH_GUIDE.md.
+pub fn published_pages_topic_config() -> BTreeMap<String, String> {
+    let mut cfg = BTreeMap::new();
+    cfg.insert("vector.enabled".into(), "true".into());
+    cfg.insert("vector.embedding.provider".into(), "openai".into());
+    cfg.insert("vector.embedding.model".into(), "text-embedding-3-small".into());
+    cfg.insert("vector.field".into(), "$.content".into());
+    cfg.insert("vector.index.type".into(), "hnsw".into());
+    cfg.insert("vector.index.metric".into(), "cosine".into());
+    cfg
+}
+
 /// Select a partition index by hashing the key.
 ///
 /// Uses [`std::collections::hash_map::DefaultHasher`] (stable, no extra deps).

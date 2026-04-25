@@ -87,10 +87,14 @@ async fn main() -> anyhow::Result<()> {
         url = chronik_url
     );
 
+    let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER")
+        .unwrap_or_else(|_| "localhost:9092".to_string());
     let client = ChronikClient::new(ChronikConfig {
         base_url: chronik_url,
         search_base_url: search_url,
-    })?;
+        kafka_broker,
+    })
+    .await?;
     let store = ChronikVectorStore::new(client);
 
     // Fail fast if Chronik is not reachable — the load test would be
