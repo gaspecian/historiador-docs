@@ -26,6 +26,7 @@ use sha2::{Digest, Sha256};
 
 use historiador_api::{
     app,
+    infrastructure::backfill::{shared_disabled, BackfillService, BackfillState},
     infrastructure::crypto::raw::Cipher,
     infrastructure::llm::probe::{LlmProbe, StubProbe},
     infrastructure::prompts::LoadedPrompt,
@@ -96,6 +97,7 @@ fn api_test_state(pool: PgPool, chronik: ChronikClient) -> Arc<AppState> {
         editor_v2_enabled: false,
         agent_prompt: Arc::new(LoadedPrompt::for_test()),
         editor_metrics: Arc::new(EditorMetrics::new()),
+        backfill_state: shared_disabled(),
     })
 }
 
@@ -347,5 +349,163 @@ async fn publish_then_mcp_query_returns_the_chunk() {
         found,
         "MCP query did not return the published chunk within {}s",
         POLL_TIMEOUT.as_secs()
+    );
+}
+
+/// Cold backfill end-to-end: seeds a published page version directly
+/// in Postgres (skipping the publish path so Chronik stays empty for
+/// it), runs `BackfillService::run()`, then asserts the page version
+/// shows up in Chronik's `published-pages` topic.
+///
+/// Skipped under the same env-var guards as the main MCP test.
+#[tokio::test]
+async fn backfill_publishes_missing_page_versions_to_chronik() {
+    // --- skip guards ---
+    let kafka_broker = match std::env::var("CHRONIK_KAFKA_BROKER") {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("skipping: CHRONIK_KAFKA_BROKER not set");
+            return;
+        }
+    };
+    if std::env::var("EMBEDDING_API_KEY").is_err() {
+        eprintln!("skipping: EMBEDDING_API_KEY required for Chronik to embed");
+        return;
+    }
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("skipping: DATABASE_URL not set");
+            return;
+        }
+    };
+
+    let pool: PgPool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("connect to postgres");
+    historiador_db::run_migrations(&pool)
+        .await
+        .expect("run migrations");
+
+    let chronik_sql_url =
+        std::env::var("CHRONIK_SQL_URL").unwrap_or_else(|_| "http://localhost:6092".to_string());
+    let chronik_search_url =
+        std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| chronik_sql_url.clone());
+
+    let chronik = ChronikClient::new(ChronikConfig {
+        base_url: chronik_sql_url,
+        search_base_url: chronik_search_url,
+        kafka_broker: Some(kafka_broker),
+    })
+    .await
+    .expect("connect to Chronik");
+
+    // Make sure the published-pages topic exists so the SQL probe has
+    // something to query (Chronik's DataFusion view fails on missing
+    // topics). Idempotent — tolerates already-exists.
+    if let Some(ref kafka) = chronik.kafka_producer {
+        let _ = kafka
+            .ensure_topic(
+                historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
+                1,
+                Some(historiador_db::chronik::kafka_producer::published_pages_topic_config()),
+            )
+            .await;
+    }
+
+    // --- seed workspace + page + published page_version via raw SQL ---
+    // Random suffix keeps this independent of the other test in the file.
+    let workspace_name = format!("Backfill Test {}", uuid::Uuid::new_v4());
+    let workspace_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO workspaces \
+           (name, languages, primary_language, generation_model, embedding_model) \
+         VALUES ($1, ARRAY['en-US']::TEXT[], 'en-US', 'stub', 'stub') \
+         RETURNING id",
+    )
+    .bind(&workspace_name)
+    .fetch_one(&pool)
+    .await
+    .expect("insert workspace");
+
+    let page_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO pages (workspace_id, slug, status) \
+         VALUES ($1, $2, 'published') RETURNING id",
+    )
+    .bind(workspace_id)
+    .bind(format!("backfill-{}", uuid::Uuid::new_v4()))
+    .fetch_one(&pool)
+    .await
+    .expect("insert page");
+
+    let unique_marker = format!("backfill-marker-{}", uuid::Uuid::new_v4().simple());
+    let markdown = format!("## Backfill Test\n\nThis page contains: {unique_marker}\n");
+    let page_version_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO page_versions \
+           (page_id, language, title, content_markdown, status) \
+         VALUES ($1, 'en-US', 'Backfill Test', $2, 'published') \
+         RETURNING id",
+    )
+    .bind(page_id)
+    .bind(&markdown)
+    .fetch_one(&pool)
+    .await
+    .expect("insert page_version");
+
+    // Sanity: Chronik does not yet contain this page_version_id.
+    let pre = chronik
+        .list_synced_page_version_ids()
+        .await
+        .expect("chronik probe (pre)");
+    assert!(
+        !pre.iter().any(|s| s == &page_version_id.to_string()),
+        "page_version {page_version_id} unexpectedly already present in Chronik"
+    );
+
+    // --- run the backfill service ---
+    let vector_store: Arc<dyn VectorStore> = Arc::new(ChronikVectorStore::new(chronik.clone()));
+    let state = shared_disabled();
+    let svc = BackfillService::new(
+        pool.clone(),
+        chronik.clone(),
+        vector_store.clone(),
+        state.clone(),
+    );
+    svc.run().await;
+
+    // Assert state reflects success.
+    let snapshot = state.read().expect("state lock").clone();
+    match snapshot {
+        BackfillState::Completed { synced, failed } => {
+            assert!(
+                synced >= 1,
+                "expected at least 1 synced page_version, got {synced}"
+            );
+            assert_eq!(failed, 0, "expected 0 failures, got {failed}");
+        }
+        other => panic!("expected Completed, got {other:?}"),
+    }
+
+    // Verify the chunk pipeline actually produced to Chronik by
+    // checking the Postgres `chunks` table: rows here only get a
+    // non-null (chronik_partition, chronik_offset) after the Kafka
+    // produce returns success. This is the same signal the normal
+    // publish path relies on. We avoid re-probing Chronik via SQL
+    // because its DataFusion catalog lags the Kafka log by an
+    // unbounded amount on this build.
+    let chunk_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM chunks \
+         WHERE page_version_id = $1 \
+           AND chronik_partition IS NOT NULL \
+           AND chronik_offset IS NOT NULL",
+    )
+    .bind(page_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count chunks");
+    assert!(
+        chunk_count >= 1,
+        "expected at least 1 chunk row with Chronik offsets for {page_version_id}, got {chunk_count}"
     );
 }
