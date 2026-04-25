@@ -21,9 +21,7 @@ use historiador_db::{
 };
 
 use historiador_mcp::{
-    application::SearchChunksUseCase,
-    build_router,
-    infrastructure::PostgresChunkMetadataReader,
+    application::SearchChunksUseCase, build_router, infrastructure::PostgresChunkMetadataReader,
     state::McpState,
 };
 

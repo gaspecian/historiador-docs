@@ -41,10 +41,8 @@ use historiador_llm::{
     EmbeddingClient, StubEmbeddingClient, StubTextGenerationClient, TextGenerationClient,
 };
 use historiador_mcp::{
-    application::SearchChunksUseCase,
-    build_router as mcp_build_router,
-    infrastructure::PostgresChunkMetadataReader,
-    state::McpState,
+    application::SearchChunksUseCase, build_router as mcp_build_router,
+    infrastructure::PostgresChunkMetadataReader, state::McpState,
 };
 use sqlx::PgPool;
 
@@ -331,10 +329,7 @@ async fn publish_then_mcp_query_returns_the_chunk() {
                                 .as_str()
                                 .unwrap_or("")
                                 .contains("E2E MCP Query Page")
-                                || c["content"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .contains(unique_phrase)
+                                || c["content"].as_str().unwrap_or("").contains(unique_phrase)
                         });
                         if hit {
                             found = true;

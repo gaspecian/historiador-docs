@@ -213,11 +213,10 @@ impl VectorStore for ChronikVectorStore {
     ) -> Result<Vec<ProducedRecord>, VectorStoreError> {
         use crate::chronik::producer::topics::PUBLISHED_PAGES;
 
-        let producer = self
-            .client
-            .kafka_producer
-            .as_ref()
-            .ok_or_else(|| VectorStoreError::Kafka("kafka producer not configured".to_string()))?;
+        let producer =
+            self.client.kafka_producer.as_ref().ok_or_else(|| {
+                VectorStoreError::Kafka("kafka producer not configured".to_string())
+            })?;
 
         let mut out = Vec::with_capacity(chunks.len());
         for chunk in chunks {
@@ -278,7 +277,10 @@ mod tests {
             .await
             .unwrap();
 
-        let hits = store.search("hello", SearchFilters::default(), 10).await.unwrap();
+        let hits = store
+            .search("hello", SearchFilters::default(), 10)
+            .await
+            .unwrap();
         assert_eq!(hits.len(), 1);
     }
 

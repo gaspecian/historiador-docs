@@ -1872,6 +1872,8 @@ In `docker-compose.yml`, under the `chronik` service `environment:` block, add:
 
 (Both names are accepted by Chronik per VECTOR_SEARCH_GUIDE.md "Set Your API Key". Setting both is harmless.)
 
+**Note:** the `--advertise 127.0.0.1` flag on the chronik command was already added in Task 3's commit (`3aa18e8`) because it was a hard prerequisite for the Kafka integration test to reach the broker. Don't re-add it; skip if it's already present.
+
 - [ ] **Step 3: Document the prereq in `.env.example`**
 
 In `.env.example`, near the existing `# EMBEDDING_API_KEY=sk-...` line, add the comment:

@@ -42,7 +42,10 @@ pub struct SearchChunksUseCase {
 
 impl SearchChunksUseCase {
     pub fn new(vector_store: Arc<dyn VectorStore>, metadata: Arc<dyn ChunkMetadataReader>) -> Self {
-        Self { vector_store, metadata }
+        Self {
+            vector_store,
+            metadata,
+        }
     }
 
     pub async fn execute(&self, cmd: SearchChunksCommand) -> Result<SearchChunksResult, McpError> {
@@ -61,7 +64,10 @@ impl SearchChunksUseCase {
             .map_err(|e| anyhow::anyhow!("chronik search failed: {e}"))?;
 
         if hits.is_empty() {
-            return Ok(SearchChunksResult { chunks: vec![], language_filter_applied });
+            return Ok(SearchChunksResult {
+                chunks: vec![],
+                language_filter_applied,
+            });
         }
 
         let refs: Vec<(i32, i64)> = hits.iter().map(|h| (h.partition, h.offset)).collect();
@@ -83,6 +89,9 @@ impl SearchChunksUseCase {
             })
             .collect();
 
-        Ok(SearchChunksResult { chunks, language_filter_applied })
+        Ok(SearchChunksResult {
+            chunks,
+            language_filter_applied,
+        })
     }
 }

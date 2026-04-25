@@ -38,18 +38,13 @@ pub async fn enrich_chunk_results(
     // Build a VALUES list so the query is one round-trip.
     // Note: "offset" is a SQL reserved word in some dialects; we use the
     // alias `chronik_offset_value` to avoid any parsing ambiguity.
-    let mut sql = String::from(
-        "WITH refs(chronik_partition_value, chronik_offset_value) AS (VALUES ",
-    );
+    let mut sql =
+        String::from("WITH refs(chronik_partition_value, chronik_offset_value) AS (VALUES ");
     for i in 0..refs.len() {
         if i > 0 {
             sql.push(',');
         }
-        sql.push_str(&format!(
-            "(${}::int, ${}::bigint)",
-            i * 2 + 1,
-            i * 2 + 2
-        ));
+        sql.push_str(&format!("(${}::int, ${}::bigint)", i * 2 + 1, i * 2 + 2));
     }
     sql.push_str(
         "), \

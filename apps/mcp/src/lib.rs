@@ -16,7 +16,11 @@ pub use state::McpState;
 
 use std::sync::Arc;
 
-use axum::{middleware, routing::{get, post}, Router};
+use axum::{
+    middleware,
+    routing::{get, post},
+    Router,
+};
 use tower_http::trace::TraceLayer;
 
 /// Construct the MCP Axum router from a pre-built state. Shared between

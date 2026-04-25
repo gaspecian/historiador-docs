@@ -19,22 +19,10 @@ async fn produce_chunks_returns_partition_offset() {
     .await
     .expect("client");
 
-    // Delete any pre-existing published-pages topic so we can recreate
-    // it with 1 partition. The dev environment runs a single-broker
-    // Chronik whose embedded Kafka cannot serve partitions > 0 reliably
-    // (leader IDs 1-5 are absent from the metadata response on a
-    // single-broker cluster). Production multi-broker deploys use 6
-    // partitions; this test always recreates with 1 to stay reliable.
-    let producer = client
-        .kafka_producer
-        .as_ref()
-        .expect("producer present");
-
-    producer
-        .delete_topic(historiador_db::chronik::producer::topics::PUBLISHED_PAGES)
-        .await
-        .expect("delete existing topic (idempotent)");
-
+    // All topics are provisioned with 1 partition at boot (Chronik 2.4.1
+    // single-broker constraint). ensure_topic is idempotent — if the topic
+    // already exists from a previous run this is a no-op.
+    let producer = client.kafka_producer.as_ref().expect("producer present");
     producer
         .ensure_topic(
             historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
@@ -42,9 +30,11 @@ async fn produce_chunks_returns_partition_offset() {
             Some(published_pages_topic_config()),
         )
         .await
-        .expect("ensure");
+        .expect("ensure published-pages topic");
 
     let store = ChronikVectorStore::new(client);
+    // Unique page_version_id per run — provides per-run isolation without
+    // needing to delete/recreate the topic.
     let pv_id = uuid::Uuid::new_v4().to_string();
 
     let payloads = vec![ChunkPayload {
@@ -85,18 +75,9 @@ async fn produce_then_search_recovers_partition_offset() {
     .await
     .expect("client");
 
-    // Same single-broker dev constraint as the first test: delete stale
-    // topic and recreate with 1 partition.
-    let producer = client
-        .kafka_producer
-        .as_ref()
-        .expect("producer present");
-
-    producer
-        .delete_topic(historiador_db::chronik::producer::topics::PUBLISHED_PAGES)
-        .await
-        .expect("delete existing topic (idempotent)");
-
+    // All topics are provisioned with 1 partition at boot. ensure_topic is
+    // idempotent; isolation is provided by the unique pv_id below.
+    let producer = client.kafka_producer.as_ref().expect("producer present");
     producer
         .ensure_topic(
             historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
@@ -104,9 +85,11 @@ async fn produce_then_search_recovers_partition_offset() {
             Some(published_pages_topic_config()),
         )
         .await
-        .expect("ensure");
+        .expect("ensure published-pages topic");
 
     let store = ChronikVectorStore::new(client);
+    // Unique page_version_id per run — the search filter on pv_id ensures
+    // results from this run are not confused with those of concurrent runs.
     let pv_id = uuid::Uuid::new_v4().to_string();
 
     let payloads = vec![ChunkPayload {
@@ -143,7 +126,10 @@ async fn produce_then_search_recovers_partition_offset() {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
-    assert!(!hits.is_empty(), "expected at least one chunk back from Chronik within 60s");
+    assert!(
+        !hits.is_empty(),
+        "expected at least one chunk back from Chronik within 60s"
+    );
     let first = &hits[0];
     assert_eq!(first.partition, produced[0].partition);
     assert_eq!(first.offset, produced[0].offset);

@@ -175,10 +175,12 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ref chronik_client) = chronik {
         if let Some(ref kafka) = chronik_client.kafka_producer {
             // published-pages: vector + full-text indexing (chunk pipeline).
+            // 1 partition: Chronik 2.4.1 single-broker can't reliably leader-elect
+            // across multiple partitions; the producer always targets partition 0.
             if let Err(e) = kafka
                 .ensure_topic(
                     historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
-                    /*partitions*/ 6,
+                    /*partitions*/ 1,
                     Some(historiador_db::chronik::kafka_producer::published_pages_topic_config()),
                 )
                 .await
@@ -186,13 +188,14 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!(error = %e, "failed to ensure published-pages topic — chunk pipeline writes will fail");
             }
 
-            // Streaming-only topics (no vector indexing).
+            // Streaming-only topics (no vector indexing). 1 partition each —
+            // same single-broker constraint as published-pages.
             for topic in [
                 historiador_db::chronik::producer::topics::PAGE_EVENTS,
                 historiador_db::chronik::producer::topics::MCP_QUERIES,
                 historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
             ] {
-                if let Err(e) = kafka.ensure_topic(topic, /*partitions*/ 3, None).await {
+                if let Err(e) = kafka.ensure_topic(topic, /*partitions*/ 1, None).await {
                     tracing::warn!(%topic, error = %e, "failed to ensure topic");
                 }
             }

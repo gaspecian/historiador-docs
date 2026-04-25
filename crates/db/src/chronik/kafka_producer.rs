@@ -65,9 +65,6 @@ struct Inner {
     /// Cached partition clients keyed by `(topic_name, partition_index)`.
     /// Populated lazily on first `produce` call for each (topic, partition).
     partition_clients: Mutex<HashMap<(String, i32), Arc<PartitionClient>>>,
-    /// Cached partition counts keyed by topic name.
-    /// Populated lazily on first `produce` call for each topic.
-    partition_counts: Mutex<HashMap<String, i32>>,
 }
 
 #[derive(Clone)]
@@ -87,7 +84,6 @@ impl KafkaProducer {
             inner: Arc::new(Inner {
                 client: Arc::new(client),
                 partition_clients: Mutex::new(HashMap::new()),
-                partition_counts: Mutex::new(HashMap::new()),
             }),
         })
     }
@@ -129,10 +125,7 @@ impl KafkaProducer {
 
         match controller
             .create_topic(
-                topic,
-                partitions,
-                /*replication_factor*/ 1i16,
-                /*timeout_ms*/ 5_000i32,
+                topic, partitions, /*replication_factor*/ 1i16, /*timeout_ms*/ 5_000i32,
             )
             .await
         {
@@ -155,41 +148,13 @@ impl KafkaProducer {
         Ok(())
     }
 
-    /// Delete a topic. Best-effort: always returns `Ok(())`.
-    ///
-    /// Chronik's embedded single-broker Kafka may not implement the
-    /// `DeleteTopics` API fully — it can return a malformed response or
-    /// an error code that rskafka cannot parse. In all error cases we log
-    /// a warning and continue; the caller (tests, workspace reset) should
-    /// treat this as "deletion attempted, outcome uncertain".
-    pub async fn delete_topic(&self, topic: &str) -> Result<(), KafkaProducerError> {
-        let controller = match self.inner.client.controller_client() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(%topic, error = %e, "delete_topic: controller_client failed, skipping");
-                return Ok(());
-            }
-        };
-
-        if let Err(e) = controller
-            .delete_topic(topic, /*timeout_ms*/ 5_000i32)
-            .await
-        {
-            tracing::warn!(%topic, error = %e, "delete_topic: broker returned error (may be unsupported), continuing");
-        }
-
-        Ok(())
-    }
-
     /// Produce a single JSON payload to a topic and return its (partition, offset).
     ///
-    /// The target partition is selected by hashing the key modulo the number of
-    /// partitions advertised in cluster metadata. For single-partition topics this
-    /// always yields partition 0.
-    ///
-    /// `PartitionClient` instances are cached per `(topic, partition)` pair so
-    /// that repeated calls (e.g. streaming chunks for a page) incur at most one
-    /// metadata round-trip per pair rather than one per call.
+    /// All topics are provisioned with 1 partition (Chronik 2.4.1 single-broker
+    /// constraint), so `select_partition` always returns 0. `PartitionClient`
+    /// instances are cached per `(topic, partition)` pair so that repeated calls
+    /// (e.g. streaming chunks for a page) incur at most one metadata round-trip
+    /// per pair rather than one per call.
     pub async fn produce(
         &self,
         topic: &str,
@@ -198,81 +163,24 @@ impl KafkaProducer {
     ) -> Result<ProducedRecord, KafkaProducerError> {
         let value_bytes = serde_json::to_vec(payload)?;
 
-        // Resolve partition count from cache; fetch from broker only on miss.
-        let num_partitions = {
-            let mut counts = self.inner.partition_counts.lock().await;
-            if let Some(&n) = counts.get(topic) {
-                n
-            } else {
-                let topics = self
-                    .inner
-                    .client
-                    .list_topics()
-                    .await
-                    .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
-
-                let n = topics
-                    .iter()
-                    .find(|t| t.name == topic)
-                    .map(|t| t.partitions.len() as i32)
-                    .unwrap_or(1)
-                    .max(1);
-
-                counts.insert(topic.to_owned(), n);
-                n
-            }
-        };
-
-        let mut partition = select_partition(key, num_partitions);
+        let partition = select_partition(key);
 
         // Resolve partition client from cache; create only on miss.
-        // If the broker's metadata response is missing the selected
-        // partition's leader (can happen with Chronik's embedded single-
-        // broker Kafka when the topic was created with >1 partition), fall
-        // back to partition 0, which is always present on a single-broker
-        // cluster.
         let partition_client = {
             let cache_key = (topic.to_owned(), partition);
             let mut clients = self.inner.partition_clients.lock().await;
             if let Some(pc) = clients.get(&cache_key) {
                 Arc::clone(pc)
             } else {
-                match self
+                let pc = self
                     .inner
                     .client
                     .partition_client(topic, partition, UnknownTopicHandling::Retry)
                     .await
-                {
-                    Ok(pc) => {
-                        let pc = Arc::new(pc);
-                        clients.insert(cache_key, Arc::clone(&pc));
-                        pc
-                    }
-                    Err(e) if e.to_string().contains("not found in metadata") => {
-                        // Partition leader missing — fall back to partition 0.
-                        tracing::warn!(
-                            %topic,
-                            selected_partition = partition,
-                            "partition leader not in metadata; falling back to partition 0"
-                        );
-                        partition = 0;
-                        let fallback_key = (topic.to_owned(), 0i32);
-                        if let Some(pc) = clients.get(&fallback_key) {
-                            Arc::clone(pc)
-                        } else {
-                            let pc = self
-                                .inner
-                                .client
-                                .partition_client(topic, 0, UnknownTopicHandling::Retry)
-                                .await
-                                .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
-                            let pc = Arc::new(pc);
-                            clients.insert(fallback_key, Arc::clone(&pc));
-                            pc
-                        }
-                    }
-                    Err(e) => return Err(KafkaProducerError::Produce(e.to_string())),
-                }
+                    .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
+                let pc = Arc::new(pc);
+                clients.insert(cache_key, Arc::clone(&pc));
+                pc
             }
         };
 
@@ -304,25 +212,23 @@ pub fn published_pages_topic_config() -> BTreeMap<String, String> {
     let mut cfg = BTreeMap::new();
     cfg.insert("vector.enabled".into(), "true".into());
     cfg.insert("vector.embedding.provider".into(), "openai".into());
-    cfg.insert("vector.embedding.model".into(), "text-embedding-3-small".into());
+    cfg.insert(
+        "vector.embedding.model".into(),
+        "text-embedding-3-small".into(),
+    );
     cfg.insert("vector.field".into(), "$.content".into());
     cfg.insert("vector.index.type".into(), "hnsw".into());
     cfg.insert("vector.index.metric".into(), "cosine".into());
     cfg
 }
 
-/// Select a partition index by hashing the key.
+/// Select a partition index for a produce call.
 ///
-/// Uses [`std::collections::hash_map::DefaultHasher`] (stable, no extra deps).
-/// For single-partition topics this always returns 0.
-fn select_partition(key: &str, num_partitions: i32) -> i32 {
-    use std::hash::{Hash, Hasher};
-
-    if num_partitions <= 1 {
-        return 0;
-    }
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    key.hash(&mut hasher);
-    let h = hasher.finish();
-    (h % num_partitions as u64) as i32
+/// All Chronik 2.4.1 topics are provisioned with exactly 1 partition
+/// (single-broker constraint — see `main.rs` topic provisioning). This
+/// always returns 0. If a multi-partition topic is encountered (e.g.
+/// manually created outside the API) the `partition_client` call will
+/// fail loudly rather than silently routing to the wrong partition.
+fn select_partition(_key: &str) -> i32 {
+    0
 }
