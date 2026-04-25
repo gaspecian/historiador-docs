@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
+use crate::infrastructure::backfill::SharedBackfillState;
 use crate::infrastructure::crypto::raw::Cipher;
 use crate::infrastructure::llm::probe::LlmProbe;
 use crate::infrastructure::prompts::LoadedPrompt;
@@ -51,4 +52,8 @@ pub struct AppState {
     /// In-process counters for editor telemetry (US-11.17 success
     /// metrics).
     pub editor_metrics: Arc<EditorMetrics>,
+    /// Boot-time vector store backfill task state. `Disabled` when
+    /// `BACKFILL_ON_BOOT` is off; otherwise transitions through
+    /// `Running` → `Completed | Failed`. Read by `/health/ready`.
+    pub backfill_state: SharedBackfillState,
 }

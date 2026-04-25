@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use historiador_api::{
     app,
+    infrastructure::backfill::shared_disabled,
     infrastructure::crypto::raw::Cipher,
     infrastructure::llm::probe::HttpLlmProbe,
     infrastructure::prompts::load_agent_prompt,
@@ -239,6 +240,7 @@ async fn main() -> anyhow::Result<()> {
         editor_v2_enabled,
         agent_prompt,
         editor_metrics: Arc::new(EditorMetrics::new()),
+        backfill_state: shared_disabled(),
     });
 
     let app = app::build_router(state);
