@@ -155,6 +155,32 @@ impl KafkaProducer {
         Ok(())
     }
 
+    /// Delete a topic. Best-effort: always returns `Ok(())`.
+    ///
+    /// Chronik's embedded single-broker Kafka may not implement the
+    /// `DeleteTopics` API fully — it can return a malformed response or
+    /// an error code that rskafka cannot parse. In all error cases we log
+    /// a warning and continue; the caller (tests, workspace reset) should
+    /// treat this as "deletion attempted, outcome uncertain".
+    pub async fn delete_topic(&self, topic: &str) -> Result<(), KafkaProducerError> {
+        let controller = match self.inner.client.controller_client() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(%topic, error = %e, "delete_topic: controller_client failed, skipping");
+                return Ok(());
+            }
+        };
+
+        if let Err(e) = controller
+            .delete_topic(topic, /*timeout_ms*/ 5_000i32)
+            .await
+        {
+            tracing::warn!(%topic, error = %e, "delete_topic: broker returned error (may be unsupported), continuing");
+        }
+
+        Ok(())
+    }
+
     /// Produce a single JSON payload to a topic and return its (partition, offset).
     ///
     /// The target partition is selected by hashing the key modulo the number of
@@ -197,24 +223,56 @@ impl KafkaProducer {
             }
         };
 
-        let partition = select_partition(key, num_partitions);
+        let mut partition = select_partition(key, num_partitions);
 
         // Resolve partition client from cache; create only on miss.
+        // If the broker's metadata response is missing the selected
+        // partition's leader (can happen with Chronik's embedded single-
+        // broker Kafka when the topic was created with >1 partition), fall
+        // back to partition 0, which is always present on a single-broker
+        // cluster.
         let partition_client = {
             let cache_key = (topic.to_owned(), partition);
             let mut clients = self.inner.partition_clients.lock().await;
             if let Some(pc) = clients.get(&cache_key) {
                 Arc::clone(pc)
             } else {
-                let pc = self
+                match self
                     .inner
                     .client
                     .partition_client(topic, partition, UnknownTopicHandling::Retry)
                     .await
-                    .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
-                let pc = Arc::new(pc);
-                clients.insert(cache_key, Arc::clone(&pc));
-                pc
+                {
+                    Ok(pc) => {
+                        let pc = Arc::new(pc);
+                        clients.insert(cache_key, Arc::clone(&pc));
+                        pc
+                    }
+                    Err(e) if e.to_string().contains("not found in metadata") => {
+                        // Partition leader missing — fall back to partition 0.
+                        tracing::warn!(
+                            %topic,
+                            selected_partition = partition,
+                            "partition leader not in metadata; falling back to partition 0"
+                        );
+                        partition = 0;
+                        let fallback_key = (topic.to_owned(), 0i32);
+                        if let Some(pc) = clients.get(&fallback_key) {
+                            Arc::clone(pc)
+                        } else {
+                            let pc = self
+                                .inner
+                                .client
+                                .partition_client(topic, 0, UnknownTopicHandling::Retry)
+                                .await
+                                .map_err(|e| KafkaProducerError::Produce(e.to_string()))?;
+                            let pc = Arc::new(pc);
+                            clients.insert(fallback_key, Arc::clone(&pc));
+                            pc
+                        }
+                    }
+                    Err(e) => return Err(KafkaProducerError::Produce(e.to_string())),
+                }
             }
         };
 
