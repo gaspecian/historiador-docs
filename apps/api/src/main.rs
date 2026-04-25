@@ -64,6 +64,13 @@ async fn main() -> anyhow::Result<()> {
         .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
         .unwrap_or(false);
 
+    // Boot-time vector store backfill. Default OFF so dev/test boots
+    // stay fast; enable in production to reconcile any published
+    // page_versions sitting in Postgres but not yet in Chronik.
+    let backfill_on_boot = std::env::var("BACKFILL_ON_BOOT")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+
     // Agent prompt — loaded once at boot, hashed for deploy auditing.
     let prompt_version = std::env::var("PROMPT_VERSION").unwrap_or_else(|_| "v1".to_string());
     let prompt_dir = std::env::var("PROMPT_DIR")
@@ -243,11 +250,40 @@ async fn main() -> anyhow::Result<()> {
         backfill_state: shared_disabled(),
     });
 
-    let app = app::build_router(state);
+    let app = app::build_router(state.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "api server listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    // Spawn the boot-time backfill before handing control to the server.
+    // The server still binds and serves traffic immediately; only
+    // /health/ready reflects the in-progress backfill (returns 503
+    // while Running).
+    if backfill_on_boot {
+        if let Some(chronik_client) = state.chronik.clone() {
+            let pool = state.pool.clone();
+            let vector_store = state.vector_store.clone();
+            let backfill_state = state.backfill_state.clone();
+            tokio::spawn(async move {
+                let svc = historiador_api::infrastructure::backfill::BackfillService::new(
+                    pool,
+                    chronik_client,
+                    vector_store,
+                    backfill_state,
+                );
+                svc.run().await;
+            });
+            tracing::info!("backfill: spawned (BACKFILL_ON_BOOT=true)");
+        } else {
+            tracing::warn!(
+                "BACKFILL_ON_BOOT=true but no Chronik client configured — \
+                 skipping backfill (in-memory vector store cannot be probed)"
+            );
+        }
+    } else {
+        tracing::info!("backfill: disabled (BACKFILL_ON_BOOT not set / falsy)");
+    }
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
