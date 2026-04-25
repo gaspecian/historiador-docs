@@ -170,12 +170,11 @@ impl BackfillService {
     ) -> anyhow::Result<()> {
         // Narrow row read: only the columns the chunk pipeline needs.
         // Avoids loading the full `PageVersion` struct.
-        let row: Option<(String, String)> = sqlx::query_as(
-            "SELECT language, content_markdown FROM page_versions WHERE id = $1",
-        )
-        .bind(page_version_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<(String, String)> =
+            sqlx::query_as("SELECT language, content_markdown FROM page_versions WHERE id = $1")
+                .bind(page_version_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let Some((language_str, markdown)) = row else {
             anyhow::bail!("page_version {page_version_id} no longer exists");
