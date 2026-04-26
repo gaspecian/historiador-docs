@@ -1,10 +1,11 @@
-//! `ChunkPipeline` adapter — composes the chunker, the embedding
-//! client, and the vector store behind the domain port. The `pool`
-//! handles the Postgres `chunks` metadata rows.
+//! Chunk pipeline — splits the published markdown into chunks,
+//! produces them to Chronik via Kafka, and stores the back-pointer
+//! `(partition, offset)` in Postgres.
 //!
-//! This supersedes `crate::pages::pipeline::run_chunk_pipeline` once
-//! the handler rewire lands. Kept in parallel during the refactor so
-//! the existing fire-and-forget call site continues to work.
+//! Republish is a full reindex: existing `chunks` rows for the page
+//! version are deleted, then all new chunks are produced and stored.
+//! Chronik records produced before the reindex become orphans (no
+//! Postgres row); MCP enrichment skips them.
 
 use std::sync::Arc;
 
@@ -14,8 +15,7 @@ use uuid::Uuid;
 
 use historiador_chunker::{chunk_markdown, ChunkConfig};
 use historiador_db::postgres::chunks;
-use historiador_db::vector_store::{ChunkEmbedding, VectorStore};
-use historiador_llm::EmbeddingClient;
+use historiador_db::vector_store::{ChunkPayload, VectorStore};
 
 use crate::domain::error::ApplicationError;
 use crate::domain::port::chunk_pipeline::{ChunkPipeline, ChunkPipelineInput};
@@ -23,20 +23,11 @@ use crate::domain::port::chunk_pipeline::{ChunkPipeline, ChunkPipelineInput};
 pub struct DefaultChunkPipeline {
     pool: PgPool,
     vector_store: Arc<dyn VectorStore>,
-    embedding_client: Arc<dyn EmbeddingClient>,
 }
 
 impl DefaultChunkPipeline {
-    pub fn new(
-        pool: PgPool,
-        vector_store: Arc<dyn VectorStore>,
-        embedding_client: Arc<dyn EmbeddingClient>,
-    ) -> Self {
-        Self {
-            pool,
-            vector_store,
-            embedding_client,
-        }
+    pub fn new(pool: PgPool, vector_store: Arc<dyn VectorStore>) -> Self {
+        Self { pool, vector_store }
     }
 }
 
@@ -49,17 +40,12 @@ impl ChunkPipeline for DefaultChunkPipeline {
             markdown,
         } = input;
 
-        let existing = chunks::find_by_page_version(&self.pool, page_version_id).await?;
-        if !existing.is_empty() {
-            self.vector_store
-                .delete_by_page_version(&page_version_id.to_string())
-                .await
-                .map_err(|e| anyhow::anyhow!("vector store delete failed: {e}"))?;
-            chunks::delete_by_page_version(&self.pool, page_version_id).await?;
-        }
+        // Full reindex: delete existing chunks rows for this page
+        // version. Chronik records become orphans and are filtered out
+        // by MCP enrichment (no matching Postgres row).
+        chunks::delete_by_page_version(&self.pool, page_version_id).await?;
 
-        let config = ChunkConfig::default();
-        let raw_chunks = match chunk_markdown(&markdown, &config) {
+        let raw_chunks = match chunk_markdown(&markdown, &ChunkConfig::default()) {
             Ok(c) => c,
             Err(historiador_chunker::ChunkError::EmptyInput) => {
                 tracing::warn!(%page_version_id, "empty content, skipping chunk pipeline");
@@ -71,44 +57,36 @@ impl ChunkPipeline for DefaultChunkPipeline {
             return Ok(());
         }
 
-        let texts: Vec<String> = raw_chunks.iter().map(|c| c.content.clone()).collect();
-        let embeddings = self
-            .embedding_client
-            .embed(&texts)
-            .await
-            .map_err(|e| anyhow::anyhow!("embedding failed: {e}"))?;
-
-        let chunk_embeddings: Vec<ChunkEmbedding> = raw_chunks
+        let payloads: Vec<ChunkPayload> = raw_chunks
             .iter()
-            .zip(embeddings.iter())
-            .map(|(chunk, emb)| ChunkEmbedding {
+            .map(|c| ChunkPayload {
                 page_version_id: page_version_id.to_string(),
-                section_index: chunk.section_index as i32,
-                heading_path: chunk.heading_path.clone(),
-                content: chunk.content.clone(),
+                section_index: c.section_index as i32,
+                heading_path: c.heading_path.clone(),
+                content: c.content.clone(),
                 language: language.as_str().to_string(),
-                token_count: chunk.token_count as i32,
-                embedding: emb.vector.clone(),
+                token_count: c.token_count as i32,
             })
             .collect();
 
-        let vexfs_refs = self
+        let produced = self
             .vector_store
-            .upsert_chunks(chunk_embeddings)
+            .produce_chunks(payloads)
             .await
-            .map_err(|e| anyhow::anyhow!("vector store upsert failed: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("chronik produce failed: {e}"))?;
 
         let new_chunks: Vec<chunks::NewChunk> = raw_chunks
             .iter()
-            .zip(vexfs_refs.iter())
-            .map(|(chunk, vexfs_ref)| chunks::NewChunk {
+            .zip(produced.iter())
+            .map(|(c, rec)| chunks::NewChunk {
                 page_version_id,
-                heading_path: chunk.heading_path.clone(),
-                section_index: chunk.section_index as i32,
-                token_count: chunk.token_count as i32,
-                oversized: chunk.oversized,
+                heading_path: c.heading_path.clone(),
+                section_index: c.section_index as i32,
+                token_count: c.token_count as i32,
+                oversized: c.oversized,
                 language: language.as_str().to_string(),
-                vexfs_ref: vexfs_ref.clone(),
+                chronik_partition: rec.partition,
+                chronik_offset: rec.offset,
             })
             .collect();
 
@@ -123,10 +101,7 @@ impl ChunkPipeline for DefaultChunkPipeline {
     }
 
     async fn clear(&self, page_version_id: Uuid) -> Result<(), ApplicationError> {
-        self.vector_store
-            .delete_by_page_version(&page_version_id.to_string())
-            .await
-            .map_err(|e| anyhow::anyhow!("vector store delete failed: {e}"))?;
+        // No equivalent in Chronik — orphans are tolerated by design.
         chunks::delete_by_page_version(&self.pool, page_version_id).await?;
         Ok(())
     }

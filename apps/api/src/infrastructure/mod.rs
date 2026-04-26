@@ -4,6 +4,7 @@
 //! Depends on `crate::domain`. Must never depend on `crate::presentation`.
 
 pub mod auth;
+pub mod backfill;
 pub mod chronik;
 pub mod chunker;
 pub mod config;

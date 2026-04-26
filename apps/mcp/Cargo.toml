@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "historiador_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "mcp"
 path = "src/main.rs"
@@ -31,3 +35,10 @@ subtle.workspace = true
 sqlx.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
+
+[[test]]
+name = "mcp_query_e2e"
+path = "tests/mcp_query_e2e.rs"
+
+[dev-dependencies]
+historiador_api = { path = "../../apps/api" }

@@ -7,39 +7,23 @@
 //! variable. Both rules are enforced by convention in this crate and by
 //! the `historiador_mcp` Postgres role at the DB layer.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{
-    middleware,
-    routing::{get, post},
-    Router,
-};
 use sha2::{Digest, Sha256};
-use std::net::SocketAddr;
 use tokio::signal;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use historiador_db::{
     chronik::{ChronikClient, ChronikConfig},
     vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
 };
-use historiador_llm::{
-    EmbeddingClient, OllamaEmbeddingClient, OpenAiEmbeddingClient, StubEmbeddingClient,
+
+use historiador_mcp::{
+    application::SearchChunksUseCase, build_router, infrastructure::PostgresChunkMetadataReader,
+    state::McpState,
 };
-
-mod application;
-mod auth;
-mod health;
-mod infrastructure;
-mod jsonrpc;
-mod query;
-mod state;
-
-use application::SearchChunksUseCase;
-use infrastructure::PostgresChunkMetadataReader;
-use state::McpState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -71,55 +55,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to connect to postgres as readonly role")?;
 
-    // Build embedding client. MCP reads the workspace row (read-only
-    // role covers `workspaces`) to pick up the chosen provider and
-    // embedding model. For cloud providers the encrypted key is not
-    // accessible from MCP (ADR-003), so we still need LLM_API_KEY /
-    // EMBEDDING_API_KEY in the environment for OpenAI / Anthropic. For
-    // Ollama, the base URL is stored in the clear and no env var is
-    // required.
     let workspace_row = historiador_db::postgres::workspaces::find_singleton(&pool).await?;
-    let embedding_client: Arc<dyn EmbeddingClient> = match workspace_row.as_ref() {
-        Some(ws) if ws.llm_provider == "ollama" => {
-            let base = ws
-                .llm_base_url
-                .as_deref()
-                .unwrap_or("http://localhost:11434");
-            tracing::info!(
-                base,
-                model = ws.embedding_model.as_str(),
-                "MCP embedding provider: Ollama"
-            );
-            Arc::new(OllamaEmbeddingClient::new(base, &ws.embedding_model))
-        }
-        Some(ws) if ws.llm_provider == "openai" || ws.llm_provider == "anthropic" => {
-            let key = std::env::var("EMBEDDING_API_KEY")
-                .ok()
-                .or_else(|| std::env::var("LLM_API_KEY").ok())
-                .unwrap_or_default();
-            if key.is_empty() {
-                tracing::warn!(
-                    provider = ws.llm_provider.as_str(),
-                    "no EMBEDDING_API_KEY / LLM_API_KEY set — MCP embedding falling back to stub"
-                );
-                Arc::new(StubEmbeddingClient::default())
-            } else {
-                tracing::info!(
-                    model = ws.embedding_model.as_str(),
-                    "MCP embedding provider: OpenAI"
-                );
-                Arc::new(OpenAiEmbeddingClient::with_model(
-                    &key,
-                    &ws.embedding_model,
-                    1536,
-                ))
-            }
-        }
-        _ => {
-            tracing::info!("MCP embedding provider: stub (setup not complete / test provider)");
-            Arc::new(StubEmbeddingClient::default())
-        }
-    };
 
     // Build vector store: Chronik if configured, else bail unless
     // ALLOW_IN_MEMORY_VECTOR_STORE=true (code review finding 4.4).
@@ -128,10 +64,19 @@ async fn main() -> anyhow::Result<()> {
     let vector_store: Arc<dyn VectorStore> = match &chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
+            // MCP is read-only (ADR-003) and must not connect to Kafka in
+            // production topologies where Kafka is not reachable from the MCP
+            // container. kafka_broker defaults to None; set CHRONIK_KAFKA_BROKER
+            // only if you explicitly want the MCP process to reach the broker
+            // (e.g. for future write-capable MCP scenarios).
+            let kafka_broker = std::env::var("CHRONIK_KAFKA_BROKER").ok();
             match ChronikClient::new(ChronikConfig {
                 base_url: url.clone(),
                 search_base_url: search_url,
-            }) {
+                kafka_broker,
+            })
+            .await
+            {
                 Ok(client) => {
                     tracing::info!("MCP vector store: Chronik-Stream");
                     Arc::new(ChronikVectorStore::new(client))
@@ -139,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) if allow_in_memory => {
                     tracing::warn!(
                         error = %e,
-                        "⚠️  Chronik init failed — MCP falling back to in-memory vector \
+                        "Chronik init failed — MCP falling back to in-memory vector \
                          store because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
                          DATA WILL BE LOST ON RESTART. Do not use this in production."
                     );
@@ -157,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
         }
         _ if allow_in_memory => {
             tracing::warn!(
-                "⚠️  MCP: CHRONIK_SQL_URL not set — using in-memory vector store \
+                "MCP: CHRONIK_SQL_URL not set — using in-memory vector store \
                  because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
                  DATA WILL BE LOST ON RESTART. Do not use this in production."
             );
@@ -183,11 +128,7 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("API_INTERNAL_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
 
     let metadata_reader = Arc::new(PostgresChunkMetadataReader::new(pool));
-    let search_chunks = Arc::new(SearchChunksUseCase::new(
-        embedding_client,
-        vector_store,
-        metadata_reader,
-    ));
+    let search_chunks = Arc::new(SearchChunksUseCase::new(vector_store, metadata_reader));
 
     let state = Arc::new(McpState {
         search_chunks,
@@ -196,22 +137,7 @@ async fn main() -> anyhow::Result<()> {
         workspace_id,
     });
 
-    // Routes: /health is public; /mcp (JSON-RPC 2.0 MCP protocol) and
-    // /query (internal custom REST alias, kept for the web UI) both
-    // require bearer token.
-    let authed_routes = Router::new()
-        .route("/mcp", post(jsonrpc::handler))
-        .route("/query", post(query::handler))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::bearer_auth,
-        ));
-
-    let app = Router::new()
-        .route("/health", get(health::handler))
-        .merge(authed_routes)
-        .with_state(state)
-        .layer(TraceLayer::new_for_http());
+    let app = build_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "mcp server listening");

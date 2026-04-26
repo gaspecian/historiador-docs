@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use historiador_api::{
     app,
+    infrastructure::backfill::shared_disabled,
     infrastructure::crypto::raw::Cipher,
     infrastructure::llm::probe::HttpLlmProbe,
     infrastructure::prompts::load_agent_prompt,
@@ -63,6 +64,13 @@ async fn main() -> anyhow::Result<()> {
         .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
         .unwrap_or(false);
 
+    // Boot-time vector store backfill. Default OFF so dev/test boots
+    // stay fast; enable in production to reconcile any published
+    // page_versions sitting in Postgres but not yet in Chronik.
+    let backfill_on_boot = std::env::var("BACKFILL_ON_BOOT")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+
     // Agent prompt — loaded once at boot, hashed for deploy auditing.
     let prompt_version = std::env::var("PROMPT_VERSION").unwrap_or_else(|_| "v1".to_string());
     let prompt_dir = std::env::var("PROMPT_DIR")
@@ -114,11 +122,20 @@ async fn main() -> anyhow::Result<()> {
     let (vector_store, chronik): (Arc<dyn VectorStore>, Option<ChronikClient>) = match chronik_url {
         Some(url) if !url.is_empty() => {
             let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
+            // API always needs Kafka. Default to localhost:9092 for dev convenience;
+            // production sets CHRONIK_KAFKA_BROKER explicitly.
+            let kafka_broker = Some(
+                std::env::var("CHRONIK_KAFKA_BROKER")
+                    .unwrap_or_else(|_| "localhost:9092".to_string()),
+            );
 
             match ChronikClient::new(ChronikConfig {
                 base_url: url,
                 search_base_url: search_url,
-            }) {
+                kafka_broker,
+            })
+            .await
+            {
                 Ok(client) => {
                     tracing::info!("vector store: Chronik-Stream");
                     let vs = Arc::new(ChronikVectorStore::new(client.clone()));
@@ -161,6 +178,44 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Ensure Chronik topics exist with the right configuration at boot.
+    // Idempotent: ensure_topic tolerates "already exists" from the broker.
+    if let Some(ref chronik_client) = chronik {
+        if let Some(ref kafka) = chronik_client.kafka_producer {
+            // published-pages: vector + full-text indexing (chunk pipeline).
+            // 1 partition: Chronik 2.4.1 single-broker can't reliably leader-elect
+            // across multiple partitions; the producer always targets partition 0.
+            if let Err(e) = kafka
+                .ensure_topic(
+                    historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
+                    /*partitions*/ 1,
+                    Some(historiador_db::chronik::kafka_producer::published_pages_topic_config()),
+                )
+                .await
+            {
+                tracing::error!(error = %e, "failed to ensure published-pages topic — chunk pipeline writes will fail");
+            }
+
+            // Streaming-only topics (no vector indexing). 1 partition each —
+            // same single-broker constraint as published-pages.
+            for topic in [
+                historiador_db::chronik::producer::topics::PAGE_EVENTS,
+                historiador_db::chronik::producer::topics::MCP_QUERIES,
+                historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
+            ] {
+                if let Err(e) = kafka.ensure_topic(topic, /*partitions*/ 1, None).await {
+                    tracing::warn!(%topic, error = %e, "failed to ensure topic");
+                }
+            }
+        } else {
+            tracing::error!(
+                "API requires CHRONIK_KAFKA_BROKER but kafka_producer is None — \
+                 topic provisioning skipped; chunk pipeline writes will fail"
+            );
+            std::process::exit(1);
+        }
+    }
+
     let llm_probe: Arc<dyn historiador_api::infrastructure::llm::probe::LlmProbe> =
         Arc::new(HttpLlmProbe::default());
     let jwt_secret_bytes = jwt_secret.into_bytes();
@@ -192,13 +247,43 @@ async fn main() -> anyhow::Result<()> {
         editor_v2_enabled,
         agent_prompt,
         editor_metrics: Arc::new(EditorMetrics::new()),
+        backfill_state: shared_disabled(),
     });
 
-    let app = app::build_router(state);
+    let app = app::build_router(state.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "api server listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    // Spawn the boot-time backfill before handing control to the server.
+    // The server still binds and serves traffic immediately; only
+    // /health/ready reflects the in-progress backfill (returns 503
+    // while Running).
+    if backfill_on_boot {
+        if let Some(chronik_client) = state.chronik.clone() {
+            let pool = state.pool.clone();
+            let vector_store = state.vector_store.clone();
+            let backfill_state = state.backfill_state.clone();
+            tokio::spawn(async move {
+                let svc = historiador_api::infrastructure::backfill::BackfillService::new(
+                    pool,
+                    chronik_client,
+                    vector_store,
+                    backfill_state,
+                );
+                svc.run().await;
+            });
+            tracing::info!("backfill: spawned (BACKFILL_ON_BOOT=true)");
+        } else {
+            tracing::warn!(
+                "BACKFILL_ON_BOOT=true but no Chronik client configured — \
+                 skipping backfill (in-memory vector store cannot be probed)"
+            );
+        }
+    } else {
+        tracing::info!("backfill: disabled (BACKFILL_ON_BOOT not set / falsy)");
+    }
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

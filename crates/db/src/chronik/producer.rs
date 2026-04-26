@@ -11,34 +11,22 @@ pub mod topics {
 }
 
 impl ChronikClient {
-    /// Produce a JSON event to a Chronik topic via the REST API.
-    ///
-    /// `key` is used for partitioning (e.g., page_id or workspace_id).
+    /// Produce a JSON event to a Chronik topic via the Kafka wire
+    /// protocol. `key` is used for partitioning.
     pub async fn produce_event(
         &self,
         topic: &str,
         key: &str,
         payload: &serde_json::Value,
     ) -> anyhow::Result<()> {
-        let url = format!("{}/api/v1/topics/{}/produce", self.base_url, topic);
-
-        let resp = self
-            .http
-            .post(&url)
-            .json(&serde_json::json!({
-                "key": key,
-                "value": payload,
-            }))
-            .send()
+        let producer = self
+            .kafka_producer
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("kafka producer not configured (read-only client)"))?;
+        producer
+            .produce(topic, key, payload)
             .await
-            .map_err(|e| anyhow::anyhow!("chronik produce failed: {e}"))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("chronik produce error ({status}): {body}");
-        }
-
+            .map_err(|e| anyhow::anyhow!("chronik produce ({topic}): {e}"))?;
         Ok(())
     }
 

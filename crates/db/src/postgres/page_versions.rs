@@ -118,3 +118,18 @@ pub async fn update_status_all(
         .await?;
     Ok(result.rows_affected())
 }
+
+/// Cross-workspace list of every page_version `id` whose parent page is
+/// `status = 'published'`. Used by the boot-time backfill to compute
+/// the diff against Chronik. Workspace-agnostic — backfill is a global
+/// reconciliation, not a per-tenant action.
+pub async fn list_published_page_version_ids(pool: &PgPool) -> anyhow::Result<Vec<Uuid>> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT pv.id FROM page_versions pv \
+           JOIN pages p ON p.id = pv.page_id \
+          WHERE p.status = 'published'",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}

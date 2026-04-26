@@ -8,5 +8,6 @@ pub mod editor;
 pub mod editor_ws;
 pub mod export;
 pub mod health;
+pub mod health_ready;
 pub mod pages;
 pub mod setup;

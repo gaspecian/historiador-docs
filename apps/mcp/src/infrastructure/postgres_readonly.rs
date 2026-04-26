@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use historiador_db::postgres::mcp_queries;
 
@@ -30,20 +29,23 @@ impl PostgresChunkMetadataReader {
 impl ChunkMetadataReader for PostgresChunkMetadataReader {
     async fn enrich_many(
         &self,
-        page_version_ids: &[Uuid],
-    ) -> Result<HashMap<Uuid, ChunkMetadata>, McpError> {
-        let raw = mcp_queries::enrich_chunk_results(&self.pool, page_version_ids).await?;
+        refs: &[(i32, i64)],
+    ) -> Result<HashMap<(i32, i64), ChunkMetadata>, McpError> {
+        let raw = mcp_queries::enrich_chunk_results(&self.pool, refs).await?;
         Ok(raw
             .into_iter()
-            .map(|(id, m)| {
+            .map(|((p, o), m)| {
                 (
-                    id,
+                    (p, o),
                     ChunkMetadata {
+                        page_id: m.page_id,
+                        page_version_id: m.page_version_id,
+                        collection_id: m.collection_id,
                         page_title: m.page_title,
                         language: m.language,
-                        page_id: m.page_id,
-                        collection_id: m.collection_id,
                         collection_path: m.collection_path,
+                        heading_path: m.heading_path,
+                        content_markdown: m.content_markdown,
                     },
                 )
             })

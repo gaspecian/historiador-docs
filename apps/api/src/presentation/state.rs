@@ -144,7 +144,6 @@ impl UseCases {
         let chunk_pipeline = Arc::new(DefaultChunkPipeline::new(
             deps.pool.clone(),
             deps.vector_store.clone(),
-            deps.embedding_client.clone(),
         ));
 
         // ---- use cases ----

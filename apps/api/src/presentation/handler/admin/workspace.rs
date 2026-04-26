@@ -10,10 +10,7 @@ use std::sync::Arc;
 use axum::{extract::State, Json};
 use historiador_chunker::{chunk_markdown, ChunkConfig};
 use historiador_db::postgres::chunks;
-use historiador_db::vector_store::ChunkEmbedding;
-use historiador_llm::{
-    EmbeddingClient, OllamaEmbeddingClient, OpenAiEmbeddingClient, StubEmbeddingClient,
-};
+use historiador_db::vector_store::ChunkPayload;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
@@ -221,52 +218,15 @@ pub async fn reindex(
         .await?;
     let scheduled = plan.scheduled();
 
-    // Build an embedding client reflecting the **current** workspace
-    // config (not the one baked into AppState at boot) and kick off
-    // the re-embed in the background. Keeping this in the handler
-    // (rather than the use case) lets the use case stay free of
-    // tokio::spawn and LLM-SDK imports.
-    let embedding_client: Arc<dyn EmbeddingClient> = match plan.workspace.llm_provider.as_str() {
-        "ollama" => {
-            let base = plan
-                .workspace
-                .llm_base_url
-                .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
-            Arc::new(OllamaEmbeddingClient::new(
-                &base,
-                &plan.workspace.embedding_model,
-            ))
-        }
-        "openai" | "anthropic" => match plan.workspace.llm_api_key_encrypted.as_deref() {
-            Some(encrypted) => {
-                let key = state
-                    .cipher
-                    .decrypt(encrypted)
-                    .map_err(ApiError::Internal)?;
-                Arc::new(OpenAiEmbeddingClient::with_model(
-                    &key,
-                    &plan.workspace.embedding_model,
-                    1536,
-                ))
-            }
-            None => Arc::new(StubEmbeddingClient::default()),
-        },
-        _ => Arc::new(StubEmbeddingClient::default()),
-    };
-
+    // Kick off the re-index in the background. Chronik embeds server-side,
+    // so no embedding client is needed here. Keeping tokio::spawn in the
+    // handler (rather than the use case) lets the use case stay free of
+    // runtime imports.
     let pool = state.pool.clone();
     let vector_store = state.vector_store.clone();
     tokio::spawn(async move {
         for version in plan.versions {
-            if let Err(e) = run_reindex(
-                &pool,
-                vector_store.as_ref(),
-                embedding_client.as_ref(),
-                version,
-            )
-            .await
-            {
+            if let Err(e) = run_reindex(&pool, vector_store.as_ref(), version).await {
                 tracing::error!(error = %e, "re-index pipeline failed for version");
             }
         }
@@ -276,26 +236,21 @@ pub async fn reindex(
     Ok(Json(ReindexResponse { scheduled }))
 }
 
-/// Per-version reindex: delete old chunks from Postgres + vector store,
-/// chunk the markdown, generate embeddings, upsert. Inlined here
-/// instead of going through the `ChunkPipeline` port because the
-/// admin-supplied embedding client is constructed per-call from the
-/// live workspace row, not the one baked into AppState.
+/// Per-version reindex: delete old Postgres chunk rows, chunk the
+/// markdown, produce to Chronik, and store the back-pointers. Chronik
+/// embeds server-side — no embedding client needed.
+///
+/// Orphaned Chronik records from the previous index are filtered out
+/// by MCP enrichment (no matching Postgres row).
 async fn run_reindex(
     pool: &sqlx::PgPool,
     vector_store: &dyn historiador_db::vector_store::VectorStore,
-    embedding_client: &dyn EmbeddingClient,
     version: crate::domain::entity::PageVersion,
 ) -> anyhow::Result<()> {
     let page_version_id = version.id;
-    let existing = chunks::find_by_page_version(pool, page_version_id).await?;
-    if !existing.is_empty() {
-        vector_store
-            .delete_by_page_version(&page_version_id.to_string())
-            .await
-            .map_err(|e| anyhow::anyhow!("vector store delete failed: {e}"))?;
-        chunks::delete_by_page_version(pool, page_version_id).await?;
-    }
+
+    // Full reindex: unconditionally delete existing Postgres rows.
+    chunks::delete_by_page_version(pool, page_version_id).await?;
 
     let config = ChunkConfig::default();
     let raw_chunks = match chunk_markdown(&version.content_markdown, &config) {
@@ -306,42 +261,35 @@ async fn run_reindex(
         return Ok(());
     }
 
-    let texts: Vec<String> = raw_chunks.iter().map(|c| c.content.clone()).collect();
-    let embeddings = embedding_client
-        .embed(&texts)
-        .await
-        .map_err(|e| anyhow::anyhow!("embedding failed: {e}"))?;
-
-    let chunk_embeddings: Vec<ChunkEmbedding> = raw_chunks
+    let payloads: Vec<ChunkPayload> = raw_chunks
         .iter()
-        .zip(embeddings.iter())
-        .map(|(chunk, emb)| ChunkEmbedding {
+        .map(|c| ChunkPayload {
             page_version_id: page_version_id.to_string(),
-            section_index: chunk.section_index as i32,
-            heading_path: chunk.heading_path.clone(),
-            content: chunk.content.clone(),
+            section_index: c.section_index as i32,
+            heading_path: c.heading_path.clone(),
+            content: c.content.clone(),
             language: version.language.as_str().to_string(),
-            token_count: chunk.token_count as i32,
-            embedding: emb.vector.clone(),
+            token_count: c.token_count as i32,
         })
         .collect();
 
-    let vexfs_refs = vector_store
-        .upsert_chunks(chunk_embeddings)
+    let produced = vector_store
+        .produce_chunks(payloads)
         .await
-        .map_err(|e| anyhow::anyhow!("vector store upsert failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("chronik produce failed: {e}"))?;
 
     let new_chunks: Vec<chunks::NewChunk> = raw_chunks
         .iter()
-        .zip(vexfs_refs.iter())
-        .map(|(chunk, vexfs_ref)| chunks::NewChunk {
+        .zip(produced.iter())
+        .map(|(chunk, rec)| chunks::NewChunk {
             page_version_id,
             heading_path: chunk.heading_path.clone(),
             section_index: chunk.section_index as i32,
             token_count: chunk.token_count as i32,
             oversized: chunk.oversized,
             language: version.language.as_str().to_string(),
-            vexfs_ref: vexfs_ref.clone(),
+            chronik_partition: rec.partition,
+            chronik_offset: rec.offset,
         })
         .collect();
 

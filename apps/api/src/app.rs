@@ -11,7 +11,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::presentation::handler::health;
+use crate::presentation::handler::{health, health_ready};
 use crate::presentation::middleware::setup_gate::setup_gate;
 use crate::presentation::openapi::ApiDoc;
 use crate::routes;
@@ -20,6 +20,7 @@ use crate::state::AppState;
 pub fn build_router(state: Arc<AppState>) -> Router {
     let api_routes = Router::new()
         .route("/health", get(health::handler))
+        .route("/health/ready", get(health_ready::handler))
         .nest("/auth", routes::auth_router())
         .nest("/setup", routes::setup_router())
         .nest("/pages", routes::pages_router())

@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use historiador_api::{
     app,
+    infrastructure::backfill::shared_disabled,
     infrastructure::crypto::raw::Cipher,
     infrastructure::llm::probe::{LlmProbe, StubProbe},
     infrastructure::prompts::LoadedPrompt,
@@ -65,6 +66,7 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
         editor_v2_enabled: false,
         agent_prompt: Arc::new(LoadedPrompt::for_test()),
         editor_metrics: Arc::new(EditorMetrics::new()),
+        backfill_state: shared_disabled(),
     })
 }
 

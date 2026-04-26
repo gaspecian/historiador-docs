@@ -447,6 +447,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /health/ready:
+    get:
+      tags:
+      - system
+      operationId: handler
+      responses:
+        '200':
+          description: service is ready (or backfill disabled / completed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: backfill is running or failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
   /pages:
     get:
       tags:
@@ -1470,6 +1488,30 @@ components:
           format: int64
         query_text:
           type: string
+    ReadyResponse:
+      type: object
+      required:
+      - status
+      - backfill
+      properties:
+        backfill:
+          type: string
+        failed:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        reason:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+        synced:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
     RefreshRequest:
       type: object
       required:

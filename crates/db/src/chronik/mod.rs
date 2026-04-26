@@ -1,8 +1,10 @@
-//! Chronik-Stream client — event streaming, vector search, full-text
-//! search, and SQL analytics (ADR-007).
+//! Chronik-Stream client — Kafka writes (port 9092), REST reads
+//! (search + SQL on port 6092). ADR-007.
 //!
-//! Uses Chronik's REST API exclusively (no Kafka wire protocol) to
-//! keep the dependency footprint minimal — only `reqwest` is needed.
+//! Chronik 2.4.1 has no HTTP write endpoint. Producers must use the
+//! Kafka wire protocol; the REST surface is read-only (search,
+//! analytics SQL, health). See `kafka_producer` for the write path
+//! and `search` / `analytics` for the read paths.
 //!
 //! # Topic Architecture
 //!
@@ -14,40 +16,63 @@
 //! | `page-events`          | Streaming + SQL    | Audit log; webhook notifications   |
 
 pub mod analytics;
+pub mod kafka_producer;
 pub mod producer;
 pub mod search;
 
+use std::sync::Arc;
+
 use reqwest::Client;
 
-/// Unified Chronik-Stream client. Uses the REST API for all
-/// operations: event production, vector/full-text search, and SQL
-/// analytics queries.
+use crate::chronik::kafka_producer::KafkaProducer;
+
+/// Unified Chronik-Stream client. REST handles search + SQL; Kafka
+/// handles writes (Chronik 2.4.1 has no HTTP write path).
+///
+/// `kafka_producer` is `None` when the client is constructed without a
+/// Kafka broker (e.g. the MCP binary, which is read-only per ADR-003).
+/// Callers that require write access (chunk pipeline, page-events) must
+/// obtain the producer via `.kafka_producer.as_ref()`.
 #[derive(Clone)]
 pub struct ChronikClient {
-    /// Base URL for the Chronik REST API (e.g., `http://localhost:6092`).
+    /// REST base URL (search + SQL). E.g. `http://localhost:6092`.
     pub base_url: String,
-    /// Base URL for Chronik search endpoints (vector + full-text).
-    /// May differ from `base_url` in multi-port setups.
+    /// Search base URL — same host in single-port deploys, different
+    /// host in split deploys.
     pub search_base_url: String,
-    /// Shared HTTP client for all REST API calls.
+    /// HTTP client for all REST API calls.
     pub http: Client,
+    /// Kafka producer for writes (publish, page-events, etc.).
+    /// `None` when constructed without a broker — read-only deployments
+    /// such as the MCP server never need this.
+    pub kafka_producer: Option<Arc<KafkaProducer>>,
 }
 
-/// Configuration for building a [`ChronikClient`].
 pub struct ChronikConfig {
-    /// Chronik REST API base URL (serves events + SQL analytics).
     pub base_url: String,
-    /// Chronik search API base URL (vector + full-text).
     pub search_base_url: String,
+    /// Kafka broker `host:port`. `None` means "no Kafka" — the client
+    /// will skip `KafkaProducer::connect` and set `kafka_producer = None`.
+    /// Read-only services (e.g. MCP) should pass `None` here.
+    pub kafka_broker: Option<String>,
 }
 
 impl ChronikClient {
-    /// Create a new Chronik client from configuration.
-    pub fn new(config: ChronikConfig) -> anyhow::Result<Self> {
+    pub async fn new(config: ChronikConfig) -> anyhow::Result<Self> {
+        let kafka_producer = match config.kafka_broker {
+            Some(ref broker) => {
+                let kafka = KafkaProducer::connect(broker)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("connect to chronik kafka {broker}: {e}"))?;
+                Some(Arc::new(kafka))
+            }
+            None => None,
+        };
         Ok(Self {
             base_url: config.base_url,
             search_base_url: config.search_base_url,
             http: Client::new(),
+            kafka_producer,
         })
     }
 }

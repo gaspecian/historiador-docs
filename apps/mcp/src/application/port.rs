@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use super::McpError;
+use crate::application::McpError;
 
 /// Enriched metadata for a chunk, used to build MCP query responses.
 /// Full shape preserved even though some fields are unused today — the
@@ -17,19 +17,27 @@ use super::McpError;
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ChunkMetadata {
+    pub page_id: Uuid,
+    pub page_version_id: Uuid,
+    pub collection_id: Option<Uuid>,
     pub page_title: String,
     pub language: String,
-    pub page_id: Uuid,
-    pub collection_id: Option<Uuid>,
     pub collection_path: Vec<String>,
+    /// Heading path from the chunk record itself.
+    pub heading_path: Vec<String>,
+    /// Authoritative chunk content from `page_versions.content_markdown`
+    /// (Postgres). Chronik's `text_preview` is truncated and not used
+    /// for the response body.
+    pub content_markdown: String,
 }
 
 #[async_trait]
 pub trait ChunkMetadataReader: Send + Sync {
-    /// Given a batch of `page_version_id`s, return enriched metadata
-    /// for each. Missing IDs are simply absent from the returned map.
+    /// Look up enrichment for a list of `(partition, offset)` pairs.
+    /// Pairs missing from the map should be skipped by the caller —
+    /// they are orphans from prior reindex generations.
     async fn enrich_many(
         &self,
-        page_version_ids: &[Uuid],
-    ) -> Result<HashMap<Uuid, ChunkMetadata>, McpError>;
+        refs: &[(i32, i64)],
+    ) -> Result<HashMap<(i32, i64), ChunkMetadata>, McpError>;
 }
