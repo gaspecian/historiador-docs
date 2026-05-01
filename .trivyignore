@@ -1,0 +1,16 @@
+# .trivyignore — CVE suppression list for the Trivy gate in release.yml.
+#
+# Trivy fails the release workflow on HIGH/CRITICAL CVEs. This file is the
+# escape valve for cases where an upstream image carries a CVE that has no
+# fix yet, where the affected code path is provably unreachable, or where
+# the vulnerability is otherwise an accepted known limitation.
+#
+# Format: one CVE id per line. Optional inline comment after `#`.
+# Example:
+#   CVE-2024-12345  # affects libfoo; we don't link libfoo. 2026-04-25 — gabriel
+#
+# RULES:
+# 1. Every entry MUST have a one-line justification (CVE id, reason, date,
+#    reviewer). No silent suppressions.
+# 2. Re-evaluate suppressions before each stable release; remove entries
+#    where an upstream fix is now available.
