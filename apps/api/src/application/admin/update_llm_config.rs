@@ -61,7 +61,7 @@ impl UpdateLlmConfigUseCase {
         // Only probe when the admin rotates the secret.
         if !cmd.llm_api_key.is_empty() {
             self.probe
-                .probe(cmd.llm_provider, &cmd.llm_api_key)
+                .probe(cmd.llm_provider, &cmd.llm_api_key, None)
                 .await
                 .map_err(|e| {
                     ApplicationError::Domain(DomainError::Validation(format!("LLM rejected: {e}")))

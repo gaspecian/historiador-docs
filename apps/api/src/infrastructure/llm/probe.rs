@@ -39,9 +39,14 @@ impl LlmProvider {
 #[async_trait]
 pub trait LlmProbe: Send + Sync + 'static {
     /// Make a minimal authenticated call against the provider.
-    /// Returns `Ok(())` if the key is accepted, `Err` otherwise.
-    /// Network errors and HTTP errors both map to `Err`.
-    async fn probe(&self, provider: LlmProvider, api_key: &str) -> anyhow::Result<()>;
+    /// `base_url` is honored for `OpenAi` only (Anthropic + Ollama
+    /// have provider-specific URL handling already; `Test` ignores it).
+    async fn probe(
+        &self,
+        provider: LlmProvider,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> anyhow::Result<()>;
 }
 
 /// Real probe — issues one HTTP request per call. No retries; a
@@ -63,22 +68,32 @@ impl Default for HttpLlmProbe {
 
 #[async_trait]
 impl LlmProbe for HttpLlmProbe {
-    async fn probe(&self, provider: LlmProvider, api_key: &str) -> anyhow::Result<()> {
+    async fn probe(
+        &self,
+        provider: LlmProvider,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> anyhow::Result<()> {
         match provider {
             LlmProvider::OpenAi => {
-                // GET /v1/models — cheapest call that requires auth.
-                let resp = self
-                    .client
-                    .get("https://api.openai.com/v1/models")
-                    .bearer_auth(api_key)
-                    .send()
-                    .await?;
-                if !resp.status().is_success() {
-                    anyhow::bail!(
-                        "openai rejected the api key (status {})",
-                        resp.status().as_u16()
-                    );
-                }
+                use historiador_llm::{
+                    EmbeddingClient, OpenAiEmbeddingClient, OpenAiEmbeddingConfig,
+                };
+                let key = if api_key.is_empty() {
+                    None
+                } else {
+                    Some(api_key)
+                };
+                let client = OpenAiEmbeddingClient::from_config(OpenAiEmbeddingConfig {
+                    api_key: key,
+                    base_url,
+                    model: "text-embedding-3-small",
+                    dim: 1536,
+                });
+                client
+                    .embed(&["ping".to_string()])
+                    .await
+                    .map_err(|e| anyhow::anyhow!("openai rejected: {e}"))?;
                 Ok(())
             }
             LlmProvider::Anthropic => {
@@ -141,7 +156,12 @@ pub struct StubProbe;
 
 #[async_trait]
 impl LlmProbe for StubProbe {
-    async fn probe(&self, _provider: LlmProvider, _api_key: &str) -> anyhow::Result<()> {
+    async fn probe(
+        &self,
+        _provider: LlmProvider,
+        _api_key: &str,
+        _base_url: Option<&str>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

@@ -61,7 +61,7 @@ impl InitializeInstallationUseCase {
         // Probe BEFORE touching the DB so we never hold a transaction
         // open across a network call.
         self.llm_probe
-            .probe(cmd.llm_provider, &cmd.llm_api_key)
+            .probe(cmd.llm_provider, &cmd.llm_api_key, None)
             .await
             .map_err(|e| {
                 ApplicationError::Domain(crate::domain::error::DomainError::Validation(format!(

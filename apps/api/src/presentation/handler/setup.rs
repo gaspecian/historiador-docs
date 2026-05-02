@@ -151,7 +151,7 @@ pub async fn probe(
     let result = state
         .use_cases
         .probe_llm
-        .execute(body.llm_provider, &body.llm_api_key)
+        .execute(body.llm_provider, &body.llm_api_key, None)
         .await?;
     Ok(Json(ProbeResponse {
         success: result.success,

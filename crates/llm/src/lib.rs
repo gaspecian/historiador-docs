@@ -24,7 +24,10 @@ pub mod tool_calling;
 // Re-export the most-used types at crate root for convenience.
 pub use anthropic::AnthropicTextGenerationClient;
 pub use ollama::{list_models as list_ollama_models, OllamaEmbeddingClient, OllamaTextClient};
-pub use openai::{OpenAiEmbeddingClient, OpenAiTextGenerationClient};
+pub use openai::{
+    OpenAiEmbeddingClient, OpenAiEmbeddingConfig, OpenAiGenerationConfig,
+    OpenAiTextGenerationClient,
+};
 pub use openai_compat::OpenAiCompatConfig;
 pub use stub::{StubEmbeddingClient, StubTextGenerationClient, StubToolCallingClient};
 pub use text_generation::{TextGenerationClient, TextStream};
