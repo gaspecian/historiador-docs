@@ -91,12 +91,20 @@ mod tests {
     #[test]
     fn omits_authorization_when_no_key() {
         let cfg = OpenAiCompatConfig::new(Some("http://localhost:8000/v1"), None);
-        assert!(cfg.headers().get(AUTHORIZATION).is_none());
+        assert!(
+            cfg.headers().is_empty(),
+            "expected no headers, got {:?}",
+            cfg.headers()
+        );
     }
 
     #[test]
     fn omits_authorization_when_empty_key() {
         let cfg = OpenAiCompatConfig::new(Some("http://localhost:8000/v1"), Some(""));
-        assert!(cfg.headers().get(AUTHORIZATION).is_none());
+        assert!(
+            cfg.headers().is_empty(),
+            "expected no headers, got {:?}",
+            cfg.headers()
+        );
     }
 }
