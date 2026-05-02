@@ -81,6 +81,7 @@ pub async fn init(
             workspace_name: body.workspace_name,
             llm_provider: body.llm_provider,
             llm_api_key: body.llm_api_key,
+            base_url: None,
             generation_model: body.generation_model,
             embedding_model: body.embedding_model,
             languages: body.languages,

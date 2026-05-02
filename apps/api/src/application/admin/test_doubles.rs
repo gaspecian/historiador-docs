@@ -22,11 +22,13 @@ use crate::domain::value::Language;
 
 // ---------- workspace ----------
 
-/// Captures the most recent `update_llm_config` patch and returns a
-/// preconfigured workspace from `find_by_id`.
+/// Captures the most recent `update_llm_config` patch and the most
+/// recent `initialize` input, and returns a preconfigured workspace
+/// from `find_by_id` / `find_singleton`.
 pub(crate) struct InMemoryWorkspaceRepository {
     workspace: Workspace,
     pub last_patch: Mutex<Option<LlmConfigPatch>>,
+    pub last_init: Mutex<Option<InitializeInstallation>>,
 }
 
 impl InMemoryWorkspaceRepository {
@@ -34,6 +36,7 @@ impl InMemoryWorkspaceRepository {
         Self {
             workspace,
             last_patch: Mutex::new(None),
+            last_init: Mutex::new(None),
         }
     }
 }
@@ -50,9 +53,14 @@ impl WorkspaceRepository for InMemoryWorkspaceRepository {
 
     async fn initialize(
         &self,
-        _input: InitializeInstallation,
+        input: InitializeInstallation,
     ) -> Result<InstallationBootstrapped, ApplicationError> {
-        unimplemented!("not used by these tests")
+        let workspace_id = self.workspace.id;
+        *self.last_init.lock().unwrap() = Some(input);
+        Ok(InstallationBootstrapped {
+            workspace_id,
+            admin_user_id: Uuid::new_v4(),
+        })
     }
 
     async fn update_mcp_token(
