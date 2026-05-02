@@ -51,6 +51,7 @@ export default function SetupPage() {
   const [workspaceName, setWorkspaceName] = useState("");
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("openai");
   const [llmApiKey, setLlmApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
   const [generationModel, setGenerationModel] = useState(
     DEFAULT_GEN_MODEL.openai,
@@ -75,6 +76,7 @@ export default function SetupPage() {
     setOllamaModelsError(null);
     setGenerationModel(DEFAULT_GEN_MODEL[p]);
     setEmbeddingModel(DEFAULT_EMBED_MODEL[p]);
+    if (p !== "openai") setBaseUrl("");
   };
 
   const canGoNext = (): boolean => {
@@ -130,6 +132,10 @@ export default function SetupPage() {
         body: JSON.stringify({
           llm_provider: llmProvider,
           llm_api_key: llmApiKey,
+          base_url:
+            llmProvider === "openai" && baseUrl.trim() !== ""
+              ? baseUrl.trim()
+              : undefined,
         }),
       });
       const data: ProbeResponse = await res.json();
@@ -182,6 +188,10 @@ export default function SetupPage() {
           workspace_name: workspaceName,
           llm_provider: llmProvider,
           llm_api_key: llmProvider === "test" ? "test" : llmApiKey,
+          base_url:
+            llmProvider === "openai" && baseUrl.trim() !== ""
+              ? baseUrl.trim()
+              : undefined,
           generation_model: generationModel || undefined,
           embedding_model: embeddingModel || undefined,
           languages: [DEFAULT_PRIMARY_LANGUAGE],
@@ -345,6 +355,18 @@ export default function SetupPage() {
                         : "sk-..."
                     }
                   />
+                  {llmProvider === "openai" && (
+                    <Input
+                      label="Base URL (opcional)"
+                      type="url"
+                      value={baseUrl}
+                      onChange={(e) => {
+                        setBaseUrl(e.target.value);
+                        setProbeResult(null);
+                      }}
+                      placeholder="https://api.openai.com/v1 (padrão)"
+                    />
+                  )}
                   <Button
                     variant="secondary"
                     onClick={testConnection}
