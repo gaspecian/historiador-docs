@@ -1,7 +1,6 @@
 //! OpenAI provider implementations for embeddings and text generation.
 
 use async_openai::{
-    config::OpenAIConfig,
     types::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
@@ -101,9 +100,17 @@ impl EmbeddingClient for OpenAiEmbeddingClient {
     }
 }
 
-/// OpenAI text generation client using chat completions.
+/// Builder shape for [`OpenAiTextGenerationClient::from_config`]. Set
+/// `base_url = None` to use the canonical OpenAI endpoint and
+/// `api_key = None` to omit the `Authorization` header.
+pub struct OpenAiGenerationConfig<'a> {
+    pub api_key: Option<&'a str>,
+    pub base_url: Option<&'a str>,
+    pub model: &'a str,
+}
+
 pub struct OpenAiTextGenerationClient {
-    client: Client<OpenAIConfig>,
+    client: Client<OpenAiCompatConfig>,
     model: String,
 }
 
@@ -113,10 +120,18 @@ impl OpenAiTextGenerationClient {
     }
 
     pub fn with_model(api_key: &str, model: &str) -> Self {
-        let config = OpenAIConfig::new().with_api_key(api_key);
+        Self::from_config(OpenAiGenerationConfig {
+            api_key: Some(api_key),
+            base_url: None,
+            model,
+        })
+    }
+
+    pub fn from_config(cfg: OpenAiGenerationConfig<'_>) -> Self {
+        let config = OpenAiCompatConfig::new(cfg.base_url, cfg.api_key);
         Self {
             client: Client::with_config(config),
-            model: model.to_string(),
+            model: cfg.model.to_string(),
         }
     }
 }
@@ -309,6 +324,54 @@ mod tests {
 
         let received = server.received_requests().await.unwrap();
         assert_eq!(received.len(), 1);
+        assert!(
+            received[0].headers.get("authorization").is_none(),
+            "no Authorization header should be sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_with_custom_base_url_and_no_auth() {
+        use crate::text_generation::TextGenerationClient;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "x",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "any",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiTextGenerationClient::from_config(OpenAiGenerationConfig {
+            api_key: None,
+            base_url: Some(&server.uri()),
+            model: "any",
+        });
+        let mut stream = client
+            .generate_text_stream("be brief", "hi")
+            .await
+            .expect("stream ok");
+        // The chat stream is lazy — polling is what fires the HTTP
+        // request. Wiremock returns JSON (not SSE), so the body parse
+        // will error, but we only care that the request reached the
+        // server with the right URL + no Authorization header.
+        let _ = stream.next().await;
+
+        let received = server.received_requests().await.unwrap();
+        assert!(
+            received.iter().any(|r| r.url.path() == "/chat/completions"),
+            "expected POST /chat/completions"
+        );
         assert!(
             received[0].headers.get("authorization").is_none(),
             "no Authorization header should be sent"
