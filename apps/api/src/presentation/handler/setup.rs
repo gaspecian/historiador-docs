@@ -27,7 +27,12 @@ pub struct SetupRequest {
 
     pub llm_provider: LlmProvider,
 
-    #[validate(length(min = 1, max = 512))]
+    /// Empty allowed for the OpenAI provider when `base_url` is set
+    /// (self-hosted no-auth endpoints). The use case rejects the
+    /// no-URL + no-key combo for OpenAI; non-OpenAI providers still
+    /// require non-empty values where applicable.
+    #[validate(length(max = 512))]
+    #[serde(default)]
     pub llm_api_key: String,
 
     /// Optional OpenAI-compatible base URL (e.g.

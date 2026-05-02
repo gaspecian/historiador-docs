@@ -85,7 +85,14 @@ export default function SetupPage() {
         return workspaceName.trim().length > 0;
       case "llm":
         if (llmProvider === "test") return true;
-        if (!llmApiKey.trim()) return false;
+        // OpenAI accepts either an API key (canonical/Bearer auth) or
+        // a custom base URL (self-hosted no-auth endpoints). Non-OpenAI
+        // providers always require the key/URL field.
+        if (llmProvider === "openai") {
+          if (!llmApiKey.trim() && !baseUrl.trim()) return false;
+        } else if (!llmApiKey.trim()) {
+          return false;
+        }
         if (llmProvider === "ollama") {
           // Require a successful probe and both models picked.
           return (
@@ -370,7 +377,11 @@ export default function SetupPage() {
                   <Button
                     variant="secondary"
                     onClick={testConnection}
-                    disabled={loading || !llmApiKey.trim()}
+                    disabled={
+                      loading ||
+                      (!llmApiKey.trim() &&
+                        !(llmProvider === "openai" && baseUrl.trim()))
+                    }
                   >
                     {loading ? (
                       <>
