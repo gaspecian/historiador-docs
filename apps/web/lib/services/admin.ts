@@ -44,6 +44,7 @@ export async function regenerateToken(): Promise<RegenerateTokenResponse> {
 export interface LlmPatchBody {
   llm_provider: "openai" | "anthropic" | "ollama" | "test";
   llm_api_key?: string;
+  base_url?: string;
   generation_model: string;
   embedding_model: string;
 }
