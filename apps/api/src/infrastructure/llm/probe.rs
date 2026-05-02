@@ -165,3 +165,79 @@ impl LlmProbe for StubProbe {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn openai_probe_hits_supplied_base_url_with_bearer() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [{"object": "embedding", "index": 0, "embedding": [0.0]}],
+                "model": "text-embedding-3-small",
+                "usage": {"prompt_tokens": 1, "total_tokens": 1}
+            })))
+            .mount(&server)
+            .await;
+
+        let probe = HttpLlmProbe::default();
+        probe
+            .probe(LlmProvider::OpenAi, "secret-key", Some(&server.uri()))
+            .await
+            .expect("probe ok");
+
+        let recv = server.received_requests().await.unwrap();
+        assert_eq!(recv.len(), 1);
+        assert_eq!(
+            recv[0].headers.get("authorization").unwrap(),
+            "Bearer secret-key"
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_probe_no_auth_when_key_empty_and_url_set() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [{"object": "embedding", "index": 0, "embedding": [0.0]}],
+                "model": "text-embedding-3-small",
+                "usage": {"prompt_tokens": 1, "total_tokens": 1}
+            })))
+            .mount(&server)
+            .await;
+
+        let probe = HttpLlmProbe::default();
+        probe
+            .probe(LlmProvider::OpenAi, "", Some(&server.uri()))
+            .await
+            .expect("probe ok");
+
+        let recv = server.received_requests().await.unwrap();
+        assert!(recv[0].headers.get("authorization").is_none());
+    }
+
+    #[tokio::test]
+    async fn openai_probe_surfaces_4xx_as_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+
+        let probe = HttpLlmProbe::default();
+        let err = probe
+            .probe(LlmProvider::OpenAi, "wrong-key", Some(&server.uri()))
+            .await
+            .expect_err("expected error");
+        assert!(format!("{err}").to_lowercase().contains("openai rejected"));
+    }
+}

@@ -67,3 +67,6 @@ futures.workspace = true
 async-stream.workspace = true
 tokio-util.workspace = true
 async_zip.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
