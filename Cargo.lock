@@ -1295,6 +1295,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "validator",
+ "wiremock",
 ]
 
 [[package]]
