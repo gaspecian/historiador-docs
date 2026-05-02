@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI custom base URL.** The OpenAI provider now accepts an
+  optional custom base URL and an optional API key, enabling
+  self-hosted OpenAI-compatible endpoints (vLLM, LiteLLM, OpenRouter,
+  LM Studio, Together, Fireworks, Azure-via-proxy). Configured
+  per-workspace via the setup wizard or admin LLM config form;
+  when the URL is set and the key is blank, no `Authorization`
+  header is sent (for unauthenticated self-hosted servers).
+
 ## [1.0.0] — 2026-05-01
 
 First public release. Self-hosted documentation platform with a built-in
