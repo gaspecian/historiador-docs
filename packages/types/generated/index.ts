@@ -664,12 +664,20 @@ export interface components {
             instruction: string;
         };
         LlmPatchRequest: {
+            /**
+             * @description Optional OpenAI-compatible base URL (e.g.
+             *     `https://litellm.example/v1`). Persisted verbatim into
+             *     `workspaces.llm_base_url`. When set together with an empty
+             *     `llm_api_key`, no Authorization header is sent.
+             */
+            base_url?: string | null;
             embedding_model: string;
             generation_model: string;
             /**
              * @description API key for cloud providers or base URL for Ollama. Leave
              *     empty to keep the existing secret (useful when editing only
-             *     the model names).
+             *     the model names) or — for the OpenAI provider with a custom
+             *     `base_url` — to mark the endpoint as unauthenticated.
              */
             llm_api_key?: string;
             llm_provider: components["schemas"]["LlmProvider"];
@@ -750,6 +758,12 @@ export interface components {
             workspace_languages: string[];
         };
         ProbeRequest: {
+            /**
+             * @description Optional OpenAI-compatible base URL to probe against. Same
+             *     validation rules as the persisted field on
+             *     [`SetupRequest`]/[`LlmPatchRequest`].
+             */
+            base_url?: string | null;
             llm_api_key?: string;
             llm_provider: components["schemas"]["LlmProvider"];
         };
@@ -800,6 +814,13 @@ export interface components {
         SetupRequest: {
             admin_email: string;
             admin_password: string;
+            /**
+             * @description Optional OpenAI-compatible base URL (e.g.
+             *     `https://litellm.example/v1`). Persisted verbatim into
+             *     `workspaces.llm_base_url`. When set together with an empty
+             *     `llm_api_key`, no Authorization header is sent.
+             */
+            base_url?: string | null;
             /** @description Model used for chunk embeddings during publish. */
             embedding_model?: string | null;
             /**
