@@ -69,10 +69,7 @@ mod tests {
     fn defaults_to_openai_when_base_url_none() {
         let cfg = OpenAiCompatConfig::new(None, Some("sk-test"));
         assert_eq!(cfg.api_base(), "https://api.openai.com/v1");
-        assert_eq!(
-            cfg.headers().get(AUTHORIZATION).unwrap(),
-            "Bearer sk-test"
-        );
+        assert_eq!(cfg.headers().get(AUTHORIZATION).unwrap(), "Bearer sk-test");
     }
 
     #[test]

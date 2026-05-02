@@ -17,6 +17,10 @@ use crate::text_generation::{TextGenerationClient, TextStream};
 use crate::tool_calling::Turn;
 use crate::{Embedding, EmbeddingClient, LlmError};
 
+/// Builder shape for [`OpenAiEmbeddingClient::from_config`]. Set
+/// `base_url = None` to use the canonical OpenAI endpoint and
+/// `api_key = None` to omit the `Authorization` header (for
+/// unauthenticated self-hosted servers).
 pub struct OpenAiEmbeddingConfig<'a> {
     pub api_key: Option<&'a str>,
     pub base_url: Option<&'a str>,
