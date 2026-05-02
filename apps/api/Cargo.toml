@@ -59,6 +59,7 @@ rand.workspace = true
 sha2.workspace = true
 regex.workspace = true
 reqwest.workspace = true
+url = "2"
 async-trait.workspace = true
 uuid.workspace = true
 chrono.workspace = true

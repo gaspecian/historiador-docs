@@ -13,6 +13,7 @@ pub mod handler;
 pub mod middleware;
 pub mod openapi;
 pub mod state;
+pub mod validation;
 
 pub use error::ApiError;
 pub use openapi::ApiDoc;

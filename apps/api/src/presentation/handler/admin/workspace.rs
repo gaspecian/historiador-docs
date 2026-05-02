@@ -127,10 +127,21 @@ pub struct LlmPatchRequest {
     pub llm_provider: LlmProvider,
     /// API key for cloud providers or base URL for Ollama. Leave
     /// empty to keep the existing secret (useful when editing only
-    /// the model names).
+    /// the model names) or — for the OpenAI provider with a custom
+    /// `base_url` — to mark the endpoint as unauthenticated.
     #[validate(length(max = 512))]
     #[serde(default)]
     pub llm_api_key: String,
+
+    /// Optional OpenAI-compatible base URL (e.g.
+    /// `https://litellm.example/v1`). Persisted verbatim into
+    /// `workspaces.llm_base_url`. When set together with an empty
+    /// `llm_api_key`, no Authorization header is sent.
+    #[validate(length(max = 512))]
+    #[validate(custom(function = "crate::presentation::validation::validate_llm_base_url"))]
+    #[serde(default)]
+    pub base_url: Option<String>,
+
     #[validate(length(min = 1, max = 128))]
     pub generation_model: String,
     #[validate(length(min = 1, max = 128))]
@@ -174,7 +185,7 @@ pub async fn update_llm_config(
             UpdateLlmConfigCommand {
                 llm_provider: body.llm_provider,
                 llm_api_key: body.llm_api_key,
-                base_url: None,
+                base_url: body.base_url,
                 generation_model: body.generation_model,
                 embedding_model: body.embedding_model,
             },

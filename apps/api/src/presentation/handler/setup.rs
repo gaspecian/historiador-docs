@@ -30,6 +30,15 @@ pub struct SetupRequest {
     #[validate(length(min = 1, max = 512))]
     pub llm_api_key: String,
 
+    /// Optional OpenAI-compatible base URL (e.g.
+    /// `https://litellm.example/v1`). Persisted verbatim into
+    /// `workspaces.llm_base_url`. When set together with an empty
+    /// `llm_api_key`, no Authorization header is sent.
+    #[validate(length(max = 512))]
+    #[validate(custom(function = "crate::presentation::validation::validate_llm_base_url"))]
+    #[serde(default)]
+    pub base_url: Option<String>,
+
     /// Model used for AI text generation (chat / editor). Optional for
     /// cloud providers (falls back to sensible defaults); required for
     /// Ollama because models are user-managed local pulls.
@@ -81,7 +90,7 @@ pub async fn init(
             workspace_name: body.workspace_name,
             llm_provider: body.llm_provider,
             llm_api_key: body.llm_api_key,
-            base_url: None,
+            base_url: body.base_url,
             generation_model: body.generation_model,
             embedding_model: body.embedding_model,
             languages: body.languages,
@@ -123,11 +132,20 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Json<SetupStatusRespo
 
 // ---- probe (test connection without completing setup) ----
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct ProbeRequest {
     pub llm_provider: LlmProvider,
     #[serde(default)]
+    #[validate(length(max = 512))]
     pub llm_api_key: String,
+
+    /// Optional OpenAI-compatible base URL to probe against. Same
+    /// validation rules as the persisted field on
+    /// [`SetupRequest`]/[`LlmPatchRequest`].
+    #[validate(length(max = 512))]
+    #[validate(custom(function = "crate::presentation::validation::validate_llm_base_url"))]
+    #[serde(default)]
+    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -149,10 +167,17 @@ pub async fn probe(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ProbeRequest>,
 ) -> Result<Json<ProbeResponse>, ApiError> {
+    body.validate()
+        .map_err(|e| ApiError::Validation(e.to_string()))?;
+
     let result = state
         .use_cases
         .probe_llm
-        .execute(body.llm_provider, &body.llm_api_key, None)
+        .execute(
+            body.llm_provider,
+            &body.llm_api_key,
+            body.base_url.as_deref(),
+        )
         .await?;
     Ok(Json(ProbeResponse {
         success: result.success,
