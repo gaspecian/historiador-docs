@@ -13,6 +13,11 @@ pub struct UpdateLlmConfigCommand {
     /// Empty string → keep the existing secret/base URL; otherwise
     /// probe + persist the new value.
     pub llm_api_key: String,
+    /// Optional. Required to be `Some` when `llm_provider == OpenAi`
+    /// AND `llm_api_key` is empty AND no key is on file.
+    /// Persisted verbatim (after trim + trailing-slash strip)
+    /// into `workspaces.llm_base_url`.
+    pub base_url: Option<String>,
     pub generation_model: String,
     pub embedding_model: String,
 }
@@ -58,18 +63,15 @@ impl UpdateLlmConfigUseCase {
             .await?
             .ok_or(DomainError::NotFound)?;
 
-        // Only probe when the admin rotates the secret.
-        if !cmd.llm_api_key.is_empty() {
-            self.probe
-                .probe(cmd.llm_provider, &cmd.llm_api_key, None)
-                .await
-                .map_err(|e| {
-                    ApplicationError::Domain(DomainError::Validation(format!("LLM rejected: {e}")))
-                })?;
-        }
+        let normalized_url = cmd
+            .base_url
+            .as_deref()
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .filter(|u| !u.is_empty());
 
         let (encrypted_key, base_url): (Option<String>, Option<String>) = match cmd.llm_provider {
             LlmProvider::Ollama => {
+                // Backwards compat: Ollama still carries its URL via llm_api_key.
                 if cmd.llm_api_key.is_empty() {
                     (None, ws.llm_base_url.clone())
                 } else {
@@ -77,7 +79,7 @@ impl UpdateLlmConfigUseCase {
                 }
             }
             LlmProvider::Test => (None, None),
-            LlmProvider::OpenAi | LlmProvider::Anthropic => {
+            LlmProvider::Anthropic => {
                 if cmd.llm_api_key.is_empty() {
                     (None, None)
                 } else {
@@ -85,7 +87,45 @@ impl UpdateLlmConfigUseCase {
                     (Some(ct), None)
                 }
             }
+            LlmProvider::OpenAi => {
+                // Reject the no-url + no-key + no-existing-key combo.
+                if normalized_url.is_none()
+                    && cmd.llm_api_key.is_empty()
+                    && ws.llm_api_key_encrypted.is_none()
+                {
+                    return Err(ApplicationError::Domain(DomainError::Validation(
+                        "openai requires either an API key or a custom base URL".into(),
+                    )));
+                }
+                let encrypted = if cmd.llm_api_key.is_empty() {
+                    // Empty key + URL set → user intends "no auth" → wipe stored key.
+                    // Empty key + URL not set → preserve existing key (don't rotate).
+                    if normalized_url.is_some() {
+                        None
+                    } else {
+                        ws.llm_api_key_encrypted.clone()
+                    }
+                } else {
+                    Some(self.cipher.encrypt(&cmd.llm_api_key)?)
+                };
+                (encrypted, normalized_url.clone())
+            }
         };
+
+        // Probe when the admin rotates the secret OR when only a URL
+        // is supplied (validates a no-auth endpoint at config time).
+        if !cmd.llm_api_key.is_empty() || normalized_url.is_some() {
+            self.probe
+                .probe(
+                    cmd.llm_provider,
+                    &cmd.llm_api_key,
+                    normalized_url.as_deref(),
+                )
+                .await
+                .map_err(|e| {
+                    ApplicationError::Domain(DomainError::Validation(format!("LLM rejected: {e}")))
+                })?;
+        }
 
         self.workspaces
             .update_llm_config(
@@ -118,5 +158,204 @@ impl UpdateLlmConfigUseCase {
             affected_page_versions,
             requires_restart: generation_changed,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::admin::test_doubles::{
+        make_workspace, AcceptingProbe, EmptyPageRepository, InMemoryWorkspaceRepository,
+        StubCipher,
+    };
+    use crate::domain::value::Role;
+    use uuid::Uuid;
+
+    fn admin_actor(workspace_id: Uuid) -> Actor {
+        Actor {
+            user_id: Uuid::new_v4(),
+            workspace_id,
+            role: Role::Admin,
+        }
+    }
+
+    fn build_use_case(
+        ws_repo: Arc<InMemoryWorkspaceRepository>,
+        probe: Arc<AcceptingProbe>,
+    ) -> UpdateLlmConfigUseCase {
+        UpdateLlmConfigUseCase::new(
+            ws_repo,
+            Arc::new(EmptyPageRepository),
+            probe,
+            Arc::new(StubCipher),
+        )
+    }
+
+    #[tokio::test]
+    async fn openai_with_base_url_and_key_persists_both() {
+        let ws = make_workspace("openai", Some("enc:old-key"), None);
+        let workspace_id = ws.id;
+        let ws_repo = Arc::new(InMemoryWorkspaceRepository::new(ws));
+        let probe = Arc::new(AcceptingProbe::new());
+        let uc = build_use_case(ws_repo.clone(), probe);
+
+        uc.execute(
+            admin_actor(workspace_id),
+            UpdateLlmConfigCommand {
+                llm_provider: LlmProvider::OpenAi,
+                llm_api_key: "new-key".to_string(),
+                base_url: Some("https://litellm.example/v1".to_string()),
+                generation_model: "gpt-4o-mini".to_string(),
+                embedding_model: "text-embedding-3-small".to_string(),
+            },
+        )
+        .await
+        .expect("succeeds");
+
+        let patch = ws_repo.last_patch.lock().unwrap().clone().expect("patch");
+        assert_eq!(patch.llm_provider, "openai");
+        assert_eq!(
+            patch.llm_base_url,
+            Some("https://litellm.example/v1".to_string())
+        );
+        assert_eq!(patch.llm_api_key_encrypted, Some("enc:new-key".to_string()));
+    }
+
+    #[tokio::test]
+    async fn openai_with_base_url_and_empty_key_persists_url_clears_key() {
+        let ws = make_workspace("openai", Some("enc:old-key"), None);
+        let workspace_id = ws.id;
+        let ws_repo = Arc::new(InMemoryWorkspaceRepository::new(ws));
+        let probe = Arc::new(AcceptingProbe::new());
+        let uc = build_use_case(ws_repo.clone(), probe);
+
+        uc.execute(
+            admin_actor(workspace_id),
+            UpdateLlmConfigCommand {
+                llm_provider: LlmProvider::OpenAi,
+                llm_api_key: String::new(),
+                base_url: Some("https://my-server".to_string()),
+                generation_model: "gpt-4o-mini".to_string(),
+                embedding_model: "text-embedding-3-small".to_string(),
+            },
+        )
+        .await
+        .expect("succeeds");
+
+        let patch = ws_repo.last_patch.lock().unwrap().clone().expect("patch");
+        assert_eq!(patch.llm_base_url, Some("https://my-server".to_string()));
+        assert_eq!(patch.llm_api_key_encrypted, None);
+    }
+
+    #[tokio::test]
+    async fn openai_no_url_empty_key_preserves_existing_key() {
+        let ws = make_workspace("openai", Some("enc:existing"), None);
+        let workspace_id = ws.id;
+        let ws_repo = Arc::new(InMemoryWorkspaceRepository::new(ws));
+        let probe = Arc::new(AcceptingProbe::new());
+        let uc = build_use_case(ws_repo.clone(), probe.clone());
+
+        uc.execute(
+            admin_actor(workspace_id),
+            UpdateLlmConfigCommand {
+                llm_provider: LlmProvider::OpenAi,
+                llm_api_key: String::new(),
+                base_url: None,
+                generation_model: "gpt-4o-mini".to_string(),
+                embedding_model: "text-embedding-3-small".to_string(),
+            },
+        )
+        .await
+        .expect("succeeds");
+
+        let patch = ws_repo.last_patch.lock().unwrap().clone().expect("patch");
+        assert_eq!(
+            patch.llm_api_key_encrypted,
+            Some("enc:existing".to_string())
+        );
+        assert_eq!(patch.llm_base_url, None);
+        // No probe call when no key is rotated and no URL was supplied.
+        assert!(probe.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn openai_no_url_no_key_no_existing_rejects_validation() {
+        let ws = make_workspace("openai", None, None);
+        let workspace_id = ws.id;
+        let ws_repo = Arc::new(InMemoryWorkspaceRepository::new(ws));
+        let probe = Arc::new(AcceptingProbe::new());
+        let uc = build_use_case(ws_repo, probe);
+
+        let result = uc
+            .execute(
+                admin_actor(workspace_id),
+                UpdateLlmConfigCommand {
+                    llm_provider: LlmProvider::OpenAi,
+                    llm_api_key: String::new(),
+                    base_url: None,
+                    generation_model: "gpt-4o-mini".to_string(),
+                    embedding_model: "text-embedding-3-small".to_string(),
+                },
+            )
+            .await;
+
+        match result {
+            Err(ApplicationError::Domain(DomainError::Validation(_))) => {}
+            Err(other) => panic!("expected Domain(Validation), got {other:?}"),
+            Ok(_) => panic!("expected validation failure"),
+        }
+    }
+
+    #[tokio::test]
+    async fn openai_normalizes_trailing_slash() {
+        let ws = make_workspace("openai", Some("enc:old"), None);
+        let workspace_id = ws.id;
+        let ws_repo = Arc::new(InMemoryWorkspaceRepository::new(ws));
+        let probe = Arc::new(AcceptingProbe::new());
+        let uc = build_use_case(ws_repo.clone(), probe);
+
+        uc.execute(
+            admin_actor(workspace_id),
+            UpdateLlmConfigCommand {
+                llm_provider: LlmProvider::OpenAi,
+                llm_api_key: "k".to_string(),
+                base_url: Some("https://api/v1/".to_string()),
+                generation_model: "gpt-4o-mini".to_string(),
+                embedding_model: "text-embedding-3-small".to_string(),
+            },
+        )
+        .await
+        .expect("succeeds");
+
+        let patch = ws_repo.last_patch.lock().unwrap().clone().expect("patch");
+        assert_eq!(patch.llm_base_url, Some("https://api/v1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn openai_with_url_calls_probe_with_url() {
+        let ws = make_workspace("openai", Some("enc:old"), None);
+        let workspace_id = ws.id;
+        let ws_repo = Arc::new(InMemoryWorkspaceRepository::new(ws));
+        let probe = Arc::new(AcceptingProbe::new());
+        let uc = build_use_case(ws_repo, probe.clone());
+
+        uc.execute(
+            admin_actor(workspace_id),
+            UpdateLlmConfigCommand {
+                llm_provider: LlmProvider::OpenAi,
+                llm_api_key: "k".to_string(),
+                base_url: Some("https://my".to_string()),
+                generation_model: "gpt-4o-mini".to_string(),
+                embedding_model: "text-embedding-3-small".to_string(),
+            },
+        )
+        .await
+        .expect("succeeds");
+
+        let calls = probe.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].base_url.as_deref(), Some("https://my"));
+        assert_eq!(calls[0].api_key, "k");
+        assert!(matches!(calls[0].provider, LlmProvider::OpenAi));
     }
 }

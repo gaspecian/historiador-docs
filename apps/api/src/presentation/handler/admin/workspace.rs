@@ -174,6 +174,7 @@ pub async fn update_llm_config(
             UpdateLlmConfigCommand {
                 llm_provider: body.llm_provider,
                 llm_api_key: body.llm_api_key,
+                base_url: None,
                 generation_model: body.generation_model,
                 embedding_model: body.embedding_model,
             },
