@@ -20,8 +20,9 @@ use historiador_db::{
 };
 use historiador_llm::{
     AnthropicTextGenerationClient, EmbeddingClient, OllamaEmbeddingClient, OllamaTextClient,
-    OpenAiEmbeddingClient, OpenAiTextGenerationClient, StubEmbeddingClient,
-    StubTextGenerationClient, TextGenerationClient,
+    OpenAiEmbeddingClient, OpenAiEmbeddingConfig, OpenAiGenerationConfig,
+    OpenAiTextGenerationClient, StubEmbeddingClient, StubTextGenerationClient,
+    TextGenerationClient,
 };
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -337,16 +338,38 @@ fn build_llm_clients_from_workspace(
     let pair: (Arc<dyn EmbeddingClient>, Arc<dyn TextGenerationClient>) =
         match ws.llm_provider.as_str() {
             "openai" => {
-                let key = ws
+                let key_str = ws
                     .llm_api_key_encrypted
                     .as_deref()
                     .map(|k| cipher.decrypt(k))
                     .transpose()?
                     .unwrap_or_default();
-                tracing::info!(gen = gen_model, embed = embed_model, "LLM provider: OpenAI");
+                let key: Option<&str> = if key_str.is_empty() {
+                    None
+                } else {
+                    Some(&key_str)
+                };
+                let base_url = ws.llm_base_url.as_deref();
+                tracing::info!(
+                    gen = gen_model,
+                    embed = embed_model,
+                    base_url = base_url.unwrap_or("api.openai.com"),
+                    "LLM provider: OpenAI"
+                );
                 (
-                    Arc::new(OpenAiEmbeddingClient::with_model(&key, embed_model, 1536)),
-                    Arc::new(OpenAiTextGenerationClient::with_model(&key, gen_model)),
+                    Arc::new(OpenAiEmbeddingClient::from_config(OpenAiEmbeddingConfig {
+                        api_key: key,
+                        base_url,
+                        model: embed_model,
+                        dim: 1536,
+                    })),
+                    Arc::new(OpenAiTextGenerationClient::from_config(
+                        OpenAiGenerationConfig {
+                            api_key: key,
+                            base_url,
+                            model: gen_model,
+                        },
+                    )),
                 )
             }
             "anthropic" => {
@@ -358,7 +381,12 @@ fn build_llm_clients_from_workspace(
                     .unwrap_or_default();
                 let emb: Arc<dyn EmbeddingClient> = match std::env::var("EMBEDDING_API_KEY") {
                     Ok(k) if !k.is_empty() => {
-                        Arc::new(OpenAiEmbeddingClient::with_model(&k, embed_model, 1536))
+                        Arc::new(OpenAiEmbeddingClient::from_config(OpenAiEmbeddingConfig {
+                            api_key: Some(&k),
+                            base_url: ws.llm_base_url.as_deref(),
+                            model: embed_model,
+                            dim: 1536,
+                        }))
                     }
                     _ => Arc::new(StubEmbeddingClient::default()),
                 };
