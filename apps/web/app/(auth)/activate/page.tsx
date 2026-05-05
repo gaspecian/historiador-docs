@@ -36,15 +36,15 @@ function ActivateForm() {
  setError("");
 
  if (password.length < 12) {
- setError("Password must be at least 12 characters");
+ setError("A senha precisa ter no mínimo 12 caracteres");
  return;
  }
  if (password !== confirm) {
- setError("Passwords do not match");
+ setError("As senhas não coincidem");
  return;
  }
  if (!token) {
- setError("Missing activation token");
+ setError("Token de ativação ausente");
  return;
  }
 
@@ -70,7 +70,7 @@ function ActivateForm() {
  setSuccess(true);
  setTimeout(() => router.push("/login"), 2000);
  } catch (err) {
- setError(err instanceof Error ? err.message : "Activation failed");
+ setError(err instanceof Error ? err.message : "Falha ao ativar a conta");
  } finally {
  setLoading(false);
  }
@@ -80,8 +80,8 @@ function ActivateForm() {
  return (
  <main className="flex min-h-screen items-center justify-center p-4">
  <div className="text-center space-y-2">
- <h1 className="text-xl font-bold">Account activated</h1>
- <p className="text-sm text-text-tertiary">Redirecting to login...</p>
+ <h1 className="text-xl font-bold">Conta ativada</h1>
+ <p className="text-sm text-text-tertiary">Redirecionando para o login…</p>
  </div>
  </main>
  );
@@ -91,24 +91,24 @@ function ActivateForm() {
  <main className="flex min-h-screen items-center justify-center p-4">
  <div className="w-full max-w-sm space-y-6">
  <div className="text-center">
- <h1 className="text-2xl font-bold">Activate your account</h1>
+ <h1 className="text-2xl font-bold">Ative sua conta</h1>
  <p className="mt-1 text-sm text-text-tertiary">
- Set a password to complete your registration
+ Defina uma senha para concluir seu cadastro
  </p>
  </div>
 
  <form onSubmit={handleSubmit} className="space-y-4">
  <Input
- label="Password"
+ label="Senha"
  type="password"
  value={password}
  onChange={(e) => setPassword(e.target.value)}
- placeholder="Min. 12 characters"
+ placeholder="Mín. 12 caracteres"
  required
  autoComplete="new-password"
  />
  <Input
- label="Confirm password"
+ label="Confirmar senha"
  type="password"
  value={confirm}
  onChange={(e) => setConfirm(e.target.value)}
@@ -119,7 +119,7 @@ function ActivateForm() {
  {error && <p className="text-sm text-red-600">{error}</p>}
 
  <Button type="submit" disabled={loading} className="w-full">
- {loading ? "Activating..." : "Activate account"}
+ {loading ? "Ativando…" : "Ativar conta"}
  </Button>
  </form>
  </div>
