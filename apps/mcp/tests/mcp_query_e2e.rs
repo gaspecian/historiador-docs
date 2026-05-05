@@ -415,8 +415,8 @@ async fn backfill_publishes_missing_page_versions_to_chronik() {
     let workspace_name = format!("Backfill Test {}", uuid::Uuid::new_v4());
     let workspace_id: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO workspaces \
-           (name, languages, primary_language, generation_model, embedding_model) \
-         VALUES ($1, ARRAY['en-US']::TEXT[], 'en-US', 'stub', 'stub') \
+           (name, languages, primary_language, generation_model) \
+         VALUES ($1, ARRAY['en-US']::TEXT[], 'en-US', 'stub') \
          RETURNING id",
     )
     .bind(&workspace_name)
