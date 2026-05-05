@@ -187,7 +187,7 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
           </button>
           <AutonomySelector mode={autonomyMode} onChange={handleAutonomyChange} />
           <span className="t-body-sm text-[var(--color-text-tertiary)]">
-            {savedAt ? `Saved ${savedAt.toLocaleTimeString()}` : "Not saved yet"}
+            {savedAt ? `Salvo ${savedAt.toLocaleTimeString()}` : "Ainda não salvo"}
           </span>
         </div>
       </header>
@@ -254,11 +254,11 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
 function DemoChatPlaceholder() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-3">
-      <p className="t-body-lg text-[var(--color-text-primary)]">AI assistant</p>
+      <p className="t-body-lg text-[var(--color-text-primary)]">Assistente</p>
       <p className="t-body-sm text-[var(--color-text-secondary)] max-w-[260px]">
-        Open a page from the dashboard to start a conversation with the
-        editor agent. The chat streams through a WebSocket and carries
-        your canvas state on every turn.
+        Abra uma página no painel para iniciar uma conversa com o agente
+        do editor. O chat transmite via WebSocket e carrega o estado do
+        canvas a cada turno.
       </p>
     </div>
   );

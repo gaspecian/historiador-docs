@@ -43,15 +43,15 @@ type Tone = "idle" | "dirty" | "saving" | "saved" | "error";
 function describe(status: AutoSaveStatus): { text: string; tone: Tone } {
   switch (status.kind) {
     case "idle":
-      return { text: "Ready", tone: "idle" };
+      return { text: "Pronto", tone: "idle" };
     case "dirty":
-      return { text: "Unsaved changes\u2026", tone: "dirty" };
+      return { text: "Altera\u00e7\u00f5es n\u00e3o salvas\u2026", tone: "dirty" };
     case "saving":
-      return { text: "Saving\u2026", tone: "saving" };
+      return { text: "Salvando\u2026", tone: "saving" };
     case "saved":
-      return { text: `Saved ${formatTime(status.at)}`, tone: "saved" };
+      return { text: `Salvo ${formatTime(status.at)}`, tone: "saved" };
     case "error":
-      return { text: `Save failed: ${status.message}`, tone: "error" };
+      return { text: `Falha ao salvar: ${status.message}`, tone: "error" };
   }
 }
 
