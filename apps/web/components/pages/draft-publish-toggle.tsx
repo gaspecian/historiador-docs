@@ -65,7 +65,7 @@ export function DraftPublishToggle({
         onClick={handleClick}
         disabled={loading}
       >
-        {loading ? "..." : status === "draft" ? "Publish" : "Unpublish"}
+        {loading ? "..." : status === "draft" ? "Publicar" : "Despublicar"}
       </Button>
       <PublishConfirmModal
         open={showModal}

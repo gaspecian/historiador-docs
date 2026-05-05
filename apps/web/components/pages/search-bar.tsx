@@ -21,7 +21,7 @@ export function SearchBar({ onSearch }: Props) {
  return (
  <input
  type="search"
- placeholder="Search pages..."
+ placeholder="Buscar páginas…"
  value={query}
  onChange={(e) => setQuery(e.target.value)}
  className="w-full max-w-xs rounded border border-surface-border-strong px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"

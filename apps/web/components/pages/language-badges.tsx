@@ -30,7 +30,7 @@ export function LanguageBadges({ versions, workspaceLanguages, pageId, onMissing
           <Badge
             key={lang}
             variant="warning"
-            title={`Missing — click to create ${lang} version`}
+            title={`Faltando — clique para criar a versão em ${lang}`}
             className={pageId && onMissingClick ? "cursor-pointer" : undefined}
             onClick={
               pageId && onMissingClick
