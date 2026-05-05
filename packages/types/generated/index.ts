@@ -671,7 +671,6 @@ export interface components {
              *     `llm_api_key`, no Authorization header is sent.
              */
             base_url?: string | null;
-            embedding_model: string;
             generation_model: string;
             /**
              * @description API key for cloud providers or base URL for Ollama. Leave
@@ -683,9 +682,6 @@ export interface components {
             llm_provider: components["schemas"]["LlmProvider"];
         };
         LlmPatchResponse: {
-            /** Format: int64 */
-            affected_page_versions: number;
-            requires_reindex: boolean;
             requires_restart: boolean;
             success: boolean;
         };
@@ -821,8 +817,6 @@ export interface components {
              *     `llm_api_key`, no Authorization header is sent.
              */
             base_url?: string | null;
-            /** @description Model used for chunk embeddings during publish. */
-            embedding_model?: string | null;
             /**
              * @description Model used for AI text generation (chat / editor). Optional for
              *     cloud providers (falls back to sensible defaults); required for
@@ -830,7 +824,13 @@ export interface components {
              */
             generation_model?: string | null;
             languages: string[];
-            llm_api_key: string;
+            /**
+             * @description Empty allowed for the OpenAI provider when `base_url` is set
+             *     (self-hosted no-auth endpoints). The use case rejects the
+             *     no-URL + no-key combo for OpenAI; non-OpenAI providers still
+             *     require non-empty values where applicable.
+             */
+            llm_api_key?: string;
             llm_provider: components["schemas"]["LlmProvider"];
             primary_language: string;
             workspace_name: string;
@@ -915,7 +915,6 @@ export interface components {
             version_number: number;
         };
         WorkspaceResponse: {
-            embedding_model: string;
             generation_model: string;
             /** @description Whether a bearer token has been configured. */
             has_mcp_token: boolean;

@@ -1231,7 +1231,6 @@ components:
       required:
       - llm_provider
       - generation_model
-      - embedding_model
       properties:
         base_url:
           type:
@@ -1242,8 +1241,6 @@ components:
             `https://litellm.example/v1`). Persisted verbatim into
             `workspaces.llm_base_url`. When set together with an empty
             `llm_api_key`, no Authorization header is sent.
-        embedding_model:
-          type: string
         generation_model:
           type: string
         llm_api_key:
@@ -1259,15 +1256,8 @@ components:
       type: object
       required:
       - success
-      - requires_reindex
-      - affected_page_versions
       - requires_restart
       properties:
-        affected_page_versions:
-          type: integer
-          format: int64
-        requires_reindex:
-          type: boolean
         requires_restart:
           type: boolean
         success:
@@ -1578,7 +1568,6 @@ components:
       - admin_password
       - workspace_name
       - llm_provider
-      - llm_api_key
       - languages
       - primary_language
       properties:
@@ -1595,11 +1584,6 @@ components:
             `https://litellm.example/v1`). Persisted verbatim into
             `workspaces.llm_base_url`. When set together with an empty
             `llm_api_key`, no Authorization header is sent.
-        embedding_model:
-          type:
-          - string
-          - 'null'
-          description: Model used for chunk embeddings during publish.
         generation_model:
           type:
           - string
@@ -1614,6 +1598,11 @@ components:
             type: string
         llm_api_key:
           type: string
+          description: |-
+            Empty allowed for the OpenAI provider when `base_url` is set
+            (self-hosted no-auth endpoints). The use case rejects the
+            no-URL + no-key combo for OpenAI; non-OpenAI providers still
+            require non-empty values where applicable.
         llm_provider:
           $ref: '#/components/schemas/LlmProvider'
         primary_language:
@@ -1810,12 +1799,9 @@ components:
       - primary_language
       - llm_provider
       - generation_model
-      - embedding_model
       - mcp_endpoint_url
       - has_mcp_token
       properties:
-        embedding_model:
-          type: string
         generation_model:
           type: string
         has_mcp_token:
