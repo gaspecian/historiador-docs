@@ -12,6 +12,35 @@
 
 ---
 
+## Preserved scope — what does NOT change
+
+The custom base-URL feature for the OpenAI provider (just shipped on this branch) is **fully preserved**. After this retirement:
+
+| Layer | Preserved component |
+|---|---|
+| **DB** | `workspaces.llm_base_url` column |
+| **LLM crate** | `OpenAiCompatConfig` (used by the text-gen client) |
+| **LLM crate** | `OpenAiTextGenerationClient::from_config` + `OpenAiGenerationConfig` |
+| **Boot wiring** | `build_llm_clients_from_workspace` reads `ws.llm_base_url` for the OpenAI text-gen client (Task 3) |
+| **Probe** | `GET {base}/models` honors the supplied URL (Task 1) |
+| **Use cases** | `UpdateLlmConfigCommand.base_url`, `InitializeInstallationCommand.base_url` |
+| **DTOs** | `LlmPatchRequest.base_url`, `SetupRequest.base_url`, `ProbeRequest.base_url` |
+| **Validator** | `validate_llm_base_url` |
+| **Admin form** | "Base URL (optional)" input field |
+| **Setup wizard** | "Base URL (optional)" input field |
+| **TS types** | `base_url?: string \| null` on the relevant request DTOs |
+
+**End-user contract after retirement:** an admin can still set
+`provider = openai`, fill a custom `base_url`, optionally leave the
+API key blank for self-hosted no-auth endpoints, and have **chat
+completions** (the AI editor) hit that URL. The "Test connection"
+button validates URL + auth via `GET /models` against that URL. The
+only knob that goes away is the embedding-model name — because the
+app no longer issues embedding calls (Chronik does, server-side,
+with its own configuration).
+
+---
+
 ## Design decisions
 
 These are the calls baked into the plan. If any is wrong for the project, override before execution.
