@@ -10,6 +10,9 @@ pub mod regenerate_token;
 pub mod reindex_workspace;
 pub mod update_llm_config;
 
+#[cfg(test)]
+pub(crate) mod test_doubles;
+
 pub use deactivate_user::DeactivateUserUseCase;
 pub use get_analytics::GetMcpAnalyticsUseCase;
 pub use get_workspace::GetWorkspaceUseCase;

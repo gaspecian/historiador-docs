@@ -14,7 +14,6 @@ pub struct Workspace {
     pub llm_api_key_encrypted: Option<String>,
     pub llm_base_url: Option<String>,
     pub generation_model: String,
-    pub embedding_model: String,
     pub mcp_bearer_token_hash: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -28,7 +27,6 @@ pub struct NewWorkspace<'a> {
     pub llm_api_key_encrypted: Option<&'a str>,
     pub llm_base_url: Option<&'a str>,
     pub generation_model: &'a str,
-    pub embedding_model: &'a str,
 }
 
 /// Insert a workspace inside an open transaction, returning its id.
@@ -44,8 +42,8 @@ pub async fn insert(
     let (id,): (Uuid,) = sqlx::query_as(
         "INSERT INTO workspaces \
            (name, languages, primary_language, llm_provider, llm_api_key_encrypted, \
-            llm_base_url, generation_model, embedding_model) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+            llm_base_url, generation_model) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
          RETURNING id",
     )
     .bind(w.name)
@@ -55,7 +53,6 @@ pub async fn insert(
     .bind(w.llm_api_key_encrypted)
     .bind(w.llm_base_url)
     .bind(w.generation_model)
-    .bind(w.embedding_model)
     .fetch_one(&mut **tx)
     .await?;
     Ok(id)
@@ -63,20 +60,29 @@ pub async fn insert(
 
 /// Find a workspace by id.
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<Workspace>> {
-    let row = sqlx::query_as::<_, Workspace>("SELECT * FROM workspaces WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
+    let row = sqlx::query_as::<_, Workspace>(
+        "SELECT id, name, languages, primary_language, llm_provider, \
+                llm_api_key_encrypted, llm_base_url, generation_model, \
+                mcp_bearer_token_hash, created_at, updated_at \
+         FROM workspaces WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
     Ok(row)
 }
 
 /// Fetch the single workspace for this installation. Returns `None` if
 /// setup has not been run yet.
 pub async fn find_singleton(pool: &PgPool) -> anyhow::Result<Option<Workspace>> {
-    let row =
-        sqlx::query_as::<_, Workspace>("SELECT * FROM workspaces ORDER BY created_at LIMIT 1")
-            .fetch_optional(pool)
-            .await?;
+    let row = sqlx::query_as::<_, Workspace>(
+        "SELECT id, name, languages, primary_language, llm_provider, \
+                llm_api_key_encrypted, llm_base_url, generation_model, \
+                mcp_bearer_token_hash, created_at, updated_at \
+         FROM workspaces ORDER BY created_at LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
     Ok(row)
 }
 
@@ -101,7 +107,6 @@ pub struct LlmConfigPatch<'a> {
     pub llm_api_key_encrypted: Option<&'a str>,
     pub llm_base_url: Option<&'a str>,
     pub generation_model: &'a str,
-    pub embedding_model: &'a str,
 }
 
 /// Apply an LLM configuration update. Passing `None` for the encrypted
@@ -118,7 +123,6 @@ pub async fn update_llm_config(
                 llm_api_key_encrypted = COALESCE($3, llm_api_key_encrypted), \
                 llm_base_url          = $4, \
                 generation_model      = $5, \
-                embedding_model       = $6, \
                 updated_at            = now() \
           WHERE id = $1",
     )
@@ -127,7 +131,6 @@ pub async fn update_llm_config(
     .bind(patch.llm_api_key_encrypted)
     .bind(patch.llm_base_url)
     .bind(patch.generation_model)
-    .bind(patch.embedding_model)
     .execute(pool)
     .await?;
     Ok(result.rows_affected())

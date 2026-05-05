@@ -28,13 +28,6 @@ const DEFAULT_GEN_MODEL: Record<LlmProvider, string> = {
   test: "stub",
 };
 
-const DEFAULT_EMBED_MODEL: Record<LlmProvider, string> = {
-  openai: "text-embedding-3-small",
-  anthropic: "text-embedding-3-small",
-  ollama: "",
-  test: "stub",
-};
-
 interface OllamaModelEntry {
   name: string;
   size_bytes: number;
@@ -51,12 +44,10 @@ export default function SetupPage() {
   const [workspaceName, setWorkspaceName] = useState("");
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("openai");
   const [llmApiKey, setLlmApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
   const [generationModel, setGenerationModel] = useState(
     DEFAULT_GEN_MODEL.openai,
-  );
-  const [embeddingModel, setEmbeddingModel] = useState(
-    DEFAULT_EMBED_MODEL.openai,
   );
   const [ollamaModels, setOllamaModels] = useState<OllamaModelEntry[]>([]);
   const [ollamaModelsError, setOllamaModelsError] = useState<string | null>(
@@ -74,7 +65,7 @@ export default function SetupPage() {
     setOllamaModels([]);
     setOllamaModelsError(null);
     setGenerationModel(DEFAULT_GEN_MODEL[p]);
-    setEmbeddingModel(DEFAULT_EMBED_MODEL[p]);
+    if (p !== "openai") setBaseUrl("");
   };
 
   const canGoNext = (): boolean => {
@@ -83,18 +74,22 @@ export default function SetupPage() {
         return workspaceName.trim().length > 0;
       case "llm":
         if (llmProvider === "test") return true;
-        if (!llmApiKey.trim()) return false;
+        // OpenAI accepts either an API key (canonical/Bearer auth) or
+        // a custom base URL (self-hosted no-auth endpoints). Non-OpenAI
+        // providers always require the key/URL field.
+        if (llmProvider === "openai") {
+          if (!llmApiKey.trim() && !baseUrl.trim()) return false;
+        } else if (!llmApiKey.trim()) {
+          return false;
+        }
         if (llmProvider === "ollama") {
-          // Require a successful probe and both models picked.
+          // Require a successful probe and the generation model picked.
           return (
             probeResult?.success === true &&
-            generationModel.trim().length > 0 &&
-            embeddingModel.trim().length > 0
+            generationModel.trim().length > 0
           );
         }
-        return (
-          generationModel.trim().length > 0 && embeddingModel.trim().length > 0
-        );
+        return generationModel.trim().length > 0;
       case "admin":
         return (
           adminEmail.includes("@") &&
@@ -130,6 +125,10 @@ export default function SetupPage() {
         body: JSON.stringify({
           llm_provider: llmProvider,
           llm_api_key: llmApiKey,
+          base_url:
+            llmProvider === "openai" && baseUrl.trim() !== ""
+              ? baseUrl.trim()
+              : undefined,
         }),
       });
       const data: ProbeResponse = await res.json();
@@ -146,10 +145,6 @@ export default function SetupPage() {
           setOllamaModels(body.models);
           if (body.models.length > 0) {
             setGenerationModel(body.models[0].name);
-            const embedHint = body.models.find((m) =>
-              /embed|nomic|mxbai|bge/i.test(m.name),
-            );
-            setEmbeddingModel((embedHint ?? body.models[0]).name);
           }
         } else {
           const msg = await modelsRes.text().catch(() => "");
@@ -182,8 +177,11 @@ export default function SetupPage() {
           workspace_name: workspaceName,
           llm_provider: llmProvider,
           llm_api_key: llmProvider === "test" ? "test" : llmApiKey,
+          base_url:
+            llmProvider === "openai" && baseUrl.trim() !== ""
+              ? baseUrl.trim()
+              : undefined,
           generation_model: generationModel || undefined,
-          embedding_model: embeddingModel || undefined,
           languages: [DEFAULT_PRIMARY_LANGUAGE],
           primary_language: DEFAULT_PRIMARY_LANGUAGE,
         }),
@@ -345,10 +343,26 @@ export default function SetupPage() {
                         : "sk-..."
                     }
                   />
+                  {llmProvider === "openai" && (
+                    <Input
+                      label="Base URL (opcional)"
+                      type="url"
+                      value={baseUrl}
+                      onChange={(e) => {
+                        setBaseUrl(e.target.value);
+                        setProbeResult(null);
+                      }}
+                      placeholder="https://api.openai.com/v1 (padrão)"
+                    />
+                  )}
                   <Button
                     variant="secondary"
                     onClick={testConnection}
-                    disabled={loading || !llmApiKey.trim()}
+                    disabled={
+                      loading ||
+                      (!llmApiKey.trim() &&
+                        !(llmProvider === "openai" && baseUrl.trim()))
+                    }
                   >
                     {loading ? (
                       <>
@@ -377,12 +391,6 @@ export default function SetupPage() {
                         value={generationModel}
                         onChange={(e) => setGenerationModel(e.target.value)}
                       />
-                      <Select
-                        label="Modelo de embedding"
-                        options={ollamaModelOptions}
-                        value={embeddingModel}
-                        onChange={(e) => setEmbeddingModel(e.target.value)}
-                      />
                       <p className="text-xs text-text-tertiary">
                         Precisa de mais modelos? Execute{" "}
                         <code>ollama pull &lt;nome&gt;</code> e teste a conexão
@@ -408,20 +416,12 @@ export default function SetupPage() {
                     </p>
                   )}
                   {llmProvider !== "ollama" && (
-                    <>
-                      <Input
-                        label="Modelo de geração"
-                        value={generationModel}
-                        onChange={(e) => setGenerationModel(e.target.value)}
-                        placeholder={DEFAULT_GEN_MODEL[llmProvider]}
-                      />
-                      <Input
-                        label="Modelo de embedding"
-                        value={embeddingModel}
-                        onChange={(e) => setEmbeddingModel(e.target.value)}
-                        placeholder={DEFAULT_EMBED_MODEL[llmProvider]}
-                      />
-                    </>
+                    <Input
+                      label="Modelo de geração"
+                      value={generationModel}
+                      onChange={(e) => setGenerationModel(e.target.value)}
+                      placeholder={DEFAULT_GEN_MODEL[llmProvider]}
+                    />
                   )}
                 </>
               )}
@@ -485,16 +485,10 @@ export default function SetupPage() {
                   {llmProvider}
                 </div>
                 {llmProvider !== "test" && (
-                  <>
-                    <div>
-                      <span className="font-medium">Modelo de geração:</span>{" "}
-                      {generationModel}
-                    </div>
-                    <div>
-                      <span className="font-medium">Modelo de embedding:</span>{" "}
-                      {embeddingModel}
-                    </div>
-                  </>
+                  <div>
+                    <span className="font-medium">Modelo de geração:</span>{" "}
+                    {generationModel}
+                  </div>
                 )}
                 <div>
                   <span className="font-medium">Idioma principal:</span>{" "}

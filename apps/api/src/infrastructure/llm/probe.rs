@@ -39,9 +39,14 @@ impl LlmProvider {
 #[async_trait]
 pub trait LlmProbe: Send + Sync + 'static {
     /// Make a minimal authenticated call against the provider.
-    /// Returns `Ok(())` if the key is accepted, `Err` otherwise.
-    /// Network errors and HTTP errors both map to `Err`.
-    async fn probe(&self, provider: LlmProvider, api_key: &str) -> anyhow::Result<()>;
+    /// `base_url` is honored for `OpenAi` only (Anthropic + Ollama
+    /// have provider-specific URL handling already; `Test` ignores it).
+    async fn probe(
+        &self,
+        provider: LlmProvider,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> anyhow::Result<()>;
 }
 
 /// Real probe — issues one HTTP request per call. No retries; a
@@ -63,19 +68,33 @@ impl Default for HttpLlmProbe {
 
 #[async_trait]
 impl LlmProbe for HttpLlmProbe {
-    async fn probe(&self, provider: LlmProvider, api_key: &str) -> anyhow::Result<()> {
+    async fn probe(
+        &self,
+        provider: LlmProvider,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> anyhow::Result<()> {
         match provider {
             LlmProvider::OpenAi => {
-                // GET /v1/models — cheapest call that requires auth.
-                let resp = self
-                    .client
-                    .get("https://api.openai.com/v1/models")
-                    .bearer_auth(api_key)
+                // Validate URL + auth shape via the OpenAI catalog endpoint.
+                // No model name is hardcoded — the caller's chosen model is
+                // validated implicitly when the chunk pipeline / chat API
+                // first hits it.
+                let base = base_url
+                    .map(|u| u.trim_end_matches('/').to_string())
+                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                let url = format!("{base}/models");
+                let mut req = self.client.get(&url);
+                if !api_key.is_empty() {
+                    req = req.bearer_auth(api_key);
+                }
+                let resp = req
                     .send()
-                    .await?;
+                    .await
+                    .map_err(|e| anyhow::anyhow!("openai unreachable at {base}: {e}"))?;
                 if !resp.status().is_success() {
                     anyhow::bail!(
-                        "openai rejected the api key (status {})",
+                        "openai rejected (status {}) at {base}",
                         resp.status().as_u16()
                     );
                 }
@@ -141,7 +160,89 @@ pub struct StubProbe;
 
 #[async_trait]
 impl LlmProbe for StubProbe {
-    async fn probe(&self, _provider: LlmProvider, _api_key: &str) -> anyhow::Result<()> {
+    async fn probe(
+        &self,
+        _provider: LlmProvider,
+        _api_key: &str,
+        _base_url: Option<&str>,
+    ) -> anyhow::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn models_response() -> serde_json::Value {
+        serde_json::json!({
+            "object": "list",
+            "data": [
+                {"id": "gpt-4o-mini", "object": "model", "created": 0, "owned_by": "openai"},
+                {"id": "text-embedding-3-small", "object": "model", "created": 0, "owned_by": "openai"}
+            ]
+        })
+    }
+
+    #[tokio::test]
+    async fn openai_probe_hits_supplied_base_url_with_bearer() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(models_response()))
+            .mount(&server)
+            .await;
+
+        let probe = HttpLlmProbe::default();
+        probe
+            .probe(LlmProvider::OpenAi, "secret-key", Some(&server.uri()))
+            .await
+            .expect("probe ok");
+
+        let recv = server.received_requests().await.unwrap();
+        assert_eq!(recv.len(), 1);
+        assert_eq!(recv[0].method, wiremock::http::Method::GET);
+        assert_eq!(
+            recv[0].headers.get("authorization").unwrap(),
+            "Bearer secret-key"
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_probe_no_auth_when_key_empty_and_url_set() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(models_response()))
+            .mount(&server)
+            .await;
+
+        let probe = HttpLlmProbe::default();
+        probe
+            .probe(LlmProvider::OpenAi, "", Some(&server.uri()))
+            .await
+            .expect("probe ok");
+
+        let recv = server.received_requests().await.unwrap();
+        assert!(recv[0].headers.get("authorization").is_none());
+    }
+
+    #[tokio::test]
+    async fn openai_probe_surfaces_4xx_as_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+
+        let probe = HttpLlmProbe::default();
+        let err = probe
+            .probe(LlmProvider::OpenAi, "wrong-key", Some(&server.uri()))
+            .await
+            .expect_err("expected error");
+        assert!(format!("{err}").to_lowercase().contains("openai rejected"));
     }
 }

@@ -31,7 +31,6 @@ pub struct WorkspaceResponse {
     pub primary_language: String,
     pub llm_provider: String,
     pub generation_model: String,
-    pub embedding_model: String,
     pub llm_base_url: Option<String>,
     /// The MCP endpoint URL (constructed from config).
     pub mcp_endpoint_url: String,
@@ -77,7 +76,6 @@ pub async fn get_workspace(
         primary_language: ws.primary_language.into_string(),
         llm_provider: ws.llm_provider,
         generation_model: ws.generation_model,
-        embedding_model: ws.embedding_model,
         llm_base_url: ws.llm_base_url,
         mcp_endpoint_url: format!("{mcp_endpoint_url}/query"),
         has_mcp_token: ws.mcp_bearer_token_hash.is_some(),
@@ -127,21 +125,28 @@ pub struct LlmPatchRequest {
     pub llm_provider: LlmProvider,
     /// API key for cloud providers or base URL for Ollama. Leave
     /// empty to keep the existing secret (useful when editing only
-    /// the model names).
+    /// the model names) or — for the OpenAI provider with a custom
+    /// `base_url` — to mark the endpoint as unauthenticated.
     #[validate(length(max = 512))]
     #[serde(default)]
     pub llm_api_key: String,
+
+    /// Optional OpenAI-compatible base URL (e.g.
+    /// `https://litellm.example/v1`). Persisted verbatim into
+    /// `workspaces.llm_base_url`. When set together with an empty
+    /// `llm_api_key`, no Authorization header is sent.
+    #[validate(length(max = 512))]
+    #[validate(custom(function = "crate::presentation::validation::validate_llm_base_url"))]
+    #[serde(default)]
+    pub base_url: Option<String>,
+
     #[validate(length(min = 1, max = 128))]
     pub generation_model: String,
-    #[validate(length(min = 1, max = 128))]
-    pub embedding_model: String,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct LlmPatchResponse {
     pub success: bool,
-    pub requires_reindex: bool,
-    pub affected_page_versions: i64,
     pub requires_restart: bool,
 }
 
@@ -174,16 +179,14 @@ pub async fn update_llm_config(
             UpdateLlmConfigCommand {
                 llm_provider: body.llm_provider,
                 llm_api_key: body.llm_api_key,
+                base_url: body.base_url,
                 generation_model: body.generation_model,
-                embedding_model: body.embedding_model,
             },
         )
         .await?;
 
     Ok(Json(LlmPatchResponse {
         success: true,
-        requires_reindex: result.requires_reindex,
-        affected_page_versions: result.affected_page_versions,
         requires_restart: result.requires_restart,
     }))
 }

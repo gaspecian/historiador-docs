@@ -1231,10 +1231,16 @@ components:
       required:
       - llm_provider
       - generation_model
-      - embedding_model
       properties:
-        embedding_model:
-          type: string
+        base_url:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Optional OpenAI-compatible base URL (e.g.
+            `https://litellm.example/v1`). Persisted verbatim into
+            `workspaces.llm_base_url`. When set together with an empty
+            `llm_api_key`, no Authorization header is sent.
         generation_model:
           type: string
         llm_api_key:
@@ -1242,22 +1248,16 @@ components:
           description: |-
             API key for cloud providers or base URL for Ollama. Leave
             empty to keep the existing secret (useful when editing only
-            the model names).
+            the model names) or — for the OpenAI provider with a custom
+            `base_url` — to mark the endpoint as unauthenticated.
         llm_provider:
           $ref: '#/components/schemas/LlmProvider'
     LlmPatchResponse:
       type: object
       required:
       - success
-      - requires_reindex
-      - affected_page_versions
       - requires_restart
       properties:
-        affected_page_versions:
-          type: integer
-          format: int64
-        requires_reindex:
-          type: boolean
         requires_restart:
           type: boolean
         success:
@@ -1449,6 +1449,14 @@ components:
       required:
       - llm_provider
       properties:
+        base_url:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Optional OpenAI-compatible base URL to probe against. Same
+            validation rules as the persisted field on
+            [`SetupRequest`]/[`LlmPatchRequest`].
         llm_api_key:
           type: string
         llm_provider:
@@ -1560,7 +1568,6 @@ components:
       - admin_password
       - workspace_name
       - llm_provider
-      - llm_api_key
       - languages
       - primary_language
       properties:
@@ -1568,11 +1575,15 @@ components:
           type: string
         admin_password:
           type: string
-        embedding_model:
+        base_url:
           type:
           - string
           - 'null'
-          description: Model used for chunk embeddings during publish.
+          description: |-
+            Optional OpenAI-compatible base URL (e.g.
+            `https://litellm.example/v1`). Persisted verbatim into
+            `workspaces.llm_base_url`. When set together with an empty
+            `llm_api_key`, no Authorization header is sent.
         generation_model:
           type:
           - string
@@ -1587,6 +1598,11 @@ components:
             type: string
         llm_api_key:
           type: string
+          description: |-
+            Empty allowed for the OpenAI provider when `base_url` is set
+            (self-hosted no-auth endpoints). The use case rejects the
+            no-URL + no-key combo for OpenAI; non-OpenAI providers still
+            require non-empty values where applicable.
         llm_provider:
           $ref: '#/components/schemas/LlmProvider'
         primary_language:
@@ -1783,12 +1799,9 @@ components:
       - primary_language
       - llm_provider
       - generation_model
-      - embedding_model
       - mcp_endpoint_url
       - has_mcp_token
       properties:
-        embedding_model:
-          type: string
         generation_model:
           type: string
         has_mcp_token:

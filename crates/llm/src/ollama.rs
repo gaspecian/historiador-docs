@@ -1,27 +1,20 @@
 //! Ollama provider implementation.
 //!
 //! Ollama is a local LLM runtime. Text generation uses `POST /api/generate`
-//! with `stream: true` returning newline-delimited JSON; embeddings use
-//! `POST /api/embeddings` which returns a single vector per request.
-//!
-//! The embedding dimension depends on the model (e.g. `nomic-embed-text`
-//! returns 768, `mxbai-embed-large` returns 1024). We discover it on the
-//! first successful call and cache it.
+//! with `stream: true` returning newline-delimited JSON.
 
 use async_stream::try_stream;
 use async_trait::async_trait;
-use futures::{stream::FuturesOrdered, StreamExt, TryStreamExt};
+use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
-use tokio::sync::OnceCell;
 use tokio_util::io::StreamReader;
 
 use crate::text_generation::{TextGenerationClient, TextStream};
 use crate::tool_calling::Turn;
-use crate::{Embedding, EmbeddingClient, LlmError};
+use crate::LlmError;
 
 fn default_http_client() -> Client {
     Client::builder()
@@ -262,111 +255,6 @@ impl crate::tool_calling::ToolCallingClient for OllamaTextClient {
     }
 }
 
-// ---------- embeddings ----------
-
-pub struct OllamaEmbeddingClient {
-    http: Client,
-    base_url: String,
-    model: String,
-    dim: Arc<OnceCell<usize>>,
-}
-
-impl OllamaEmbeddingClient {
-    pub fn new(base_url: &str, model: &str) -> Self {
-        Self {
-            http: default_http_client(),
-            base_url: normalize_base_url(base_url),
-            model: model.to_string(),
-            dim: Arc::new(OnceCell::new()),
-        }
-    }
-
-    /// Preflight: calls `/api/embeddings` once with a tiny prompt so
-    /// `dimension()` returns the real model dimension immediately.
-    pub async fn preflight(&self) -> Result<usize, LlmError> {
-        let emb = self.embed_one("historiador").await?;
-        let d = emb.vector.len();
-        let _ = self.dim.set(d);
-        Ok(d)
-    }
-
-    async fn embed_one(&self, text: &str) -> Result<Embedding, LlmError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            model: &'a str,
-            prompt: &'a str,
-        }
-        #[derive(Deserialize)]
-        struct Resp {
-            embedding: Vec<f32>,
-            #[serde(default)]
-            error: Option<String>,
-        }
-
-        let url = format!("{}/api/embeddings", self.base_url);
-        let resp = self
-            .http
-            .post(&url)
-            .json(&Req {
-                model: &self.model,
-                prompt: text,
-            })
-            .send()
-            .await?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(LlmError::Api {
-                message: format!("Ollama embeddings {status}: {body}"),
-            });
-        }
-        let parsed: Resp = resp.json().await.map_err(|e| LlmError::Api {
-            message: format!("ollama embeddings parse: {e}"),
-        })?;
-        if let Some(err) = parsed.error {
-            return Err(LlmError::Api {
-                message: format!("ollama: {err}"),
-            });
-        }
-        Ok(Embedding {
-            vector: parsed.embedding,
-        })
-    }
-}
-
-#[async_trait]
-impl EmbeddingClient for OllamaEmbeddingClient {
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Embedding>, LlmError> {
-        if texts.is_empty() {
-            return Ok(vec![]);
-        }
-
-        // Ollama's /api/embeddings accepts one prompt per request. Fan out
-        // with bounded concurrency to avoid overwhelming a local runtime.
-        let mut in_flight = FuturesOrdered::new();
-        for text in texts {
-            in_flight.push_back(self.embed_one(text));
-        }
-        let out: Vec<Embedding> = in_flight.try_collect().await?;
-
-        // Cache the dimension from the first response so `dimension()` is
-        // accurate and cheap after the first call.
-        if let Some(first) = out.first() {
-            let _ = self.dim.set(first.vector.len());
-        }
-
-        Ok(out)
-    }
-
-    fn dimension(&self) -> usize {
-        // If `preflight` or `embed` has run, use the cached value. Otherwise
-        // fall back to the OpenAI default so schema code that queries
-        // dimension before first use does not panic. Callers that care
-        // about truth must call `preflight` at boot.
-        self.dim.get().copied().unwrap_or(1536)
-    }
-}
-
 // ---------- misc ----------
 
 #[derive(Debug, Deserialize)]
@@ -415,10 +303,6 @@ mod integration_tests {
         std::env::var("OLLAMA_TEST_GEN_MODEL").unwrap_or_else(|_| "llama3.2:1b".into())
     }
 
-    fn embed_model() -> String {
-        std::env::var("OLLAMA_TEST_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".into())
-    }
-
     #[tokio::test]
     async fn text_stream_round_trip() {
         let Some(url) = base_url() else {
@@ -435,23 +319,6 @@ mod integration_tests {
             collected.push_str(&chunk.expect("chunk"));
         }
         assert!(!collected.trim().is_empty(), "expected non-empty output");
-    }
-
-    #[tokio::test]
-    async fn embedding_round_trip_and_dim_cache() {
-        let Some(url) = base_url() else {
-            eprintln!("skipping: OLLAMA_BASE_URL unset");
-            return;
-        };
-        let client = OllamaEmbeddingClient::new(&url, &embed_model());
-        let out = client
-            .embed(&["hello".into(), "world".into()])
-            .await
-            .expect("embed");
-        assert_eq!(out.len(), 2);
-        assert!(!out[0].vector.is_empty());
-        assert_eq!(out[0].vector.len(), out[1].vector.len());
-        assert_eq!(client.dimension(), out[0].vector.len());
     }
 
     #[tokio::test]

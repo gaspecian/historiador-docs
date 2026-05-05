@@ -38,9 +38,7 @@ use historiador_db::{
     chronik::{ChronikClient, ChronikConfig},
     vector_store::{ChronikVectorStore, VectorStore},
 };
-use historiador_llm::{
-    EmbeddingClient, StubEmbeddingClient, StubTextGenerationClient, TextGenerationClient,
-};
+use historiador_llm::{StubTextGenerationClient, TextGenerationClient};
 use historiador_mcp::{
     application::SearchChunksUseCase, build_router as mcp_build_router,
     infrastructure::PostgresChunkMetadataReader, state::McpState,
@@ -65,7 +63,6 @@ fn api_test_state(pool: PgPool, chronik: ChronikClient) -> Arc<AppState> {
     let llm_probe: Arc<dyn LlmProbe> = Arc::new(StubProbe);
     // Use ChronikVectorStore so the publish pipeline produces real chunks.
     let vector_store: Arc<dyn VectorStore> = Arc::new(ChronikVectorStore::new(chronik.clone()));
-    let embedding_client: Arc<dyn EmbeddingClient> = Arc::new(StubEmbeddingClient::default());
     let text_gen: Arc<dyn TextGenerationClient> = Arc::new(StubTextGenerationClient);
 
     let use_cases = Arc::new(UseCases::build(BuildDeps {
@@ -74,7 +71,6 @@ fn api_test_state(pool: PgPool, chronik: ChronikClient) -> Arc<AppState> {
         jwt_secret: jwt_secret.clone(),
         llm_probe: llm_probe.clone(),
         vector_store: vector_store.clone(),
-        embedding_client: embedding_client.clone(),
         text_generation_client: text_gen.clone(),
         chronik: Some(chronik),
     }));
@@ -88,7 +84,6 @@ fn api_test_state(pool: PgPool, chronik: ChronikClient) -> Arc<AppState> {
         setup_complete: AtomicBool::new(false),
         llm_probe,
         vector_store,
-        embedding_client,
         text_generation_client: text_gen,
         // The ChronikClient was already passed into UseCases above; keep
         // AppState::chronik as None to avoid a double-producer path.
@@ -420,8 +415,8 @@ async fn backfill_publishes_missing_page_versions_to_chronik() {
     let workspace_name = format!("Backfill Test {}", uuid::Uuid::new_v4());
     let workspace_id: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO workspaces \
-           (name, languages, primary_language, generation_model, embedding_model) \
-         VALUES ($1, ARRAY['en-US']::TEXT[], 'en-US', 'stub', 'stub') \
+           (name, languages, primary_language, generation_model) \
+         VALUES ($1, ARRAY['en-US']::TEXT[], 'en-US', 'stub') \
          RETURNING id",
     )
     .bind(&workspace_name)

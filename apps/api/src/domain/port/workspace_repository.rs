@@ -16,7 +16,6 @@ pub struct InitializeInstallation {
     pub llm_api_key_encrypted: Option<String>,
     pub llm_base_url: Option<String>,
     pub generation_model: String,
-    pub embedding_model: String,
     pub admin_email: Email,
     pub admin_password_hash: String,
 }
@@ -35,7 +34,6 @@ pub struct LlmConfigPatch {
     pub llm_api_key_encrypted: Option<String>,
     pub llm_base_url: Option<String>,
     pub generation_model: String,
-    pub embedding_model: String,
 }
 
 #[async_trait]

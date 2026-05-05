@@ -19,9 +19,8 @@ use historiador_db::{
     vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
 };
 use historiador_llm::{
-    AnthropicTextGenerationClient, EmbeddingClient, OllamaEmbeddingClient, OllamaTextClient,
-    OpenAiEmbeddingClient, OpenAiTextGenerationClient, StubEmbeddingClient,
-    StubTextGenerationClient, TextGenerationClient,
+    AnthropicTextGenerationClient, OllamaTextClient, OpenAiGenerationConfig,
+    OpenAiTextGenerationClient, StubTextGenerationClient, TextGenerationClient,
 };
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -109,8 +108,7 @@ async fn main() -> anyhow::Result<()> {
     // e.g. the first boot in a fresh deploy — fall back to env vars
     // so the setup wizard itself has a working probe/draft surface.
     let workspace_row = historiador_db::postgres::workspaces::find_singleton(&pool).await?;
-    let (embedding_client, text_generation_client) =
-        build_llm_clients_from_workspace(&cipher, workspace_row.as_ref())?;
+    let text_generation_client = build_llm_clients_from_workspace(&cipher, workspace_row.as_ref())?;
 
     // Build Chronik client if configured. Falling back to the in-memory
     // vector store is gated behind ALLOW_IN_MEMORY_VECTOR_STORE=true
@@ -226,7 +224,6 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret: jwt_secret_bytes.clone(),
         llm_probe: llm_probe.clone(),
         vector_store: vector_store.clone(),
-        embedding_client: embedding_client.clone(),
         text_generation_client: text_generation_client.clone(),
         chronik: chronik.clone(),
     }));
@@ -240,7 +237,6 @@ async fn main() -> anyhow::Result<()> {
         setup_complete,
         llm_probe,
         vector_store,
-        embedding_client,
         text_generation_client,
         chronik,
         use_cases,
@@ -292,14 +288,14 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Build the LLM client pair from a workspace row, falling back to env
-/// vars before setup has completed. Kept here (rather than in the
-/// `historiador_llm` crate) because it handles `api`-specific concerns:
-/// decrypting the stored key via the `Cipher` and reading env vars.
+/// Build the text-generation client from a workspace row, falling
+/// back to env vars before setup has completed. Embeddings are
+/// handled by Chronik server-side; the app no longer constructs an
+/// embedding client.
 fn build_llm_clients_from_workspace(
     cipher: &Cipher,
     workspace: Option<&historiador_db::postgres::workspaces::Workspace>,
-) -> anyhow::Result<(Arc<dyn EmbeddingClient>, Arc<dyn TextGenerationClient>)> {
+) -> anyhow::Result<Arc<dyn TextGenerationClient>> {
     // Pre-setup: honor legacy LLM_PROVIDER + LLM_API_KEY env vars.
     let Some(ws) = workspace else {
         let provider = std::env::var("LLM_PROVIDER").unwrap_or_default();
@@ -307,93 +303,74 @@ fn build_llm_clients_from_workspace(
         return Ok(match provider.as_str() {
             "openai" if !api_key.is_empty() => {
                 tracing::info!("LLM provider (env): OpenAI");
-                (
-                    Arc::new(OpenAiEmbeddingClient::new(&api_key)),
-                    Arc::new(OpenAiTextGenerationClient::new(&api_key)),
-                )
+                Arc::new(OpenAiTextGenerationClient::new(&api_key))
             }
             "anthropic" if !api_key.is_empty() => {
                 tracing::info!("LLM provider (env): Anthropic");
-                let emb: Arc<dyn EmbeddingClient> = match std::env::var("EMBEDDING_API_KEY") {
-                    Ok(k) if !k.is_empty() => Arc::new(OpenAiEmbeddingClient::new(&k)),
-                    _ => Arc::new(StubEmbeddingClient::default()),
-                };
-                (emb, Arc::new(AnthropicTextGenerationClient::new(&api_key)))
+                Arc::new(AnthropicTextGenerationClient::new(&api_key))
             }
             _ => {
                 tracing::info!("LLM provider (env): stub — setup not complete");
-                (
-                    Arc::new(StubEmbeddingClient::default()),
-                    Arc::new(StubTextGenerationClient),
-                )
+                Arc::new(StubTextGenerationClient)
             }
         });
     };
 
     // Post-setup: every field comes from the workspace row.
     let gen_model = ws.generation_model.as_str();
-    let embed_model = ws.embedding_model.as_str();
 
-    let pair: (Arc<dyn EmbeddingClient>, Arc<dyn TextGenerationClient>) =
-        match ws.llm_provider.as_str() {
-            "openai" => {
-                let key = ws
-                    .llm_api_key_encrypted
-                    .as_deref()
-                    .map(|k| cipher.decrypt(k))
-                    .transpose()?
-                    .unwrap_or_default();
-                tracing::info!(gen = gen_model, embed = embed_model, "LLM provider: OpenAI");
-                (
-                    Arc::new(OpenAiEmbeddingClient::with_model(&key, embed_model, 1536)),
-                    Arc::new(OpenAiTextGenerationClient::with_model(&key, gen_model)),
-                )
-            }
-            "anthropic" => {
-                let key = ws
-                    .llm_api_key_encrypted
-                    .as_deref()
-                    .map(|k| cipher.decrypt(k))
-                    .transpose()?
-                    .unwrap_or_default();
-                let emb: Arc<dyn EmbeddingClient> = match std::env::var("EMBEDDING_API_KEY") {
-                    Ok(k) if !k.is_empty() => {
-                        Arc::new(OpenAiEmbeddingClient::with_model(&k, embed_model, 1536))
-                    }
-                    _ => Arc::new(StubEmbeddingClient::default()),
-                };
-                tracing::info!(gen = gen_model, "LLM provider: Anthropic");
-                (
-                    emb,
-                    Arc::new(AnthropicTextGenerationClient::with_model(&key, gen_model)),
-                )
-            }
-            "ollama" => {
-                let base_url = ws
-                    .llm_base_url
-                    .as_deref()
-                    .unwrap_or("http://localhost:11434");
-                tracing::info!(
+    let client: Arc<dyn TextGenerationClient> = match ws.llm_provider.as_str() {
+        "openai" => {
+            let key_str = ws
+                .llm_api_key_encrypted
+                .as_deref()
+                .map(|k| cipher.decrypt(k))
+                .transpose()?
+                .unwrap_or_default();
+            let key: Option<&str> = if key_str.is_empty() {
+                None
+            } else {
+                Some(&key_str)
+            };
+            let base_url = ws.llm_base_url.as_deref();
+            tracing::info!(
+                gen = gen_model,
+                base_url = base_url.unwrap_or("api.openai.com"),
+                "LLM provider: OpenAI"
+            );
+            Arc::new(OpenAiTextGenerationClient::from_config(
+                OpenAiGenerationConfig {
+                    api_key: key,
                     base_url,
-                    gen = gen_model,
-                    embed = embed_model,
-                    "LLM provider: Ollama"
-                );
-                (
-                    Arc::new(OllamaEmbeddingClient::new(base_url, embed_model)),
-                    Arc::new(OllamaTextClient::new(base_url, gen_model)),
-                )
-            }
-            _ => {
-                tracing::info!("LLM provider: stub (test / unknown)");
-                (
-                    Arc::new(StubEmbeddingClient::default()),
-                    Arc::new(StubTextGenerationClient),
-                )
-            }
-        };
+                    model: gen_model,
+                },
+            ))
+        }
+        "anthropic" => {
+            let key = ws
+                .llm_api_key_encrypted
+                .as_deref()
+                .map(|k| cipher.decrypt(k))
+                .transpose()?
+                .unwrap_or_default();
+            tracing::info!(gen = gen_model, "LLM provider: Anthropic");
+            Arc::new(AnthropicTextGenerationClient::with_model(&key, gen_model))
+        }
+        "ollama" => {
+            let base_url = ws
+                .llm_base_url
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
+            tracing::info!(base_url, gen = gen_model, "LLM provider: Ollama");
+            Arc::new(OllamaTextClient::new(base_url, gen_model))
+        }
+        _ => {
+            tracing::info!("LLM provider: stub (test / unknown)");
+            Arc::new(StubTextGenerationClient)
+        }
+    };
 
-    Ok(pair)
+    Ok(client)
 }
 
 fn init_tracing() {

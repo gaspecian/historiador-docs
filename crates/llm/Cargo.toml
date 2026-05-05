@@ -12,6 +12,7 @@ path = "src/lib.rs"
 historiador_tools = { path = "../tools" }
 
 reqwest.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -22,6 +23,10 @@ tokio-util.workspace = true
 tracing.workspace = true
 futures.workspace = true
 async-stream.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [features]
 ollama-tests = []

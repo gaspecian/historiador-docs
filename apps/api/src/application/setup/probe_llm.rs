@@ -22,8 +22,9 @@ impl ProbeLlmUseCase {
         &self,
         provider: LlmProvider,
         api_key: &str,
+        base_url: Option<&str>,
     ) -> Result<ProbeLlmResult, ApplicationError> {
-        Ok(match self.probe.probe(provider, api_key).await {
+        Ok(match self.probe.probe(provider, api_key, base_url).await {
             Ok(()) => ProbeLlmResult {
                 success: true,
                 message: "connection successful".into(),

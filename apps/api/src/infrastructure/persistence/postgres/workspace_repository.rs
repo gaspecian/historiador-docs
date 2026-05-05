@@ -58,7 +58,6 @@ impl WorkspaceRepository for PostgresWorkspaceRepository {
                 llm_api_key_encrypted: input.llm_api_key_encrypted.as_deref(),
                 llm_base_url: input.llm_base_url.as_deref(),
                 generation_model: &input.generation_model,
-                embedding_model: &input.embedding_model,
             },
         )
         .await?;
@@ -104,7 +103,6 @@ impl WorkspaceRepository for PostgresWorkspaceRepository {
                 llm_api_key_encrypted: patch.llm_api_key_encrypted.as_deref(),
                 llm_base_url: patch.llm_base_url.as_deref(),
                 generation_model: &patch.generation_model,
-                embedding_model: &patch.embedding_model,
             },
         )
         .await?;

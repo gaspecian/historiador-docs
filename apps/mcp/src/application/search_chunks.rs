@@ -1,9 +1,9 @@
 //! Semantic-search use case: query string → Chronik vector search →
 //! Postgres metadata enrichment → `SearchChunksResult`.
 //!
-//! The `EmbeddingClient` is no longer involved on the read side —
-//! Chronik embeds the query using the topic's configured model so
-//! both write and read sides agree on the embedding space.
+//! No embedding client is involved on the read side — Chronik embeds
+//! the query using the topic's configured model so both write and
+//! read sides agree on the embedding space.
 
 use std::sync::Arc;
 

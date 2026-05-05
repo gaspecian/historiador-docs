@@ -11,7 +11,7 @@ use crate::infrastructure::telemetry::editor::EditorMetrics;
 use crate::presentation::UseCases;
 use historiador_db::chronik::ChronikClient;
 use historiador_db::vector_store::VectorStore;
-use historiador_llm::{EmbeddingClient, TextGenerationClient};
+use historiador_llm::TextGenerationClient;
 
 /// Shared application state. Every route handler receives this via
 /// `State<Arc<AppState>>`.
@@ -31,8 +31,6 @@ pub struct AppState {
     pub llm_probe: Arc<dyn LlmProbe>,
     /// Vector store for chunk embeddings (Chronik HNSW in Sprint 7).
     pub vector_store: Arc<dyn VectorStore>,
-    /// Embedding client for generating text embeddings (stub in Sprint 3).
-    pub embedding_client: Arc<dyn EmbeddingClient>,
     /// Text generation client for the AI editor (stub unless LLM_PROVIDER is set).
     pub text_generation_client: Arc<dyn TextGenerationClient>,
     /// Chronik-Stream client for event production and analytics queries (Sprint 7).

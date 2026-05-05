@@ -81,7 +81,6 @@ pub fn workspace(row: w_rows::Workspace) -> Workspace {
         llm_api_key_encrypted: row.llm_api_key_encrypted,
         llm_base_url: row.llm_base_url,
         generation_model: row.generation_model,
-        embedding_model: row.embedding_model,
         mcp_bearer_token_hash: row.mcp_bearer_token_hash,
         created_at: row.created_at,
         updated_at: row.updated_at,

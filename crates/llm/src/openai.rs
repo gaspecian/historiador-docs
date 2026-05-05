@@ -1,86 +1,32 @@
-//! OpenAI provider implementations for embeddings and text generation.
+//! OpenAI provider implementation for text generation.
 
 use async_openai::{
-    config::OpenAIConfig,
     types::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
-        CreateChatCompletionRequestArgs, CreateEmbeddingRequestArgs,
+        CreateChatCompletionRequestArgs,
     },
     Client,
 };
 use async_trait::async_trait;
 use futures::StreamExt;
 
+use crate::openai_compat::OpenAiCompatConfig;
 use crate::text_generation::{TextGenerationClient, TextStream};
 use crate::tool_calling::Turn;
-use crate::{Embedding, EmbeddingClient, LlmError};
+use crate::LlmError;
 
-/// OpenAI embedding client using `text-embedding-3-small` (1536 dims).
-pub struct OpenAiEmbeddingClient {
-    client: Client<OpenAIConfig>,
-    model: String,
-    dim: usize,
+/// Builder shape for [`OpenAiTextGenerationClient::from_config`]. Set
+/// `base_url = None` to use the canonical OpenAI endpoint and
+/// `api_key = None` to omit the `Authorization` header.
+pub struct OpenAiGenerationConfig<'a> {
+    pub api_key: Option<&'a str>,
+    pub base_url: Option<&'a str>,
+    pub model: &'a str,
 }
 
-impl OpenAiEmbeddingClient {
-    pub fn new(api_key: &str) -> Self {
-        Self::with_model(api_key, "text-embedding-3-small", 1536)
-    }
-
-    pub fn with_model(api_key: &str, model: &str, dim: usize) -> Self {
-        let config = OpenAIConfig::new().with_api_key(api_key);
-        Self {
-            client: Client::with_config(config),
-            model: model.to_string(),
-            dim,
-        }
-    }
-}
-
-#[async_trait]
-impl EmbeddingClient for OpenAiEmbeddingClient {
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Embedding>, LlmError> {
-        if texts.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let request = CreateEmbeddingRequestArgs::default()
-            .model(&self.model)
-            .input(texts.to_vec())
-            .build()
-            .map_err(|e| LlmError::Api {
-                message: format!("failed to build embedding request: {e}"),
-            })?;
-
-        let response = self
-            .client
-            .embeddings()
-            .create(request)
-            .await
-            .map_err(|e| LlmError::Api {
-                message: format!("OpenAI embedding API error: {e}"),
-            })?;
-
-        let embeddings = response
-            .data
-            .into_iter()
-            .map(|d| Embedding {
-                vector: d.embedding,
-            })
-            .collect();
-
-        Ok(embeddings)
-    }
-
-    fn dimension(&self) -> usize {
-        self.dim
-    }
-}
-
-/// OpenAI text generation client using chat completions.
 pub struct OpenAiTextGenerationClient {
-    client: Client<OpenAIConfig>,
+    client: Client<OpenAiCompatConfig>,
     model: String,
 }
 
@@ -90,10 +36,18 @@ impl OpenAiTextGenerationClient {
     }
 
     pub fn with_model(api_key: &str, model: &str) -> Self {
-        let config = OpenAIConfig::new().with_api_key(api_key);
+        Self::from_config(OpenAiGenerationConfig {
+            api_key: Some(api_key),
+            base_url: None,
+            model,
+        })
+    }
+
+    pub fn from_config(cfg: OpenAiGenerationConfig<'_>) -> Self {
+        let config = OpenAiCompatConfig::new(cfg.base_url, cfg.api_key);
         Self {
             client: Client::with_config(config),
-            model: model.to_string(),
+            model: cfg.model.to_string(),
         }
     }
 }
@@ -220,5 +174,60 @@ impl crate::tool_calling::ToolCallingClient for OpenAiTextGenerationClient {
         _tools: &[historiador_tools::ToolSpec],
     ) -> Result<crate::tool_calling::ToolStream, LlmError> {
         Err(LlmError::NotImplemented)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn chat_with_custom_base_url_and_no_auth() {
+        use crate::text_generation::TextGenerationClient;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "x",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "any",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiTextGenerationClient::from_config(OpenAiGenerationConfig {
+            api_key: None,
+            base_url: Some(&server.uri()),
+            model: "any",
+        });
+        let mut stream = client
+            .generate_text_stream("be brief", "hi")
+            .await
+            .expect("stream ok");
+        // The chat stream is lazy — polling is what fires the HTTP
+        // request. Wiremock returns JSON (not SSE), so the body parse
+        // will error, but we only care that the request reached the
+        // server with the right URL + no Authorization header.
+        let _ = stream.next().await;
+
+        let received = server.received_requests().await.unwrap();
+        assert!(
+            received.iter().any(|r| r.url.path() == "/chat/completions"),
+            "expected POST /chat/completions"
+        );
+        assert!(
+            received[0].headers.get("authorization").is_none(),
+            "no Authorization header should be sent"
+        );
     }
 }

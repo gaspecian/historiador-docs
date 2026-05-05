@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI custom base URL.** The OpenAI provider now accepts an
+  optional custom base URL and an optional API key, enabling
+  self-hosted OpenAI-compatible endpoints (vLLM, LiteLLM, OpenRouter,
+  LM Studio, Together, Fireworks, Azure-via-proxy). Configured
+  per-workspace via the setup wizard or admin LLM config form;
+  when the URL is set and the key is blank, no `Authorization`
+  header is sent (for unauthenticated self-hosted servers).
+
+### Changed
+
+- **BREAKING (API):** Removed `embedding_model` from `POST /setup/init`,
+  `PATCH /admin/workspace/llm`, and `GET /admin/workspace`. Removed
+  `requires_reindex` and `affected_page_versions` from
+  `PATCH /admin/workspace/llm` response. Embeddings are owned by the
+  Chronik vector store via topic-level configuration; the workspace
+  no longer carries an embedding model. Existing clients that pass
+  `embedding_model` will be rejected by validation; clients that read
+  it from responses will see the field absent.
+- **OpenAI probe** now hits `GET {base}/models` instead of issuing an
+  embedding call with a hardcoded model name. Validates URL + auth +
+  protocol shape against any OpenAI-compatible catalog endpoint.
+
+### Removed
+
+- The `EmbeddingClient` trait and all its implementations
+  (`OpenAiEmbeddingClient`, `OllamaEmbeddingClient`,
+  `StubEmbeddingClient`) from the `historiador_llm` crate.
+- The `embedding_client` field on `AppState`.
+- The `workspaces.embedding_model` column (migration 0010).
+- The "Changing the embedding model requires re-embedding ..." admin
+  UX banner.
+- The Anthropic-with-OpenAI-embeddings sidecar code path that read
+  `EMBEDDING_API_KEY` to construct an OpenAI embedding client. The
+  `EMBEDDING_API_KEY` env var is still read by the Chronik container
+  (via `docker-compose.yml`); the app no longer reads it.
+
 ## [1.0.0] — 2026-05-01
 
 First public release. Self-hosted documentation platform with a built-in
