@@ -30,6 +30,12 @@ O **servidor MCP tem zero acesso de escrita** ao Postgres e ao Chronik-Stream �
 
 ## Inicio rapido
 
+> Esta secao cobre o setup **local de desenvolvimento**. Para instalar
+> em producao (single-host VPS via `docker-compose.prod.yml`, com
+> proxy reverso e TLS), siga o [guia de instalacao](docs/installation.md).
+> Veja tambem o [blueprint de arquitetura](docs/architecture.md) e o
+> [mapa de dependencias](docs/dependencies.md).
+
 ### Pre-requisitos
 
 - [Docker Desktop](https://docs.docker.com/get-docker/) (ou Docker Engine + Compose v2)
@@ -181,11 +187,21 @@ na secao `[1.0.0] → Known Limitations`.
 
 ### Referencias
 
+- [docs/installation.md](docs/installation.md) — guia de instalacao em
+  producao (single-host VPS), provisionamento de segredos, primeira
+  execucao do wizard, backups e upgrades.
+- [docs/architecture.md](docs/architecture.md) — blueprint de
+  arquitetura: diagramas de servicos, fronteiras de seguranca, fluxos
+  de requisicao e invariantes criticas.
+- [docs/dependencies.md](docs/dependencies.md) — mapa de dependencias:
+  versoes, portas, variaveis de ambiente e requisitos de host.
 - [docs/security.md](docs/security.md) — postura de seguranca, auditoria
   de dependencias, comparacao em tempo constante do token MCP, separacao
   de roles Postgres.
 - [docs/performance.md](docs/performance.md) — alvo de p95 < 2 s para
   1.000 queries sobre 10.000 chunks + script de carga (`scripts/load-test/run.sh`).
+- [docs/deploy/nginx.conf](docs/deploy/nginx.conf) — config de
+  referencia do proxy reverso (TLS termination + roteamento web/MCP).
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup local, pipeline de
   OpenAPI → TypeScript, convencoes de PR.
 - [CHANGELOG.md](CHANGELOG.md) — lancamento v1.0.0 completo.
