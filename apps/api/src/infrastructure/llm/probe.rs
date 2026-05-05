@@ -76,24 +76,28 @@ impl LlmProbe for HttpLlmProbe {
     ) -> anyhow::Result<()> {
         match provider {
             LlmProvider::OpenAi => {
-                use historiador_llm::{
-                    EmbeddingClient, OpenAiEmbeddingClient, OpenAiEmbeddingConfig,
-                };
-                let key = if api_key.is_empty() {
-                    None
-                } else {
-                    Some(api_key)
-                };
-                let client = OpenAiEmbeddingClient::from_config(OpenAiEmbeddingConfig {
-                    api_key: key,
-                    base_url,
-                    model: "text-embedding-3-small",
-                    dim: 1536,
-                });
-                client
-                    .embed(&["ping".to_string()])
+                // Validate URL + auth shape via the OpenAI catalog endpoint.
+                // No model name is hardcoded — the caller's chosen model is
+                // validated implicitly when the chunk pipeline / chat API
+                // first hits it.
+                let base = base_url
+                    .map(|u| u.trim_end_matches('/').to_string())
+                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                let url = format!("{base}/models");
+                let mut req = self.client.get(&url);
+                if !api_key.is_empty() {
+                    req = req.bearer_auth(api_key);
+                }
+                let resp = req
+                    .send()
                     .await
-                    .map_err(|e| anyhow::anyhow!("openai rejected: {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("openai unreachable at {base}: {e}"))?;
+                if !resp.status().is_success() {
+                    anyhow::bail!(
+                        "openai rejected (status {}) at {base}",
+                        resp.status().as_u16()
+                    );
+                }
                 Ok(())
             }
             LlmProvider::Anthropic => {
@@ -172,17 +176,22 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    fn models_response() -> serde_json::Value {
+        serde_json::json!({
+            "object": "list",
+            "data": [
+                {"id": "gpt-4o-mini", "object": "model", "created": 0, "owned_by": "openai"},
+                {"id": "text-embedding-3-small", "object": "model", "created": 0, "owned_by": "openai"}
+            ]
+        })
+    }
+
     #[tokio::test]
     async fn openai_probe_hits_supplied_base_url_with_bearer() {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/embeddings"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "object": "list",
-                "data": [{"object": "embedding", "index": 0, "embedding": [0.0]}],
-                "model": "text-embedding-3-small",
-                "usage": {"prompt_tokens": 1, "total_tokens": 1}
-            })))
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(models_response()))
             .mount(&server)
             .await;
 
@@ -194,6 +203,7 @@ mod tests {
 
         let recv = server.received_requests().await.unwrap();
         assert_eq!(recv.len(), 1);
+        assert_eq!(recv[0].method, wiremock::http::Method::GET);
         assert_eq!(
             recv[0].headers.get("authorization").unwrap(),
             "Bearer secret-key"
@@ -203,14 +213,9 @@ mod tests {
     #[tokio::test]
     async fn openai_probe_no_auth_when_key_empty_and_url_set() {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/embeddings"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "object": "list",
-                "data": [{"object": "embedding", "index": 0, "embedding": [0.0]}],
-                "model": "text-embedding-3-small",
-                "usage": {"prompt_tokens": 1, "total_tokens": 1}
-            })))
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(models_response()))
             .mount(&server)
             .await;
 
@@ -227,8 +232,8 @@ mod tests {
     #[tokio::test]
     async fn openai_probe_surfaces_4xx_as_error() {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/embeddings"))
+        Mock::given(method("GET"))
+            .and(path("/models"))
             .respond_with(ResponseTemplate::new(401))
             .mount(&server)
             .await;
