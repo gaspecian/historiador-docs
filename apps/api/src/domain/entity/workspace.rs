@@ -13,7 +13,6 @@ pub struct Workspace {
     pub llm_api_key_encrypted: Option<String>,
     pub llm_base_url: Option<String>,
     pub generation_model: String,
-    pub embedding_model: String,
     pub mcp_bearer_token_hash: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

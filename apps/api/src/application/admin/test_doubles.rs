@@ -170,7 +170,6 @@ pub(crate) fn make_workspace(
         llm_api_key_encrypted: api_key_encrypted.map(|s| s.to_string()),
         llm_base_url: base_url.map(|s| s.to_string()),
         generation_model: "gpt-4o-mini".to_string(),
-        embedding_model: "text-embedding-3-small".to_string(),
         mcp_bearer_token_hash: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
