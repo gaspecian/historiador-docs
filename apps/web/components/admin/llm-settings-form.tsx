@@ -28,8 +28,6 @@ interface OllamaModelEntry {
 
 interface LlmPatchResponse {
   success: boolean;
-  requires_reindex: boolean;
-  affected_page_versions: number;
   requires_restart: boolean;
 }
 
@@ -49,14 +47,12 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState<string>(workspace.llm_base_url ?? "");
   const [generationModel, setGenerationModel] = useState<string>(workspace.generation_model ?? "");
-  const [embeddingModel, setEmbeddingModel] = useState<string>(workspace.embedding_model ?? "");
   const [probeMessage, setProbeMessage] = useState<string | null>(null);
   const [probeSuccess, setProbeSuccess] = useState<boolean | null>(null);
   const [ollamaModels, setOllamaModels] = useState<OllamaModelEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<LlmPatchResponse | null>(null);
-  const [reindexStatus, setReindexStatus] = useState<string | null>(null);
 
   // Sync local state to the canonical workspace prop. Without this,
   // after save → onSaved() → refresh, the form keeps its old local
@@ -65,7 +61,6 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
   useEffect(() => {
     setProvider(initialProviderFor(workspace));
     setGenerationModel(workspace.generation_model ?? "");
-    setEmbeddingModel(workspace.embedding_model ?? "");
     setApiKey("");
     setBaseUrl(workspace.llm_base_url ?? "");
     setProbeMessage(null);
@@ -81,7 +76,6 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     // (e.g. carrying "stub" from the test provider over to ollama).
     const sameProvider = p === workspace.llm_provider;
     setGenerationModel(sameProvider ? workspace.generation_model ?? "" : "");
-    setEmbeddingModel(sameProvider ? workspace.embedding_model ?? "" : "");
     // Base URL is OpenAI-only; preserve persisted value when staying on openai,
     // clear otherwise so we never PATCH a URL meant for another provider.
     setBaseUrl(sameProvider ? workspace.llm_base_url ?? "" : "");
@@ -89,7 +83,6 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     setProbeSuccess(null);
     setOllamaModels([]);
     setResult(null);
-    setReindexStatus(null);
   };
 
   // When Ollama models load (after a successful probe), auto-select the first
@@ -101,9 +94,6 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     const names = ollamaModels.map((m) => m.name);
     if (!generationModel || !names.includes(generationModel)) {
       setGenerationModel(ollamaModels[0].name);
-    }
-    if (!embeddingModel || !names.includes(embeddingModel)) {
-      setEmbeddingModel(ollamaModels[0].name);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ollamaModels, provider]);
@@ -138,9 +128,9 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
 
   const save = async () => {
     if (provider === "") return;
-    if (provider !== "test" && (!generationModel.trim() || !embeddingModel.trim())) {
+    if (provider !== "test" && !generationModel.trim()) {
       setProbeSuccess(false);
-      setProbeMessage("Generation and embedding model are required.");
+      setProbeMessage("Generation model is required.");
       return;
     }
     setSaving(true);
@@ -154,32 +144,17 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
             ? baseUrl.trim()
             : undefined,
         generation_model: generationModel,
-        embedding_model: embeddingModel,
       });
       setResult(res);
       onSaved();
     } catch (e) {
       setResult({
         success: false,
-        requires_reindex: false,
-        affected_page_versions: 0,
         requires_restart: false,
       });
       setProbeMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const triggerReindex = async () => {
-    setReindexStatus("Re-indexing…");
-    try {
-      const r = await adminService.reindex();
-      setReindexStatus(`Re-indexing ${r.scheduled} page version(s) in background.`);
-    } catch (e) {
-      setReindexStatus(
-        `Failed: ${e instanceof Error ? e.message : String(e)}`,
-      );
     }
   };
 
@@ -211,19 +186,6 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
           editor.
         </p>
       )}
-      {result.requires_reindex && (
-        <div className="space-y-2">
-          <p className="text-amber-600">
-            Changing the embedding model requires re-embedding{" "}
-            {result.affected_page_versions} published page version(s). Until re-indexed,
-            MCP queries will mismatch and return no results.
-          </p>
-          <Button size="sm" variant="danger" onClick={triggerReindex}>
-            Re-index now
-          </Button>
-        </div>
-      )}
-      {reindexStatus && <p className="text-sm">{reindexStatus}</p>}
     </div>
   );
 
@@ -261,18 +223,11 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
           {testing ? <><Spinner className="mr-2" /> Testing…</> : "Test connection"}
         </Button>
         {probeBlock}
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Generation model"
-            value={generationModel}
-            onChange={(e) => setGenerationModel(e.target.value)}
-          />
-          <Input
-            label="Embedding model"
-            value={embeddingModel}
-            onChange={(e) => setEmbeddingModel(e.target.value)}
-          />
-        </div>
+        <Input
+          label="Generation model"
+          value={generationModel}
+          onChange={(e) => setGenerationModel(e.target.value)}
+        />
         {saveBlock}
         {resultBlock}
       </div>
@@ -297,37 +252,20 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
         {testing ? <><Spinner className="mr-2" /> Testing…</> : "Test connection"}
       </Button>
       {probeBlock}
-      <div className="grid grid-cols-2 gap-4">
-        {ollamaOptions.length > 0 ? (
-          <>
-            <Select
-              label="Generation model"
-              options={ollamaOptions}
-              value={generationModel}
-              onChange={(e) => setGenerationModel(e.target.value)}
-            />
-            <Select
-              label="Embedding model"
-              options={ollamaOptions}
-              value={embeddingModel}
-              onChange={(e) => setEmbeddingModel(e.target.value)}
-            />
-          </>
-        ) : (
-          <>
-            <Input
-              label="Generation model"
-              value={generationModel}
-              onChange={(e) => setGenerationModel(e.target.value)}
-            />
-            <Input
-              label="Embedding model"
-              value={embeddingModel}
-              onChange={(e) => setEmbeddingModel(e.target.value)}
-            />
-          </>
-        )}
-      </div>
+      {ollamaOptions.length > 0 ? (
+        <Select
+          label="Generation model"
+          options={ollamaOptions}
+          value={generationModel}
+          onChange={(e) => setGenerationModel(e.target.value)}
+        />
+      ) : (
+        <Input
+          label="Generation model"
+          value={generationModel}
+          onChange={(e) => setGenerationModel(e.target.value)}
+        />
+      )}
       {saveBlock}
       {resultBlock}
     </div>
