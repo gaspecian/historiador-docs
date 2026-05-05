@@ -258,7 +258,7 @@ export function ChatPane({
     () => (
       <div className="flex items-center gap-2 px-4 h-12 border-b border-[var(--color-surface-border)] bg-[var(--color-surface-page)]">
         <Sparkles className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden />
-        <span className="t-label">AI assistant</span>
+        <span className="t-label">Assistente</span>
         <span className="ml-auto t-body-sm text-[var(--color-text-tertiary)]">
           {statusLabel(status)}
         </span>
@@ -306,11 +306,11 @@ export function ChatPane({
 function statusLabel(status: string): string {
   switch (status) {
     case "connecting":
-      return "Connecting…";
+      return "Conectando…";
     case "open":
       return "Online";
     case "error":
-      return "Reconnecting…";
+      return "Reconectando…";
     case "closed":
     default:
       return "Offline";

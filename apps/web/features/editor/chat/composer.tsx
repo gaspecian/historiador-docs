@@ -39,7 +39,7 @@ export function Composer({ onSubmit, onSkipDiscovery, disabled = false }: Compos
           disabled={disabled}
           className="self-start t-body-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-primary-600)] underline underline-offset-2 disabled:opacity-50"
         >
-          Skip discovery — just write
+          Pular descoberta — escrever direto
         </button>
       )}
       <div className="flex gap-2 items-end">
@@ -56,7 +56,7 @@ export function Composer({ onSubmit, onSkipDiscovery, disabled = false }: Compos
           type="button"
           onClick={submit}
           disabled={disabled || value.trim().length === 0}
-          aria-label="Send"
+          aria-label="Enviar"
           className="h-10 w-10 rounded-[var(--radius-md)] bg-[var(--color-primary-600)] text-[var(--color-text-inverse)] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--color-primary-700)]"
         >
           <Send className="w-4 h-4" aria-hidden />
