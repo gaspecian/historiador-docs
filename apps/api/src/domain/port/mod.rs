@@ -30,4 +30,4 @@ pub mod workspace_repository;
 
 // Re-exports of traits that already exist in shared crates.
 pub use historiador_db::vector_store::VectorStore;
-pub use historiador_llm::{EmbeddingClient, TextGenerationClient};
+pub use historiador_llm::TextGenerationClient;

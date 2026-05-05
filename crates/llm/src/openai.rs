@@ -1,10 +1,10 @@
-//! OpenAI provider implementations for embeddings and text generation.
+//! OpenAI provider implementation for text generation.
 
 use async_openai::{
     types::{
         ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
-        CreateChatCompletionRequestArgs, CreateEmbeddingRequestArgs,
+        CreateChatCompletionRequestArgs,
     },
     Client,
 };
@@ -14,91 +14,7 @@ use futures::StreamExt;
 use crate::openai_compat::OpenAiCompatConfig;
 use crate::text_generation::{TextGenerationClient, TextStream};
 use crate::tool_calling::Turn;
-use crate::{Embedding, EmbeddingClient, LlmError};
-
-/// Builder shape for [`OpenAiEmbeddingClient::from_config`]. Set
-/// `base_url = None` to use the canonical OpenAI endpoint and
-/// `api_key = None` to omit the `Authorization` header (for
-/// unauthenticated self-hosted servers).
-pub struct OpenAiEmbeddingConfig<'a> {
-    pub api_key: Option<&'a str>,
-    pub base_url: Option<&'a str>,
-    pub model: &'a str,
-    pub dim: usize,
-}
-
-/// OpenAI-compatible embedding client. Defaults to
-/// `text-embedding-3-small` (1536 dims) on the canonical OpenAI
-/// endpoint when constructed with `new`.
-pub struct OpenAiEmbeddingClient {
-    client: Client<OpenAiCompatConfig>,
-    model: String,
-    dim: usize,
-}
-
-impl OpenAiEmbeddingClient {
-    pub fn new(api_key: &str) -> Self {
-        Self::with_model(api_key, "text-embedding-3-small", 1536)
-    }
-
-    pub fn with_model(api_key: &str, model: &str, dim: usize) -> Self {
-        Self::from_config(OpenAiEmbeddingConfig {
-            api_key: Some(api_key),
-            base_url: None,
-            model,
-            dim,
-        })
-    }
-
-    pub fn from_config(cfg: OpenAiEmbeddingConfig<'_>) -> Self {
-        let config = OpenAiCompatConfig::new(cfg.base_url, cfg.api_key);
-        Self {
-            client: Client::with_config(config),
-            model: cfg.model.to_string(),
-            dim: cfg.dim,
-        }
-    }
-}
-
-#[async_trait]
-impl EmbeddingClient for OpenAiEmbeddingClient {
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Embedding>, LlmError> {
-        if texts.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let request = CreateEmbeddingRequestArgs::default()
-            .model(&self.model)
-            .input(texts.to_vec())
-            .build()
-            .map_err(|e| LlmError::Api {
-                message: format!("failed to build embedding request: {e}"),
-            })?;
-
-        let response = self
-            .client
-            .embeddings()
-            .create(request)
-            .await
-            .map_err(|e| LlmError::Api {
-                message: format!("OpenAI embedding API error: {e}"),
-            })?;
-
-        let embeddings = response
-            .data
-            .into_iter()
-            .map(|d| Embedding {
-                vector: d.embedding,
-            })
-            .collect();
-
-        Ok(embeddings)
-    }
-
-    fn dimension(&self) -> usize {
-        self.dim
-    }
-}
+use crate::LlmError;
 
 /// Builder shape for [`OpenAiTextGenerationClient::from_config`]. Set
 /// `base_url = None` to use the canonical OpenAI endpoint and
@@ -264,71 +180,8 @@ impl crate::tool_calling::ToolCallingClient for OpenAiTextGenerationClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EmbeddingClient;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    #[tokio::test]
-    async fn embed_with_custom_base_url_and_bearer() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/embeddings"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "object": "list",
-                "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}],
-                "model": "text-embedding-3-small",
-                "usage": {"prompt_tokens": 1, "total_tokens": 1}
-            })))
-            .mount(&server)
-            .await;
-
-        let client = OpenAiEmbeddingClient::from_config(OpenAiEmbeddingConfig {
-            api_key: Some("my-key"),
-            base_url: Some(&server.uri()),
-            model: "text-embedding-3-small",
-            dim: 3,
-        });
-        let out = client.embed(&["hello".into()]).await.expect("embed ok");
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].vector.len(), 3);
-
-        let recv = server.received_requests().await.unwrap();
-        assert_eq!(recv.len(), 1);
-        assert_eq!(
-            recv[0].headers.get("authorization").unwrap(),
-            "Bearer my-key"
-        );
-    }
-
-    #[tokio::test]
-    async fn embed_without_authorization_header() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/embeddings"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "object": "list",
-                "data": [{"object": "embedding", "index": 0, "embedding": [0.0]}],
-                "model": "any",
-                "usage": {"prompt_tokens": 1, "total_tokens": 1}
-            })))
-            .mount(&server)
-            .await;
-
-        let client = OpenAiEmbeddingClient::from_config(OpenAiEmbeddingConfig {
-            api_key: None,
-            base_url: Some(&server.uri()),
-            model: "any",
-            dim: 1,
-        });
-        client.embed(&["hi".into()]).await.expect("embed ok");
-
-        let received = server.received_requests().await.unwrap();
-        assert_eq!(received.len(), 1);
-        assert!(
-            received[0].headers.get("authorization").is_none(),
-            "no Authorization header should be sent"
-        );
-    }
 
     #[tokio::test]
     async fn chat_with_custom_base_url_and_no_auth() {
