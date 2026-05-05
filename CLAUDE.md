@@ -21,7 +21,7 @@ apps/
 crates/
   db/           Shared Postgres (sqlx) + Chronik-Stream clients; owns migrations
   chunker/      Structure-aware markdown chunker (comrak AST)
-  llm/          EmbeddingClient + TextGenerationClient traits; OpenAI, Anthropic, Ollama, stub impls
+  llm/          TextGenerationClient + ToolCallingClient traits; OpenAI, Anthropic, Ollama, stub impls (Chronik owns embeddings server-side; no app-side embedding client)
 packages/
   types/        TypeScript types auto-generated from openapi.yaml
 ```
