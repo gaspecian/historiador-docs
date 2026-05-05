@@ -11,14 +11,20 @@ export function UserMenu() {
 
  const roleBadgeVariant = user.role === "admin" ? "warning" : user.role === "author" ? "success" : "neutral";
 
+ const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrador",
+  author: "Autor",
+  viewer: "Leitor",
+ };
+
  return (
  <div className="flex items-center gap-3">
  <div className="flex items-center gap-2 text-sm">
- <span className="text-text-secondary">{user.email || "User"}</span>
- <Badge variant={roleBadgeVariant}>{user.role}</Badge>
+ <span className="text-text-secondary">{user.email || "Usuário"}</span>
+ <Badge variant={roleBadgeVariant}>{ROLE_LABELS[user.role] ?? user.role}</Badge>
  </div>
  <Button variant="ghost" size="sm" onClick={logout}>
- Sign out
+ Sair
  </Button>
  </div>
  );

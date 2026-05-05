@@ -101,7 +101,7 @@ function DashboardLayoutInner({
                 : "text-text-secondary hover:bg-surface-hover"
               }`}
           >
-            Pages
+            Páginas
           </Link>
           {isAdmin && (
             <Link
@@ -111,7 +111,7 @@ function DashboardLayoutInner({
                   : "text-text-secondary hover:bg-surface-hover"
                 }`}
             >
-              Admin
+              Administração
             </Link>
           )}
         </nav>
@@ -120,7 +120,7 @@ function DashboardLayoutInner({
         <div className="flex-1 overflow-y-auto p-2">
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
-              Collections
+              Coleções
             </span>
             <Button
               variant="ghost"
@@ -128,7 +128,7 @@ function DashboardLayoutInner({
               onClick={() => setShowCreateCollection(!showCreateCollection)}
               className="text-xs"
             >
-              + New
+              + Nova
             </Button>
           </div>
 
@@ -161,7 +161,7 @@ function DashboardLayoutInner({
               style={{ inset: -3, animation: "pulse 1.6s infinite" }}
             />
           </span>
-          MCP active
+          MCP ativo
         </div>
       </aside>
 
@@ -175,11 +175,11 @@ function DashboardLayoutInner({
                 <span>
                   <span className="text-text-disabled">/ </span>
                   <span className="font-medium text-text-primary">
-                    {collections.collections.find((c) => c.id === selectedId)?.name ?? "Collection"}
+                    {collections.collections.find((c) => c.id === selectedId)?.name ?? "Coleção"}
                   </span>
                 </span>
               )
-              : "All pages"}
+              : "Todas as páginas"}
           </div>
           <UserMenu />
         </header>
