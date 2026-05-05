@@ -29,9 +29,7 @@ use historiador_api::{
     state::AppState,
 };
 use historiador_db::vector_store::{InMemoryVectorStore, VectorStore};
-use historiador_llm::{
-    EmbeddingClient, StubEmbeddingClient, StubTextGenerationClient, TextGenerationClient,
-};
+use historiador_llm::{StubTextGenerationClient, TextGenerationClient};
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -43,7 +41,6 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
     let jwt_secret: Vec<u8> = b"test-secret-at-least-32-bytes-long-xxxx".to_vec();
     let llm_probe: Arc<dyn LlmProbe> = Arc::new(StubProbe);
     let vector_store: Arc<dyn VectorStore> = Arc::new(InMemoryVectorStore::new());
-    let embedding_client: Arc<dyn EmbeddingClient> = Arc::new(StubEmbeddingClient::default());
     let text_generation_client: Arc<dyn TextGenerationClient> = Arc::new(StubTextGenerationClient);
 
     let use_cases = Arc::new(UseCases::build(BuildDeps {
@@ -52,7 +49,6 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
         jwt_secret: jwt_secret.clone(),
         llm_probe: llm_probe.clone(),
         vector_store: vector_store.clone(),
-        embedding_client: embedding_client.clone(),
         text_generation_client: text_generation_client.clone(),
         chronik: None,
     }));
@@ -66,7 +62,6 @@ fn test_state(pool: PgPool) -> Arc<AppState> {
         setup_complete: AtomicBool::new(false),
         llm_probe,
         vector_store,
-        embedding_client,
         text_generation_client,
         chronik: None,
         use_cases,

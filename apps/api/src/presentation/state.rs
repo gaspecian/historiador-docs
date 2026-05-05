@@ -14,7 +14,7 @@ use sqlx::PgPool;
 
 use historiador_db::chronik::ChronikClient;
 use historiador_db::vector_store::VectorStore;
-use historiador_llm::{EmbeddingClient, TextGenerationClient};
+use historiador_llm::TextGenerationClient;
 
 use crate::application::admin::{
     DeactivateUserUseCase, GetMcpAnalyticsUseCase, GetWorkspaceUseCase, InviteUserUseCase,
@@ -61,7 +61,6 @@ pub struct BuildDeps {
     pub jwt_secret: Vec<u8>,
     pub llm_probe: Arc<dyn LlmProbe>,
     pub vector_store: Arc<dyn VectorStore>,
-    pub embedding_client: Arc<dyn EmbeddingClient>,
     pub text_generation_client: Arc<dyn TextGenerationClient>,
     pub chronik: Option<ChronikClient>,
 }
