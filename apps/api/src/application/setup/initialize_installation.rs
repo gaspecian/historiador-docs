@@ -27,7 +27,6 @@ pub struct InitializeInstallationCommand {
     /// `llm_api_key` is empty (no existing key exists at first-run).
     pub base_url: Option<String>,
     pub generation_model: Option<String>,
-    pub embedding_model: Option<String>,
     pub languages: Vec<String>,
     pub primary_language: String,
 }
@@ -117,9 +116,6 @@ impl InitializeInstallationUseCase {
         let generation_model = cmd
             .generation_model
             .unwrap_or_else(|| defaults::generation_model(cmd.llm_provider).to_string());
-        let embedding_model = cmd
-            .embedding_model
-            .unwrap_or_else(|| defaults::embedding_model(cmd.llm_provider).to_string());
 
         let languages: Vec<Language> = cmd
             .languages
@@ -139,7 +135,6 @@ impl InitializeInstallationUseCase {
                 llm_api_key_encrypted: encrypted_key,
                 llm_base_url: base_url,
                 generation_model,
-                embedding_model,
                 admin_email: email,
                 admin_password_hash: password_hash,
             })
@@ -175,7 +170,6 @@ mod tests {
             llm_api_key: String::new(),
             base_url: None,
             generation_model: None,
-            embedding_model: None,
             languages: vec!["en".to_string()],
             primary_language: "en".to_string(),
         }

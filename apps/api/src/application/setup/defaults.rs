@@ -10,13 +10,3 @@ pub fn generation_model(provider: LlmProvider) -> &'static str {
         LlmProvider::Test => "stub",
     }
 }
-
-pub fn embedding_model(provider: LlmProvider) -> &'static str {
-    match provider {
-        // Anthropic has no embedding API; production falls back to
-        // OpenAI with this model, so the default reflects that.
-        LlmProvider::OpenAi | LlmProvider::Anthropic => "text-embedding-3-small",
-        LlmProvider::Ollama => "nomic-embed-text",
-        LlmProvider::Test => "stub",
-    }
-}

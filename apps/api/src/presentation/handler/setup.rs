@@ -86,6 +86,11 @@ pub async fn init(
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
+    // `embedding_model` field on the DTO is retained for the DTO contract
+    // until Task 7 of the EmbeddingClient retirement plan; silence the
+    // unused-field warning here.
+    let _ = body.embedding_model;
+
     let result = state
         .use_cases
         .initialize_installation
@@ -97,7 +102,6 @@ pub async fn init(
             llm_api_key: body.llm_api_key,
             base_url: body.base_url,
             generation_model: body.generation_model,
-            embedding_model: body.embedding_model,
             languages: body.languages,
             primary_language: body.primary_language,
         })
