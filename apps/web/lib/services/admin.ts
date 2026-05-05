@@ -46,13 +46,10 @@ export interface LlmPatchBody {
   llm_api_key?: string;
   base_url?: string;
   generation_model: string;
-  embedding_model: string;
 }
 
 export interface LlmPatchResult {
   success: boolean;
-  requires_reindex: boolean;
-  affected_page_versions: number;
   requires_restart: boolean;
 }
 
