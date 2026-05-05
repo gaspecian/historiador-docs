@@ -50,10 +50,6 @@ pub struct SetupRequest {
     #[validate(length(min = 1, max = 128))]
     pub generation_model: Option<String>,
 
-    /// Model used for chunk embeddings during publish.
-    #[validate(length(min = 1, max = 128))]
-    pub embedding_model: Option<String>,
-
     #[validate(length(min = 1, max = 16))]
     pub languages: Vec<String>,
 
@@ -85,11 +81,6 @@ pub async fn init(
 ) -> Result<Json<SetupResponse>, ApiError> {
     body.validate()
         .map_err(|e| ApiError::Validation(e.to_string()))?;
-
-    // `embedding_model` field on the DTO is retained for the DTO contract
-    // until Task 7 of the EmbeddingClient retirement plan; silence the
-    // unused-field warning here.
-    let _ = body.embedding_model;
 
     let result = state
         .use_cases

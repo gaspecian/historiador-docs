@@ -31,7 +31,6 @@ pub struct WorkspaceResponse {
     pub primary_language: String,
     pub llm_provider: String,
     pub generation_model: String,
-    pub embedding_model: String,
     pub llm_base_url: Option<String>,
     /// The MCP endpoint URL (constructed from config).
     pub mcp_endpoint_url: String,
@@ -77,7 +76,6 @@ pub async fn get_workspace(
         primary_language: ws.primary_language.into_string(),
         llm_provider: ws.llm_provider,
         generation_model: ws.generation_model,
-        embedding_model: ws.embedding_model,
         llm_base_url: ws.llm_base_url,
         mcp_endpoint_url: format!("{mcp_endpoint_url}/query"),
         has_mcp_token: ws.mcp_bearer_token_hash.is_some(),
@@ -144,15 +142,11 @@ pub struct LlmPatchRequest {
 
     #[validate(length(min = 1, max = 128))]
     pub generation_model: String,
-    #[validate(length(min = 1, max = 128))]
-    pub embedding_model: String,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct LlmPatchResponse {
     pub success: bool,
-    pub requires_reindex: bool,
-    pub affected_page_versions: i64,
     pub requires_restart: bool,
 }
 
@@ -191,15 +185,8 @@ pub async fn update_llm_config(
         )
         .await?;
 
-    // `embedding_model`, `requires_reindex`, and `affected_page_versions`
-    // are retired by Tasks 5-7 of the EmbeddingClient retirement plan.
-    // The DTO fields are dropped in Task 7; for now we ignore the
-    // request field and surface dummy values in the response.
-    let _ = body.embedding_model;
     Ok(Json(LlmPatchResponse {
         success: true,
-        requires_reindex: false,
-        affected_page_versions: 0,
         requires_restart: result.requires_restart,
     }))
 }
