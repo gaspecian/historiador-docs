@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::domain::error::{ApplicationError, DomainError};
 use crate::domain::port::cipher::Cipher;
 use crate::domain::port::llm_probe::LlmProbe;
-use crate::domain::port::page_repository::PageRepository;
 use crate::domain::port::workspace_repository::{LlmConfigPatch, WorkspaceRepository};
 use crate::domain::value::{Actor, Role};
 use crate::infrastructure::llm::probe::LlmProvider;
@@ -19,18 +18,14 @@ pub struct UpdateLlmConfigCommand {
     /// into `workspaces.llm_base_url`.
     pub base_url: Option<String>,
     pub generation_model: String,
-    pub embedding_model: String,
 }
 
 pub struct UpdateLlmConfigResult {
-    pub requires_reindex: bool,
-    pub affected_page_versions: i64,
     pub requires_restart: bool,
 }
 
 pub struct UpdateLlmConfigUseCase {
     workspaces: Arc<dyn WorkspaceRepository>,
-    pages: Arc<dyn PageRepository>,
     probe: Arc<dyn LlmProbe>,
     cipher: Arc<dyn Cipher>,
 }
@@ -38,13 +33,11 @@ pub struct UpdateLlmConfigUseCase {
 impl UpdateLlmConfigUseCase {
     pub fn new(
         workspaces: Arc<dyn WorkspaceRepository>,
-        pages: Arc<dyn PageRepository>,
         probe: Arc<dyn LlmProbe>,
         cipher: Arc<dyn Cipher>,
     ) -> Self {
         Self {
             workspaces,
-            pages,
             probe,
             cipher,
         }
@@ -135,27 +128,14 @@ impl UpdateLlmConfigUseCase {
                     llm_api_key_encrypted: encrypted_key,
                     llm_base_url: base_url,
                     generation_model: cmd.generation_model.clone(),
-                    embedding_model: cmd.embedding_model.clone(),
                 },
             )
             .await?;
-
-        let embedding_changed = cmd.embedding_model != ws.embedding_model;
-        let affected_page_versions = if embedding_changed {
-            self.pages
-                .find_all_published_in_workspace(actor.workspace_id)
-                .await?
-                .len() as i64
-        } else {
-            0
-        };
 
         let generation_changed = cmd.generation_model != ws.generation_model
             || cmd.llm_provider.as_db_str() != ws.llm_provider;
 
         Ok(UpdateLlmConfigResult {
-            requires_reindex: embedding_changed && affected_page_versions > 0,
-            affected_page_versions,
             requires_restart: generation_changed,
         })
     }
@@ -165,8 +145,7 @@ impl UpdateLlmConfigUseCase {
 mod tests {
     use super::*;
     use crate::application::admin::test_doubles::{
-        make_workspace, AcceptingProbe, EmptyPageRepository, InMemoryWorkspaceRepository,
-        StubCipher,
+        make_workspace, AcceptingProbe, InMemoryWorkspaceRepository, StubCipher,
     };
     use crate::domain::value::Role;
     use uuid::Uuid;
@@ -183,12 +162,7 @@ mod tests {
         ws_repo: Arc<InMemoryWorkspaceRepository>,
         probe: Arc<AcceptingProbe>,
     ) -> UpdateLlmConfigUseCase {
-        UpdateLlmConfigUseCase::new(
-            ws_repo,
-            Arc::new(EmptyPageRepository),
-            probe,
-            Arc::new(StubCipher),
-        )
+        UpdateLlmConfigUseCase::new(ws_repo, probe, Arc::new(StubCipher))
     }
 
     #[tokio::test]
@@ -206,7 +180,6 @@ mod tests {
                 llm_api_key: "new-key".to_string(),
                 base_url: Some("https://litellm.example/v1".to_string()),
                 generation_model: "gpt-4o-mini".to_string(),
-                embedding_model: "text-embedding-3-small".to_string(),
             },
         )
         .await
@@ -236,7 +209,6 @@ mod tests {
                 llm_api_key: String::new(),
                 base_url: Some("https://my-server".to_string()),
                 generation_model: "gpt-4o-mini".to_string(),
-                embedding_model: "text-embedding-3-small".to_string(),
             },
         )
         .await
@@ -262,7 +234,6 @@ mod tests {
                 llm_api_key: String::new(),
                 base_url: None,
                 generation_model: "gpt-4o-mini".to_string(),
-                embedding_model: "text-embedding-3-small".to_string(),
             },
         )
         .await
@@ -294,7 +265,6 @@ mod tests {
                     llm_api_key: String::new(),
                     base_url: None,
                     generation_model: "gpt-4o-mini".to_string(),
-                    embedding_model: "text-embedding-3-small".to_string(),
                 },
             )
             .await;
@@ -321,7 +291,6 @@ mod tests {
                 llm_api_key: "k".to_string(),
                 base_url: Some("https://api/v1/".to_string()),
                 generation_model: "gpt-4o-mini".to_string(),
-                embedding_model: "text-embedding-3-small".to_string(),
             },
         )
         .await
@@ -346,7 +315,6 @@ mod tests {
                 llm_api_key: "k".to_string(),
                 base_url: Some("https://my".to_string()),
                 generation_model: "gpt-4o-mini".to_string(),
-                embedding_model: "text-embedding-3-small".to_string(),
             },
         )
         .await

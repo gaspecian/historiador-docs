@@ -104,7 +104,10 @@ impl WorkspaceRepository for PostgresWorkspaceRepository {
                 llm_api_key_encrypted: patch.llm_api_key_encrypted.as_deref(),
                 llm_base_url: patch.llm_base_url.as_deref(),
                 generation_model: &patch.generation_model,
-                embedding_model: &patch.embedding_model,
+                // Embedding model is being retired (see Task 8/9 of the
+                // EmbeddingClient retirement plan). Pass an empty string
+                // until the DB-side struct + column are dropped.
+                embedding_model: "",
             },
         )
         .await?;

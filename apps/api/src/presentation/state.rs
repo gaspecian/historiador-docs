@@ -223,7 +223,6 @@ impl UseCases {
             regenerate_token: Arc::new(RegenerateTokenUseCase::new(workspaces.clone())),
             update_llm_config: Arc::new(UpdateLlmConfigUseCase::new(
                 workspaces.clone(),
-                pages.clone(),
                 deps.llm_probe.clone(),
                 cipher.clone(),
             )),

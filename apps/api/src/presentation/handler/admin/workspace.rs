@@ -187,15 +187,19 @@ pub async fn update_llm_config(
                 llm_api_key: body.llm_api_key,
                 base_url: body.base_url,
                 generation_model: body.generation_model,
-                embedding_model: body.embedding_model,
             },
         )
         .await?;
 
+    // `embedding_model`, `requires_reindex`, and `affected_page_versions`
+    // are retired by Tasks 5-7 of the EmbeddingClient retirement plan.
+    // The DTO fields are dropped in Task 7; for now we ignore the
+    // request field and surface dummy values in the response.
+    let _ = body.embedding_model;
     Ok(Json(LlmPatchResponse {
         success: true,
-        requires_reindex: result.requires_reindex,
-        affected_page_versions: result.affected_page_versions,
+        requires_reindex: false,
+        affected_page_versions: 0,
         requires_restart: result.requires_restart,
     }))
 }

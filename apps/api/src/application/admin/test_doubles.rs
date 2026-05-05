@@ -14,7 +14,6 @@ use crate::domain::entity::Workspace;
 use crate::domain::error::ApplicationError;
 use crate::domain::port::cipher::Cipher;
 use crate::domain::port::llm_probe::{LlmProbe, LlmProvider};
-use crate::domain::port::page_repository::PageRepository;
 use crate::domain::port::workspace_repository::{
     InitializeInstallation, InstallationBootstrapped, LlmConfigPatch, WorkspaceRepository,
 };
@@ -78,84 +77,6 @@ impl WorkspaceRepository for InMemoryWorkspaceRepository {
     ) -> Result<bool, ApplicationError> {
         *self.last_patch.lock().unwrap() = Some(patch);
         Ok(true)
-    }
-}
-
-// ---------- pages ----------
-
-/// `find_all_published_in_workspace` returns an empty list — enough
-/// for tests where `embedding_model` does not change.
-pub(crate) struct EmptyPageRepository;
-
-#[async_trait]
-impl PageRepository for EmptyPageRepository {
-    async fn insert(
-        &self,
-        _input: crate::domain::port::page_repository::NewPage,
-    ) -> Result<crate::domain::entity::Page, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn find_by_id(
-        &self,
-        _id: Uuid,
-        _workspace_id: Uuid,
-    ) -> Result<Option<crate::domain::entity::Page>, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn list_by_collection(
-        &self,
-        _workspace_id: Uuid,
-        _collection_id: Option<Uuid>,
-    ) -> Result<Vec<crate::domain::entity::Page>, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn search_by_title(
-        &self,
-        _workspace_id: Uuid,
-        _query: &str,
-    ) -> Result<Vec<crate::domain::entity::Page>, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn update_status(
-        &self,
-        _id: Uuid,
-        _workspace_id: Uuid,
-        _status: crate::domain::value::PageStatus,
-    ) -> Result<Option<crate::domain::entity::Page>, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn upsert_version(
-        &self,
-        _input: crate::domain::port::page_repository::UpsertPageVersion,
-    ) -> Result<crate::domain::entity::PageVersion, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn find_versions(
-        &self,
-        _page_id: Uuid,
-    ) -> Result<Vec<crate::domain::entity::PageVersion>, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn find_version(
-        &self,
-        _page_id: Uuid,
-        _language: &Language,
-    ) -> Result<Option<crate::domain::entity::PageVersion>, ApplicationError> {
-        unimplemented!()
-    }
-
-    async fn find_all_published_in_workspace(
-        &self,
-        _workspace_id: Uuid,
-    ) -> Result<Vec<crate::domain::entity::PageVersion>, ApplicationError> {
-        Ok(Vec::new())
     }
 }
 
