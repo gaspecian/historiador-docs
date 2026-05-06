@@ -86,7 +86,7 @@ export function Canvas({ initialMarkdown, onSave, onChange }: CanvasProps) {
 
   if (!editor) {
     return (
-      <div className="p-6 text-[var(--color-text-tertiary)]">Loading canvas…</div>
+      <div className="p-6 text-[var(--color-text-tertiary)]">Carregando canvas…</div>
     );
   }
   return <EditorContent editor={editor} />;
