@@ -439,7 +439,7 @@ paths:
     get:
       tags:
       - system
-      operationId: handler
+      operationId: health
       responses:
         '200':
           description: service is healthy
@@ -451,7 +451,7 @@ paths:
     get:
       tags:
       - system
-      operationId: handler
+      operationId: health_ready
       responses:
         '200':
           description: service is ready (or backfill disabled / completed)

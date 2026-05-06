@@ -283,7 +283,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["handler"];
+        get: operations["health"];
         put?: never;
         post?: never;
         delete?: never;
@@ -299,7 +299,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["handler"];
+        get: operations["health_ready"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1708,7 +1708,7 @@ export interface operations {
             };
         };
     };
-    handler: {
+    health: {
         parameters: {
             query?: never;
             header?: never;
@@ -1728,7 +1728,7 @@ export interface operations {
             };
         };
     };
-    handler: {
+    health_ready: {
         parameters: {
             query?: never;
             header?: never;
