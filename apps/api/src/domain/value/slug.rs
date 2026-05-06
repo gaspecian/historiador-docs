@@ -10,14 +10,14 @@ impl Slug {
         let s = raw.into();
         let trimmed = s.trim();
         if trimmed.is_empty() {
-            return Err(DomainError::Validation("slug is empty".into()));
+            return Err(DomainError::Validation("o slug está vazio".into()));
         }
         if !trimmed
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         {
             return Err(DomainError::Validation(
-                "slug must contain only lowercase letters, digits, and hyphens".into(),
+                "o slug deve conter apenas letras minúsculas, dígitos e hifens".into(),
             ));
         }
         Ok(Self(trimmed.to_string()))

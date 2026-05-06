@@ -15,10 +15,10 @@ impl Email {
         let trimmed = s.trim();
         let (local, domain) = trimmed
             .split_once('@')
-            .ok_or_else(|| DomainError::Validation("email must contain '@'".into()))?;
+            .ok_or_else(|| DomainError::Validation("e-mail precisa conter '@'".into()))?;
         if local.is_empty() || domain.is_empty() {
             return Err(DomainError::Validation(
-                "email has empty local or domain part".into(),
+                "e-mail tem parte local ou domínio vazio".into(),
             ));
         }
         Ok(Self(trimmed.to_ascii_lowercase()))
