@@ -98,7 +98,7 @@ jobs:
 
       - name: Trivy scan (dry-run image)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: hist-${{ matrix.service }}:dry-run-${{ matrix.arch }}
           severity: HIGH,CRITICAL
@@ -220,7 +220,7 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${{ steps.manifest.outputs.digest }}
           severity: HIGH,CRITICAL
@@ -229,7 +229,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.17.8
+        uses: anchore/sbom-action@v0.24.0
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${{ steps.manifest.outputs.digest }}
           format: spdx-json
