@@ -38,10 +38,16 @@ export default function EditorPage() {
   const [savedPageId, setSavedPageId] = useState<string | null>(urlPageId);
   const [savedLanguage, setSavedLanguage] = useState<string | null>(urlLanguage);
   const [existingTitle, setExistingTitle] = useState<string | null>(null);
-  useEffect(() => {
+  // Re-sync local state when the URL changes externally (back/forward
+  // nav, manual edits) using React 19's "adjust state during render"
+  // pattern instead of a useEffect — avoids the cascading-render
+  // antipattern flagged by react-hooks/set-state-in-effect.
+  const [prevUrl, setPrevUrl] = useState({ pageId: urlPageId, language: urlLanguage });
+  if (prevUrl.pageId !== urlPageId || prevUrl.language !== urlLanguage) {
+    setPrevUrl({ pageId: urlPageId, language: urlLanguage });
     setSavedPageId(urlPageId);
     setSavedLanguage(urlLanguage);
-  }, [urlPageId, urlLanguage]);
+  }
   useEffect(() => {
     if (!urlPageId) return;
     let cancelled = false;
