@@ -36,6 +36,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-qemu-action@v3
+        with:
+          # Pin to qemu-v7.0.0-28: qemu v8.x emulation crashes Node 20 / V8
+          # under linux/arm64 with `Illegal instruction` during pnpm install,
+          # which silently hangs the build until the 6h job timeout.
+          # See run 25411843704 (web job) for the original failure.
+          image: tonistiigi/binfmt:qemu-v7.0.0-28
 
       - uses: docker/setup-buildx-action@v3
 
