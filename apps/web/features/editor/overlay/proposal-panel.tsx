@@ -50,12 +50,12 @@ export function ProposalPanel({ proposals, onAccept, onReject }: ProposalPanelPr
 
   return (
     <aside
-      aria-label="AI proposals"
+      aria-label="Propostas da IA"
       className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-surface-border)] bg-[var(--color-surface-subtle)] p-3"
     >
       <div className="flex items-center justify-between">
         <span className="t-label text-[var(--color-text-secondary)]">
-          AI proposals ({proposals.length})
+          Propostas da IA ({proposals.length})
         </span>
         <span className="t-body-sm text-[var(--color-text-tertiary)]">
           ⌘↵ aceita · Esc rejeita
@@ -85,7 +85,7 @@ export function ProposalPanel({ proposals, onAccept, onReject }: ProposalPanelPr
             <button
               type="button"
               onClick={() => onAccept(p.proposalId)}
-              aria-label="Accept"
+              aria-label="Aceitar"
               className="h-8 w-8 rounded-[var(--radius-md)] bg-[var(--color-teal-600)] text-[var(--color-text-inverse)] flex items-center justify-center hover:bg-[var(--color-teal-700)]"
             >
               <Check className="w-4 h-4" aria-hidden />
@@ -93,7 +93,7 @@ export function ProposalPanel({ proposals, onAccept, onReject }: ProposalPanelPr
             <button
               type="button"
               onClick={() => onReject(p.proposalId)}
-              aria-label="Reject"
+              aria-label="Rejeitar"
               className="h-8 w-8 rounded-[var(--radius-md)] border border-[var(--color-surface-border)] text-[var(--color-text-primary)] flex items-center justify-center hover:bg-[var(--color-surface-hover)]"
             >
               <X className="w-4 h-4" aria-hidden />
