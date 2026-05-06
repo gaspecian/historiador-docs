@@ -13,9 +13,9 @@ interface Props {
 }
 
 const ROLE_OPTIONS = [
- { value: "author", label: "Author" },
- { value: "viewer", label: "Viewer" },
- { value: "admin", label: "Admin" },
+ { value: "author", label: "Autor" },
+ { value: "viewer", label: "Leitor" },
+ { value: "admin", label: "Administrador" },
 ];
 
 export function InviteUserForm({ onInvited }: Props) {
@@ -37,7 +37,7 @@ export function InviteUserForm({ onInvited }: Props) {
  setEmail("");
  onInvited();
  } catch (err) {
- setError(err instanceof Error ? err.message : "Invite failed");
+ setError(err instanceof Error ? err.message : "Não foi possível enviar o convite");
  } finally {
  setLoading(false);
  }
@@ -48,7 +48,7 @@ export function InviteUserForm({ onInvited }: Props) {
  <form onSubmit={handleSubmit} className="flex items-end gap-2">
  <div className="flex-1">
  <Input
- label="Email"
+ label="E-mail"
  type="email"
  value={email}
  onChange={(e) => setEmail(e.target.value)}
@@ -58,14 +58,14 @@ export function InviteUserForm({ onInvited }: Props) {
  </div>
  <div className="w-32">
  <Select
- label="Role"
+ label="Perfil"
  options={ROLE_OPTIONS}
  value={role}
  onChange={(e) => setRole(e.target.value as Role)}
  />
  </div>
  <Button type="submit" disabled={loading}>
- {loading ? "Inviting..." : "Invite"}
+ {loading ? "Convidando…" : "Convidar"}
  </Button>
  </form>
 
@@ -74,7 +74,7 @@ export function InviteUserForm({ onInvited }: Props) {
  {result && (
  <div className="rounded border border-surface-border bg-teal-50 p-3 space-y-2">
  <p className="text-sm text-teal-700">
- Invite sent! Share this activation link:
+ Convite enviado! Compartilhe este link de ativação:
  </p>
  <div className="flex items-center gap-2">
  <code className="flex-1 text-xs bg-white p-2 rounded border break-all">
@@ -83,7 +83,7 @@ export function InviteUserForm({ onInvited }: Props) {
  <CopyButton text={result.activation_url} />
  </div>
  <p className="text-xs text-text-tertiary">
- Expires: {new Date(result.expires_at).toLocaleString()}
+ Expira: {new Date(result.expires_at).toLocaleString()}
  </p>
  </div>
  )}
