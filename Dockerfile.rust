@@ -45,19 +45,18 @@ COPY crates ./crates
 RUN cargo build --release --bin ${BIN_NAME}
 
 # ============================================================
-# Stage 4: runtime — slim non-root image with the single binary
+# Stage 4: runtime — distroless cc-debian12:nonroot
 # ============================================================
-FROM debian:${DEBIAN_VERSION}-slim AS runtime
+# distroless/cc-debian12 ships glibc, libssl3, libgcc, and ca-certs.
+# No shell, no apt, no systemd. The :nonroot tag provides uid 65532.
+# CVE surface is dramatically lower than debian:bookworm-slim — most
+# entries in .trivyignore reference packages that are not present here
+# (zlib, libcap, libgcrypt, gnutls, systemd, ncurses).
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 ARG BIN_NAME
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates libssl3 \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -u 10001 -s /sbin/nologin app
 
 WORKDIR /app
 COPY --from=builder /app/target/release/${BIN_NAME} /usr/local/bin/app
-USER app
 
 # Informational — compose sets the real mapping.
 EXPOSE 3001 3002

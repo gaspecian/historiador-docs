@@ -2,10 +2,12 @@
 #
 # Next.js standalone Docker image for apps/web.
 # Uses output: 'standalone' (configured in next.config.ts) so the
-# runtime image ships only the server.js entrypoint + traced deps
-# — no full node_modules needed.
+# runtime image ships only the server.js entrypoint + traced deps.
+# Builder/deps stages run on node:22-alpine for a small, fast install
+# footprint; runtime is distroless/nodejs22-debian12:nonroot for a
+# near-zero CVE surface.
 
-ARG NODE_VERSION=20
+ARG NODE_VERSION=22
 
 # ---- stage 1: install deps ----
 FROM node:${NODE_VERSION}-alpine AS deps
@@ -39,22 +41,20 @@ COPY packages ./packages
 RUN cd apps/web && npx next build
 
 # ---- stage 3: production runner ----
-FROM node:${NODE_VERSION}-alpine AS runner
+# distroless/nodejs22-debian12:nonroot ships node + ca-certs + a
+# nonroot user (uid 65532). No shell, no apk, no npm. Entrypoint is
+# `node`, so CMD is just the script path.
+FROM gcr.io/distroless/nodejs22-debian12:nonroot AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-
-RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nextjs
-
-# Copy standalone output + static assets + public dir
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
-
-USER nextjs
-
-EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["node", "apps/web/server.js"]
+# Copy standalone output + static assets + public dir, owned by nonroot
+COPY --from=builder --chown=nonroot:nonroot /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nonroot:nonroot /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nonroot:nonroot /app/apps/web/public ./apps/web/public
+
+EXPOSE 3000
+
+CMD ["apps/web/server.js"]

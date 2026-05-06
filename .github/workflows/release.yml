@@ -4,6 +4,12 @@ on:
   push:
     tags: ['v*.*.*']
     branches: ['release/beta-*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and scan only — do not push, sign, or attest'
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -15,14 +21,31 @@ permissions:
   id-token: write        # cosign keyless via GitHub OIDC
   attestations: write    # SBOM attestation
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository }}
+
 jobs:
-  publish:
-    name: Build and publish ${{ matrix.service }}
-    runs-on: ubuntu-latest
+  # ----------------------------------------------------------------
+  # build: matrix of (service × platform) on native runners.
+  # Pushes single-platform images by digest to GHCR (no tag) on real
+  # runs. On dry-run, loads to local Docker and runs Trivy directly.
+  # ----------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.service }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        service: [api, mcp, web]
+        platform: [linux/amd64, linux/arm64]
         include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
           - service: api
             dockerfile: Dockerfile.rust
             build-args: BIN_NAME=api
@@ -35,20 +58,105 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+        uses: docker/login-action@v3
         with:
-          # Pin to qemu-v7.0.0-28: qemu v8.x emulation crashes Node 20 / V8
-          # under linux/arm64 with `Illegal instruction` during pnpm install,
-          # which silently hangs the build until the 6h job timeout.
-          # See run 25411843704 (web job) for the original failure.
-          image: tonistiigi/binfmt:qemu-v7.0.0-28
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Real build: push by digest, no tag. Digests are merged later.
+      - name: Build and push by digest
+        id: build
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build-args }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }},mode=max
+
+      # Dry-run build: load to local Docker for in-job Trivy scan.
+      - name: Build (dry-run, load locally)
+        id: build-dry
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build-args }}
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: hist-${{ matrix.service }}:dry-run-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }}
+
+      - name: Trivy scan (dry-run image)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: hist-${{ matrix.service }}:dry-run-${{ matrix.arch }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+          trivyignores: .trivyignore
+
+      - name: Export digest
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.service }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ----------------------------------------------------------------
+  # merge: fan-in per service. Combines per-platform digests into a
+  # multi-arch manifest list, then runs Trivy + SBOM + cosign once.
+  # Skipped on dry-run (manifest creation requires pushed digests).
+  # ----------------------------------------------------------------
+  merge:
+    name: Merge ${{ matrix.service }} multi-arch manifest
+    runs-on: ubuntu-24.04
+    needs: build
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, mcp, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download amd64 digest
+        uses: actions/download-artifact@v4
+        with:
+          name: digests-${{ matrix.service }}-amd64
+          path: /tmp/digests
+
+      - name: Download arm64 digest
+        uses: actions/download-artifact@v4
+        with:
+          name: digests-${{ matrix.service }}-arm64
+          path: /tmp/digests
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -61,7 +169,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -72,60 +180,88 @@ jobs:
           flavor: |
             latest=auto
 
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          build-args: ${{ matrix.build-args }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ghcr.io/${{ github.repository }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
-          format: spdx-json
-          output-file: sbom-${{ matrix.service }}.spdx.json
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign image
+      - name: Create manifest list and push
+        id: manifest
+        shell: bash
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          MATRIX_SERVICE: ${{ matrix.service }}
         run: |
-          cosign sign --yes \
-            "ghcr.io/${{ github.repository }}/${{ matrix.service }}@${DIGEST}"
+          set -euo pipefail
+          shopt -s nullglob
 
-      - name: Attest SBOM
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          cosign attest --yes \
-            --predicate "sbom-${{ matrix.service }}.spdx.json" \
-            --type spdx \
-            "ghcr.io/${{ github.repository }}/${{ matrix.service }}@${DIGEST}"
+          tag_args=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          if [ -z "$tag_args" ]; then
+            echo "::error::docker/metadata-action produced no tags — aborting manifest creation"
+            exit 1
+          fi
+
+          digest_files=(/tmp/digests/*)
+          if [ ${#digest_files[@]} -eq 0 ]; then
+            echo "::error::No digest files found in /tmp/digests — artifact download failed"
+            exit 1
+          fi
+
+          digest_refs=()
+          for f in "${digest_files[@]}"; do
+            digest_refs+=("${REGISTRY}/${IMAGE_NAMESPACE}/${MATRIX_SERVICE}@sha256:$(basename "$f")")
+          done
+
+          docker buildx imagetools create $tag_args "${digest_refs[@]}"
+
+          first_tag=$(jq -cr '.tags[0] // empty' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          if [ -z "$first_tag" ]; then
+            echo "::error::Could not determine first tag from metadata"
+            exit 1
+          fi
+
+          digest=$(docker buildx imagetools inspect "$first_tag" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${{ steps.manifest.outputs.digest }}
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: false
           trivyignores: .trivyignore
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${{ steps.manifest.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.service }}.spdx.json
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.10.1
+
+      - name: Sign image
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${DIGEST}"
+
+      - name: Attest SBOM
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: |
+          cosign attest --yes \
+            --predicate "sbom-${{ matrix.service }}.spdx.json" \
+            --type spdx \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${DIGEST}"
+
+  # ----------------------------------------------------------------
+  # release-notes: stable tag only. Unchanged behavior from prior file.
+  # ----------------------------------------------------------------
   release-notes:
     name: Create GitHub Release
-    needs: publish
+    needs: merge
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,7 +272,7 @@ jobs:
         run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.2
         with:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
