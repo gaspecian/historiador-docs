@@ -14,12 +14,10 @@ export type Collection = components["schemas"]["Collection"];
 export type CollectionResponse = components["schemas"]["CollectionResponse"];
 export type CreatePageRequest = components["schemas"]["CreatePageRequest"];
 export type DraftRequest = components["schemas"]["DraftRequest"];
-export type DraftResponse = components["schemas"]["DraftResponse"];
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type InviteRequest = components["schemas"]["InviteRequest"];
 export type InviteResponse = components["schemas"]["InviteResponse"];
 export type IterateRequest = components["schemas"]["IterateRequest"];
-export type IterateResponse = components["schemas"]["IterateResponse"];
 export type LlmProvider = components["schemas"]["LlmProvider"];
 export type LoginRequest = components["schemas"]["LoginRequest"];
 export type PageResponse = components["schemas"]["PageResponse"];
@@ -33,11 +31,29 @@ export type RegenerateTokenResponse = components["schemas"]["RegenerateTokenResp
 export type Role = components["schemas"]["Role"];
 export type SetupRequest = components["schemas"]["SetupRequest"];
 export type SetupResponse = components["schemas"]["SetupResponse"];
+export type SetupStatusResponse = components["schemas"]["SetupStatusResponse"];
 export type TokenResponse = components["schemas"]["TokenResponse"];
 export type UpdatePageRequest = components["schemas"]["UpdatePageRequest"];
 export type UserResponse = components["schemas"]["UserResponse"];
 export type WorkspaceResponse = components["schemas"]["WorkspaceResponse"];
 
+// Sprint 7: version history types
+export type VersionHistoryListResponse = components["schemas"]["VersionHistoryListResponse"];
+export type VersionHistorySummary = components["schemas"]["VersionHistorySummary"];
+export type VersionHistoryDetailResponse = components["schemas"]["VersionHistoryDetailResponse"];
+
+// Sprint 7: MCP analytics types
+export type McpAnalyticsResponse = components["schemas"]["McpAnalyticsResponse"];
+export type DayCountDto = components["schemas"]["DayCountDto"];
+export type QueryFrequencyDto = components["schemas"]["QueryFrequencyDto"];
+export type ZeroResultSummaryDto = components["schemas"]["ZeroResultSummaryDto"];
+export type ZeroResultQueryDto = components["schemas"]["ZeroResultQueryDto"];
+
 // Backwards-compatible alias: frontend uses "PageVersion" but the
 // Rust DTO is named PageVersionResponse.
 export type PageVersion = components["schemas"]["PageVersionResponse"];
+
+// Sprint 10: editor conversation persistence types
+export type ConversationMessageDto = components["schemas"]["ConversationMessageDto"];
+export type SaveConversationRequest = components["schemas"]["SaveConversationRequest"];
+export type ConversationResponse = components["schemas"]["ConversationResponse"];

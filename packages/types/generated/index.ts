@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/admin/analytics/mcp-queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_mcp_analytics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -68,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/workspace/llm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_llm_config"];
+        trace?: never;
+    };
     "/admin/workspace/regenerate-token": {
         parameters: {
             query?: never;
@@ -78,6 +110,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["regenerate_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/workspace/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reindex"];
         delete?: never;
         options?: never;
         head?: never;
@@ -212,7 +260,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_workspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["handler"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
         parameters: {
             query?: never;
             header?: never;
@@ -292,6 +372,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{id}/editor-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_conversation"];
+        put: operations["put_conversation"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_version_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/history/{history_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_version_history_item"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/history/{history_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{id}/publish": {
         parameters: {
             query?: never;
@@ -340,6 +500,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup/ollama-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ollama_models"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup/probe": {
         parameters: {
             query?: never;
@@ -350,6 +526,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["probe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -394,6 +586,24 @@ export interface components {
             /** Format: uuid */
             workspace_id: string;
         };
+        ConversationMessageDto: {
+            content: string;
+            /** @description "user" or "assistant". */
+            role: string;
+            /**
+             * Format: int64
+             * @description Client-side millisecond Unix timestamp.
+             */
+            ts: number;
+        };
+        ConversationResponse: {
+            language: string;
+            messages: components["schemas"]["ConversationMessageDto"][];
+            /** Format: uuid */
+            page_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         CreateCollectionRequest: {
             name: string;
             /** Format: uuid */
@@ -407,14 +617,21 @@ export interface components {
             language: string;
             title: string;
         };
-        DraftRequest: {
-            /** @description Natural language description of the document to create. */
-            brief: string;
-            /** @description Optional BCP 47 language tag for the output language. */
-            language?: string | null;
+        DayCountDto: {
+            /** Format: int64 */
+            count: number;
+            date: string;
         };
-        DraftResponse: {
-            content_markdown: string;
+        DraftRequest: {
+            brief: string;
+            /**
+             * @description Prior conversation turns the client has already shown, oldest
+             *     first. Optional so older clients (and the existing `curl`
+             *     examples) keep working. The server caps total turns and
+             *     characters before forwarding to the LLM.
+             */
+            history?: components["schemas"]["ConversationMessageDto"][];
+            language?: string | null;
         };
         /**
          * @description Response body for `GET /health`. Exposed as an OpenAPI schema so
@@ -438,13 +655,35 @@ export interface components {
             user_id: string;
         };
         IterateRequest: {
-            /** @description The current draft markdown to refine. */
             current_draft: string;
-            /** @description Follow-up instruction describing what to change. */
+            /**
+             * @description Prior conversation turns the client has already shown, oldest
+             *     first. See `DraftRequest::history`.
+             */
+            history?: components["schemas"]["ConversationMessageDto"][];
             instruction: string;
         };
-        IterateResponse: {
-            content_markdown: string;
+        LlmPatchRequest: {
+            /**
+             * @description Optional OpenAI-compatible base URL (e.g.
+             *     `https://litellm.example/v1`). Persisted verbatim into
+             *     `workspaces.llm_base_url`. When set together with an empty
+             *     `llm_api_key`, no Authorization header is sent.
+             */
+            base_url?: string | null;
+            generation_model: string;
+            /**
+             * @description API key for cloud providers or base URL for Ollama. Leave
+             *     empty to keep the existing secret (useful when editing only
+             *     the model names) or — for the OpenAI provider with a custom
+             *     `base_url` — to mark the endpoint as unauthenticated.
+             */
+            llm_api_key?: string;
+            llm_provider: components["schemas"]["LlmProvider"];
+        };
+        LlmPatchResponse: {
+            requires_restart: boolean;
+            success: boolean;
         };
         /** @enum {string} */
         LlmProvider: "openai" | "anthropic" | "ollama" | "test";
@@ -454,6 +693,27 @@ export interface components {
         };
         LogoutRequest: {
             refresh_token: string;
+        };
+        McpAnalyticsResponse: {
+            /** Format: int32 */
+            period_days: number;
+            queries_by_day: components["schemas"]["DayCountDto"][];
+            top_queries: components["schemas"]["QueryFrequencyDto"][];
+            /** Format: int64 */
+            total_queries: number;
+            zero_result_queries: components["schemas"]["ZeroResultSummaryDto"];
+        };
+        OllamaModelEntry: {
+            name: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        OllamaModelsRequest: {
+            /** @description Base URL of a reachable Ollama server (e.g. `http://localhost:11434`). */
+            base_url: string;
+        };
+        OllamaModelsResponse: {
+            models: components["schemas"]["OllamaModelEntry"][];
         };
         PageResponse: {
             /** Format: uuid */
@@ -494,6 +754,12 @@ export interface components {
             workspace_languages: string[];
         };
         ProbeRequest: {
+            /**
+             * @description Optional OpenAI-compatible base URL to probe against. Same
+             *     validation rules as the persisted field on
+             *     [`SetupRequest`]/[`LlmPatchRequest`].
+             */
+            base_url?: string | null;
             llm_api_key?: string;
             llm_provider: components["schemas"]["LlmProvider"];
         };
@@ -507,6 +773,18 @@ export interface components {
             page_id: string;
             status: string;
         };
+        QueryFrequencyDto: {
+            /** Format: int64 */
+            count: number;
+            query_text: string;
+        };
+        ReadyResponse: {
+            backfill: string;
+            failed?: number | null;
+            reason?: string | null;
+            status: string;
+            synced?: number | null;
+        };
         RefreshRequest: {
             refresh_token: string;
         };
@@ -517,13 +795,42 @@ export interface components {
              */
             bearer_token: string;
         };
+        ReindexResponse: {
+            /**
+             * Format: int64
+             * @description How many published page versions were scheduled for re-embedding.
+             */
+            scheduled: number;
+        };
         /** @enum {string} */
         Role: "admin" | "author" | "viewer";
+        SaveConversationRequest: {
+            messages: components["schemas"]["ConversationMessageDto"][];
+        };
         SetupRequest: {
             admin_email: string;
             admin_password: string;
+            /**
+             * @description Optional OpenAI-compatible base URL (e.g.
+             *     `https://litellm.example/v1`). Persisted verbatim into
+             *     `workspaces.llm_base_url`. When set together with an empty
+             *     `llm_api_key`, no Authorization header is sent.
+             */
+            base_url?: string | null;
+            /**
+             * @description Model used for AI text generation (chat / editor). Optional for
+             *     cloud providers (falls back to sensible defaults); required for
+             *     Ollama because models are user-managed local pulls.
+             */
+            generation_model?: string | null;
             languages: string[];
-            llm_api_key: string;
+            /**
+             * @description Empty allowed for the OpenAI provider when `base_url` is set
+             *     (self-hosted no-auth endpoints). The use case rejects the
+             *     no-URL + no-key combo for OpenAI; non-OpenAI providers still
+             *     require non-empty values where applicable.
+             */
+            llm_api_key?: string;
             llm_provider: components["schemas"]["LlmProvider"];
             primary_language: string;
             workspace_name: string;
@@ -534,6 +841,9 @@ export interface components {
             user_id: string;
             /** Format: uuid */
             workspace_id: string;
+        };
+        SetupStatusResponse: {
+            setup_complete: boolean;
         };
         TokenResponse: {
             access_token: string;
@@ -552,7 +862,7 @@ export interface components {
         };
         UpdatePageRequest: {
             content_markdown?: string | null;
-            /** @description BCP 47 language tag. Defaults to the version's current language. */
+            /** @description BCP 47 language tag. Defaults to "en" when omitted. */
             language?: string | null;
             title?: string | null;
         };
@@ -565,17 +875,69 @@ export interface components {
             pending: boolean;
             role: components["schemas"]["Role"];
         };
+        VersionHistoryDetailResponse: {
+            /** Format: uuid */
+            author_id?: string | null;
+            content_markdown: string;
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            is_published: boolean;
+            language: string;
+            /** Format: uuid */
+            page_id: string;
+            title: string;
+            /** Format: int32 */
+            version_number: number;
+        };
+        VersionHistoryListResponse: {
+            language: string;
+            /** Format: int64 */
+            page: number;
+            /** Format: uuid */
+            page_id: string;
+            /** Format: int64 */
+            per_page: number;
+            /** Format: int64 */
+            total: number;
+            versions: components["schemas"]["VersionHistorySummary"][];
+        };
+        VersionHistorySummary: {
+            /** Format: uuid */
+            author_id?: string | null;
+            content_preview: string;
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            is_published: boolean;
+            title: string;
+            /** Format: int32 */
+            version_number: number;
+        };
         WorkspaceResponse: {
+            generation_model: string;
             /** @description Whether a bearer token has been configured. */
             has_mcp_token: boolean;
             /** Format: uuid */
             id: string;
             languages: string[];
+            llm_base_url?: string | null;
             llm_provider: string;
             /** @description The MCP endpoint URL (constructed from config). */
             mcp_endpoint_url: string;
             name: string;
             primary_language: string;
+        };
+        ZeroResultQueryDto: {
+            /** Format: int64 */
+            count: number;
+            last_seen: string;
+            query_text: string;
+        };
+        ZeroResultSummaryDto: {
+            /** Format: int64 */
+            count: number;
+            queries: components["schemas"]["ZeroResultQueryDto"][];
         };
     };
     responses: never;
@@ -586,6 +948,50 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_mcp_analytics: {
+        parameters: {
+            query?: {
+                /** @description Number of days to look back (default 7, max 30). */
+                days?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MCP query analytics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpAnalyticsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Chronik not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_users: {
         parameters: {
             query?: never;
@@ -755,6 +1161,51 @@ export interface operations {
             };
         };
     };
+    update_llm_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description llm config updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmPatchResponse"];
+                };
+            };
+            /** @description validation / probe failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description caller is not admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     regenerate_token: {
         parameters: {
             query?: never;
@@ -771,6 +1222,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegenerateTokenResponse"];
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description caller is not admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reindex: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description re-indexing spawned */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReindexResponse"];
                 };
             };
             /** @description unauthenticated */
@@ -1112,13 +1597,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description AI-generated draft */
+            /** @description SSE stream of generated markdown; event types: `delta` (data: {"text": "..."}), `error` (data: {"message": "..."}), `done` (data: {"length": N}). Content-Type: text/event-stream. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftResponse"];
+                    "text/event-stream": unknown;
                 };
             };
             /** @description validation error */
@@ -1157,13 +1642,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description updated draft */
+            /** @description SSE stream of refined markdown; see /editor/draft for event shape. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IterateResponse"];
+                    "text/event-stream": unknown;
                 };
             };
             /** @description validation error */
@@ -1181,6 +1666,40 @@ export interface operations {
                 content?: never;
             };
             /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    export_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description zip of all published pages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": unknown;
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description caller is not admin */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1209,6 +1728,35 @@ export interface operations {
             };
         };
     };
+    handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service is ready (or backfill disabled / completed) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+            /** @description backfill is running or failed */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+        };
+    };
     list_pages: {
         parameters: {
             query?: {
@@ -1220,7 +1768,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description pages list */
+            /** @description pages list — filtered to `collection_id` when provided, all workspace pages otherwise */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1455,6 +2003,295 @@ export interface operations {
             };
         };
     };
+    get_conversation: {
+        parameters: {
+            query: {
+                /**
+                 * @description BCP 47 language tag identifying which language the conversation
+                 *     belongs to, since authors can hold parallel threads per language.
+                 * @example en
+                 */
+                language: string;
+            };
+            header?: never;
+            path: {
+                /** @description page id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted conversation or an empty transcript if none saved yet. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description page not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_conversation: {
+        parameters: {
+            query: {
+                /**
+                 * @description BCP 47 language tag identifying which language the conversation
+                 *     belongs to, since authors can hold parallel threads per language.
+                 * @example en
+                 */
+                language: string;
+            };
+            header?: never;
+            path: {
+                /** @description page id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated conversation echo (client uses `updated_at` for the banner). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description page not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    export_page: {
+        parameters: {
+            query?: {
+                /** @description BCP 47 language tag; defaults to workspace primary */
+                language?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Page id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description markdown with YAML front-matter */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": unknown;
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description page or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_version_history: {
+        parameters: {
+            query: {
+                /** @description BCP 47 language tag (required). */
+                language: string;
+                /** @description Page number (1-indexed, default 1). */
+                page?: number | null;
+                /** @description Items per page (default 20, max 50). */
+                per_page?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Page ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description paginated version history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionHistoryListResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_version_history_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Page ID */
+                id: string;
+                /** @description Version history entry ID */
+                history_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description full version content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionHistoryDetailResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restore_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Page ID */
+                id: string;
+                /** @description Version history entry ID */
+                history_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description restored as draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse"];
+                };
+            };
+            /** @description page is published */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     publish_page: {
         parameters: {
             query?: never;
@@ -1574,6 +2411,37 @@ export interface operations {
             };
         };
     };
+    ollama_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OllamaModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description available models */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaModelsResponse"];
+                };
+            };
+            /** @description invalid URL or Ollama unreachable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     probe: {
         parameters: {
             query?: never;
@@ -1594,6 +2462,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProbeResponse"];
+                };
+            };
+        };
+    };
+    status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description setup readiness flag */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusResponse"];
                 };
             };
         };

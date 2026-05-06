@@ -1,0 +1,184 @@
+# Historiador Doc — production compose profile.
+#
+# Closes Sprint 10 item #6 / code review finding 5.4. Differs from the
+# dev docker-compose.yml in three ways:
+#
+#   1. Runs the api, mcp and web binaries as built images (not
+#      `cargo run` on the host). The Dockerfile.rust multistage is
+#      already cargo-chef-cached; `apps/web/Dockerfile` emits a
+#      standalone Next.js server.
+#   2. Binds only the MCP port (3002) externally. Postgres, Ollama,
+#      Chronik, the authoring API, and the web UI all stay on
+#      127.0.0.1. Terminate TLS at a reverse proxy — a minimal
+#      nginx sample ships in docs/deploy/nginx.conf.
+#   3. Defaults ALLOW_IN_MEMORY_VECTOR_STORE=false so a production
+#      deploy fails fast if Chronik is unreachable (ADR-007, Sprint
+#      10 item #3) rather than silently losing chunks on restart.
+#
+# Images are pinned. Override IMAGE_TAG on deploy to roll forward:
+#   IMAGE_TAG=v1.0.0 docker compose -f docker-compose.prod.yml up -d
+#
+# DO NOT commit secrets into this file. Secrets come from .env or
+# from your orchestrator's secret store. The env keys this profile
+# reads are documented inline.
+
+name: historiador-doc
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    <<: *restart
+    environment:
+      POSTGRES_USER: historiador_admin
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      POSTGRES_DB: historiador
+      POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD is required}
+      POSTGRES_MCP_PASSWORD: ${POSTGRES_MCP_PASSWORD:?POSTGRES_MCP_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    # No host port bind. Postgres is reachable only on the internal
+    # compose network under the name `postgres`.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U historiador_admin -d historiador"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    <<: *restart
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        /bin/ollama serve &
+        sleep 3
+        /bin/ollama pull ${OLLAMA_MODEL:-llama3.1:8b} || true
+        wait
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"
+    volumes:
+      - ollama_data:/root/.ollama
+    # No host port bind — only the api and mcp containers reach Ollama.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${OLLAMA_GPU_COUNT:-all}
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  chronik:
+    image: ghcr.io/lspecian/chronik-stream:${CHRONIK_VERSION:-2.4.1}
+    <<: *restart
+    command: ["start", "--bind", "0.0.0.0", "--data-dir", "/var/lib/chronik"]
+    environment:
+      RUST_LOG: info
+      CHRONIK_DATA_DIR: /var/lib/chronik
+      CHRONIK_TOPICS: >-
+        published-pages:vector,fulltext;
+        mcp-queries:sql;
+        editor-conversations:stream;
+        page-events:stream,sql
+    volumes:
+      - chronik_data:/var/lib/chronik
+    # No host port bind — Chronik is reached by container name on the
+    # internal network.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:6092/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api:
+    image: ${API_IMAGE:-historiador/api:${IMAGE_TAG:-v1.0.0}}
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      args:
+        BIN_NAME: api
+    <<: *restart
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chronik:
+        condition: service_healthy
+    environment:
+      DATABASE_URL_READWRITE: postgres://historiador_api:${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD is required}@postgres:5432/historiador
+      DATABASE_URL_READONLY:  postgres://historiador_mcp:${POSTGRES_MCP_PASSWORD:?POSTGRES_MCP_PASSWORD is required}@postgres:5432/historiador
+      CHRONIK_SQL_URL:        http://chronik:6092
+      CHRONIK_SEARCH_URL:     http://chronik:6092
+      CHRONIK_KAFKA_BROKER:   chronik:9092
+      ALLOW_IN_MEMORY_VECTOR_STORE: "false"
+      JWT_SECRET:             ${JWT_SECRET:?JWT_SECRET is required, min 32 chars}
+      APP_ENCRYPTION_KEY:     ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required, base64 of 32 bytes}
+      PUBLIC_BASE_URL:        ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      API_INTERNAL_URL:       http://api:3001
+      RUST_LOG:               ${RUST_LOG:-info,sqlx=warn}
+    # The authoring API is reached by the web UI on the internal
+    # network and (optionally) via the reverse proxy. No external
+    # bind here — operators who want to expose it should route via
+    # the proxy.
+    expose:
+      - "3001"
+
+  mcp:
+    image: ${MCP_IMAGE:-historiador/mcp:${IMAGE_TAG:-v1.0.0}}
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+      args:
+        BIN_NAME: mcp
+    <<: *restart
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chronik:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      DATABASE_URL_READONLY: postgres://historiador_mcp:${POSTGRES_MCP_PASSWORD:?POSTGRES_MCP_PASSWORD is required}@postgres:5432/historiador
+      CHRONIK_SQL_URL:       http://chronik:6092
+      CHRONIK_SEARCH_URL:    http://chronik:6092
+      ALLOW_IN_MEMORY_VECTOR_STORE: "false"
+      MCP_BEARER_TOKEN:      ${MCP_BEARER_TOKEN:?MCP_BEARER_TOKEN is required — rotate via the dashboard}
+      API_INTERNAL_URL:      http://api:3001
+      MCP_PORT:              "3002"
+      RUST_LOG:              ${RUST_LOG:-info,sqlx=warn}
+    # The ONE externally-exposed port. Route through a TLS-terminating
+    # reverse proxy — see docs/deploy/nginx.conf.
+    ports:
+      - "${MCP_BIND_ADDR:-0.0.0.0}:${HOST_PORT_MCP:-3002}:3002"
+
+  web:
+    image: ${WEB_IMAGE:-historiador/web:${IMAGE_TAG:-v1.0.0}}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    <<: *restart
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      API_INTERNAL_URL: http://api:3001
+      PORT: "3000"
+    # Web UI is reached by the reverse proxy on the internal network
+    # only. Expose via the proxy if you need end-users to hit it.
+    expose:
+      - "3000"
+
+volumes:
+  postgres_data:
+  ollama_data:
+  chronik_data:

@@ -2,7 +2,7 @@
 //! Invoked by Turborepo's `gen:openapi` task via the root package.json
 //! script: `cargo run --release -p historiador_api --bin gen-openapi`.
 
-use historiador_api::openapi::ApiDoc;
+use historiador_api::presentation::ApiDoc;
 use std::{fs, path::PathBuf};
 use utoipa::OpenApi;
 

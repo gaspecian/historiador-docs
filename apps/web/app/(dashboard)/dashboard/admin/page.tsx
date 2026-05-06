@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { apiFetch } from "@/lib/api";
+import * as adminService from "@/lib/services/admin";
 import { UserList } from "@/components/admin/user-list";
 import { InviteUserForm } from "@/components/admin/invite-user-form";
 import { McpSettings } from "@/components/admin/mcp-settings";
+import { McpAnalytics } from "@/components/admin/mcp-analytics";
 import { WorkspaceConfig } from "@/components/admin/workspace-config";
+import { LlmSettingsForm } from "@/components/admin/llm-settings-form";
+import { ExportSection } from "@/components/admin/export-section";
 import { Spinner } from "@/components/ui/spinner";
 import type { UserResponse, WorkspaceResponse } from "@historiador/types";
 
@@ -21,8 +24,8 @@ export default function AdminPage() {
   const fetchData = useCallback(async () => {
     try {
       const [usersData, wsData] = await Promise.all([
-        apiFetch<UserResponse[]>("/admin/users"),
-        apiFetch<WorkspaceResponse>("/admin/workspace"),
+        adminService.listUsers(),
+        adminService.getWorkspace(),
       ]);
       setUsers(usersData);
       setWorkspace(wsData);
@@ -52,17 +55,17 @@ export default function AdminPage() {
   }
 
   if (!workspace) {
-    return <div className="text-center py-8 text-zinc-500">Unable to load admin data.</div>;
+    return <div className="text-center py-8 text-text-tertiary">Não foi possível carregar os dados de administração.</div>;
   }
 
   return (
-    <div className="max-w-4xl space-y-8">
-      <h1 className="text-lg font-semibold">Admin Panel</h1>
+    <div className="px-10 py-7 max-w-4xl mx-auto space-y-8">
+      <h1 className="text-lg font-semibold">Painel administrativo</h1>
 
       {/* User Management */}
       <section className="space-y-4">
-        <h2 className="text-md font-medium border-b border-zinc-200 dark:border-zinc-700 pb-2">
-          Users
+        <h2 className="text-md font-medium border-b border-surface-border pb-2">
+          Usuários
         </h2>
         <InviteUserForm onInvited={fetchData} />
         <UserList users={users} onRefresh={fetchData} />
@@ -70,18 +73,42 @@ export default function AdminPage() {
 
       {/* MCP Settings */}
       <section className="space-y-4">
-        <h2 className="text-md font-medium border-b border-zinc-200 dark:border-zinc-700 pb-2">
-          MCP Server
+        <h2 className="text-md font-medium border-b border-surface-border pb-2">
+          Servidor MCP
         </h2>
         <McpSettings workspace={workspace} />
       </section>
 
       {/* Workspace Config */}
       <section className="space-y-4">
-        <h2 className="text-md font-medium border-b border-zinc-200 dark:border-zinc-700 pb-2">
-          Workspace Configuration
+        <h2 className="text-md font-medium border-b border-surface-border pb-2">
+          Configurações do workspace
         </h2>
         <WorkspaceConfig workspace={workspace} />
+      </section>
+
+      {/* LLM Settings */}
+      <section className="space-y-4">
+        <h2 className="text-md font-medium border-b border-surface-border pb-2">
+          Configurações de LLM
+        </h2>
+        <LlmSettingsForm workspace={workspace} onSaved={fetchData} />
+      </section>
+
+      {/* Export */}
+      <section className="space-y-4">
+        <h2 className="text-md font-medium border-b border-surface-border pb-2">
+          Exportação
+        </h2>
+        <ExportSection />
+      </section>
+
+      {/* MCP Analytics */}
+      <section className="space-y-4">
+        <h2 className="text-md font-medium border-b border-surface-border pb-2">
+          Análises MCP
+        </h2>
+        <McpAnalytics />
       </section>
     </div>
   );

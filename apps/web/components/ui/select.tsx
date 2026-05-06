@@ -15,16 +15,22 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export function Select({ label, options, error, className = "", id, ...props }: SelectProps) {
   const selectId = id || label?.toLowerCase().replace(/\s+/g, "-");
+  const borderClass = error
+    ? "border-red-600 focus:border-red-600 focus-visible:[box-shadow:var(--shadow-focus-danger)]"
+    : "border-surface-border focus:border-primary-600 focus-visible:[box-shadow:var(--shadow-focus)]";
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1.5">
       {label && (
-        <label htmlFor={selectId} className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <label
+          htmlFor={selectId}
+          className="text-xs font-semibold text-text-secondary"
+        >
           {label}
         </label>
       )}
       <select
         id={selectId}
-        className={`w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+        className={`h-10 rounded-md border bg-surface-canvas px-3 text-sm text-text-primary transition-[border-color,box-shadow] focus:outline-none disabled:bg-surface-subtle disabled:text-text-disabled ${borderClass} ${className}`}
         {...props}
       >
         {options.map((opt) => (

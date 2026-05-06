@@ -7,28 +7,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import type { LlmProvider, ProbeResponse, SetupResponse } from "@historiador/types";
+import type { LlmProvider, ProbeResponse } from "@historiador/types";
 
-type Step = "workspace" | "llm" | "languages" | "admin" | "summary";
-const STEPS: Step[] = ["workspace", "llm", "languages", "admin", "summary"];
+type Step = "workspace" | "llm" | "admin" | "summary";
+const STEPS: Step[] = ["workspace", "llm", "admin", "summary"];
+
+const DEFAULT_PRIMARY_LANGUAGE = "pt-BR";
 
 const PROVIDER_OPTIONS = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "ollama", label: "Ollama (local)" },
-  { value: "test", label: "Test (no LLM)" },
+  { value: "test", label: "Teste (sem LLM)" },
 ];
 
-const COMMON_LANGUAGES = [
-  { value: "en", label: "English (en)" },
-  { value: "pt-BR", label: "Portuguese - Brazil (pt-BR)" },
-  { value: "es", label: "Spanish (es)" },
-  { value: "fr", label: "French (fr)" },
-  { value: "de", label: "German (de)" },
-  { value: "ja", label: "Japanese (ja)" },
-  { value: "zh", label: "Chinese (zh)" },
-  { value: "ko", label: "Korean (ko)" },
-];
+const DEFAULT_GEN_MODEL: Record<LlmProvider, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-haiku-4-5-20251001",
+  ollama: "",
+  test: "stub",
+};
+
+interface OllamaModelEntry {
+  name: string;
+  size_bytes: number;
+}
 
 export default function SetupPage() {
   const router = useRouter();
@@ -41,23 +44,52 @@ export default function SetupPage() {
   const [workspaceName, setWorkspaceName] = useState("");
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("openai");
   const [llmApiKey, setLlmApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
-  const [primaryLanguage, setPrimaryLanguage] = useState("en");
-  const [additionalLanguages, setAdditionalLanguages] = useState<string[]>([]);
+  const [generationModel, setGenerationModel] = useState(
+    DEFAULT_GEN_MODEL.openai,
+  );
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelEntry[]>([]);
+  const [ollamaModelsError, setOllamaModelsError] = useState<string | null>(
+    null,
+  );
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const currentIndex = STEPS.indexOf(step);
 
+  const handleProviderChange = (p: LlmProvider) => {
+    setLlmProvider(p);
+    setProbeResult(null);
+    setOllamaModels([]);
+    setOllamaModelsError(null);
+    setGenerationModel(DEFAULT_GEN_MODEL[p]);
+    if (p !== "openai") setBaseUrl("");
+  };
+
   const canGoNext = (): boolean => {
     switch (step) {
       case "workspace":
         return workspaceName.trim().length > 0;
       case "llm":
-        return llmProvider === "test" || llmApiKey.trim().length > 0;
-      case "languages":
-        return primaryLanguage.length > 0;
+        if (llmProvider === "test") return true;
+        // OpenAI accepts either an API key (canonical/Bearer auth) or
+        // a custom base URL (self-hosted no-auth endpoints). Non-OpenAI
+        // providers always require the key/URL field.
+        if (llmProvider === "openai") {
+          if (!llmApiKey.trim() && !baseUrl.trim()) return false;
+        } else if (!llmApiKey.trim()) {
+          return false;
+        }
+        if (llmProvider === "ollama") {
+          // Require a successful probe and the generation model picked.
+          return (
+            probeResult?.success === true &&
+            generationModel.trim().length > 0
+          );
+        }
+        return generationModel.trim().length > 0;
       case "admin":
         return (
           adminEmail.includes("@") &&
@@ -84,16 +116,48 @@ export default function SetupPage() {
   const testConnection = async () => {
     setLoading(true);
     setProbeResult(null);
+    setOllamaModels([]);
+    setOllamaModelsError(null);
     try {
       const res = await fetch("/api/setup/probe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ llm_provider: llmProvider, llm_api_key: llmApiKey }),
+        body: JSON.stringify({
+          llm_provider: llmProvider,
+          llm_api_key: llmApiKey,
+          base_url:
+            llmProvider === "openai" && baseUrl.trim() !== ""
+              ? baseUrl.trim()
+              : undefined,
+        }),
       });
       const data: ProbeResponse = await res.json();
       setProbeResult(data);
+
+      if (data.success && llmProvider === "ollama") {
+        const modelsRes = await fetch("/api/setup/ollama-models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base_url: llmApiKey }),
+        });
+        if (modelsRes.ok) {
+          const body: { models: OllamaModelEntry[] } = await modelsRes.json();
+          setOllamaModels(body.models);
+          if (body.models.length > 0) {
+            setGenerationModel(body.models[0].name);
+          }
+        } else {
+          const msg = await modelsRes.text().catch(() => "");
+          setOllamaModelsError(
+            msg || `Não foi possível listar os modelos (HTTP ${modelsRes.status})`,
+          );
+        }
+      }
     } catch (err) {
-      setProbeResult({ success: false, message: err instanceof Error ? err.message : "Connection failed" });
+      setProbeResult({
+        success: false,
+        message: err instanceof Error ? err.message : "Falha na conexão",
+      });
     } finally {
       setLoading(false);
     }
@@ -102,8 +166,6 @@ export default function SetupPage() {
   const handleSubmit = async () => {
     setError("");
     setLoading(true);
-
-    const languages = [primaryLanguage, ...additionalLanguages.filter((l) => l !== primaryLanguage)];
 
     try {
       const res = await fetch("/api/setup/init", {
@@ -115,66 +177,131 @@ export default function SetupPage() {
           workspace_name: workspaceName,
           llm_provider: llmProvider,
           llm_api_key: llmProvider === "test" ? "test" : llmApiKey,
-          languages,
-          primary_language: primaryLanguage,
+          base_url:
+            llmProvider === "openai" && baseUrl.trim() !== ""
+              ? baseUrl.trim()
+              : undefined,
+          generation_model: generationModel || undefined,
+          languages: [DEFAULT_PRIMARY_LANGUAGE],
+          primary_language: DEFAULT_PRIMARY_LANGUAGE,
         }),
       });
 
       if (!res.ok) {
         const body = await res.json();
-        throw new Error(body.message || "Setup failed");
+        throw new Error(body.message || "Falha na configuração");
       }
 
-      const _data: SetupResponse = await res.json();
+      await res.json();
 
       // Auto-login with the admin credentials
       await login(adminEmail, adminPassword);
       router.push("/dashboard/pages");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Setup failed");
+      setError(err instanceof Error ? err.message : "Falha na configuração");
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleAdditionalLanguage = (lang: string) => {
-    setAdditionalLanguages((prev) =>
-      prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang],
-    );
-  };
+  const ollamaModelOptions = ollamaModels.map((m) => ({
+    value: m.name,
+    label: `${m.name} (${(m.size_bytes / 1e9).toFixed(1)} GB)`,
+  }));
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">Historiador Doc Setup</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Step {currentIndex + 1} of {STEPS.length}
-          </p>
-          {/* Progress bar */}
-          <div className="mt-3 flex gap-1">
-            {STEPS.map((s, i) => (
-              <div
-                key={s}
-                className={`h-1 flex-1 rounded ${i <= currentIndex ? "bg-blue-600" : "bg-zinc-200 dark:bg-zinc-700"}`}
-              />
-            ))}
-          </div>
+    <main className="grid h-screen grid-cols-1 md:grid-cols-2">
+      <aside className="relative hidden flex-col gap-6 bg-primary-600 p-10 text-white md:flex">
+        <div
+          className="flex items-center gap-2.5"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontStyle: "italic",
+            fontSize: 22,
+          }}
+        >
+          <svg
+            width={24}
+            height={24}
+            viewBox="0 0 32 32"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16 7 V25" />
+            <path d="M16 7 C 12 5, 8 5, 4.5 6 V 24 C 8 23, 12 23, 16 25" />
+            <path d="M16 7 C 20 5, 24 5, 27.5 6 V 24 C 24 23, 20 23, 16 25" />
+            <path d="M22 10 L 26 14" />
+          </svg>
+          Historiador{" "}
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontStyle: "normal",
+              fontSize: 18,
+              fontWeight: 500,
+            }}
+          >
+            Doc
+          </span>
+        </div>
+
+        <div className="max-w-[440px] text-[16px] leading-relaxed opacity-85 mb-auto">
+          Toda equipe tem memória. O Historiador Doc transforma essa memória em
+          páginas — conversando com você.
+        </div>
+
+        <h1
+          className="mt-auto mb-0"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 52,
+            lineHeight: 1.05,
+            fontWeight: 400,
+            margin: 0,
+          }}
+        >
+          Documentação <em>que conversa</em> de volta.
+        </h1>
+
+        <div className="flex gap-1.5">
+          {STEPS.map((s, i) => (
+            <div
+              key={s}
+              className="h-[3px] w-8 rounded-sm"
+              style={{
+                background:
+                  i <= currentIndex ? "white" : "rgba(255,255,255,0.25)",
+              }}
+            />
+          ))}
+        </div>
+      </aside>
+
+      <section className="flex flex-col justify-center bg-surface-canvas p-6 sm:p-10 md:p-16">
+        <div className="mx-auto w-full max-w-[520px]">
+        <div
+          className="mb-2.5 text-[11px] font-bold uppercase text-primary-600"
+          style={{ letterSpacing: "0.08em" }}
+        >
+          Passo {currentIndex + 1} de {STEPS.length}
         </div>
 
         <div className="space-y-4">
           {/* Step: Workspace */}
           {step === "workspace" && (
             <>
-              <h2 className="text-lg font-semibold">Workspace name</h2>
-              <p className="text-sm text-zinc-500">
-                Choose a name for your documentation workspace.
+              <h2 className="text-lg font-semibold">Nome do workspace</h2>
+              <p className="text-sm text-text-tertiary">
+                Escolha um nome para seu workspace de documentação.
               </p>
               <Input
-                label="Workspace name"
+                label="Nome do workspace"
                 value={workspaceName}
                 onChange={(e) => setWorkspaceName(e.target.value)}
-                placeholder="My Docs"
+                placeholder="Meus Docs"
                 autoFocus
               />
             </>
@@ -183,28 +310,32 @@ export default function SetupPage() {
           {/* Step: LLM */}
           {step === "llm" && (
             <>
-              <h2 className="text-lg font-semibold">LLM Provider</h2>
-              <p className="text-sm text-zinc-500">
-                Select your AI provider for the document editor.
+              <h2 className="text-lg font-semibold">Provedor de LLM</h2>
+              <p className="text-sm text-text-tertiary">
+                Selecione seu provedor de IA para o editor de documentos.
               </p>
               <Select
-                label="Provider"
+                label="Provedor"
                 options={PROVIDER_OPTIONS}
                 value={llmProvider}
-                onChange={(e) => {
-                  setLlmProvider(e.target.value as LlmProvider);
-                  setProbeResult(null);
-                }}
+                onChange={(e) =>
+                  handleProviderChange(e.target.value as LlmProvider)
+                }
               />
               {llmProvider !== "test" && (
                 <>
                   <Input
-                    label={llmProvider === "ollama" ? "Ollama base URL" : "API Key"}
+                    label={
+                      llmProvider === "ollama"
+                        ? "URL base do Ollama"
+                        : "Chave de API"
+                    }
                     type={llmProvider === "ollama" ? "url" : "password"}
                     value={llmApiKey}
                     onChange={(e) => {
                       setLlmApiKey(e.target.value);
                       setProbeResult(null);
+                      if (llmProvider === "ollama") setOllamaModels([]);
                     }}
                     placeholder={
                       llmProvider === "ollama"
@@ -212,90 +343,130 @@ export default function SetupPage() {
                         : "sk-..."
                     }
                   />
+                  {llmProvider === "openai" && (
+                    <Input
+                      label="Base URL (opcional)"
+                      type="url"
+                      value={baseUrl}
+                      onChange={(e) => {
+                        setBaseUrl(e.target.value);
+                        setProbeResult(null);
+                      }}
+                      placeholder="https://api.openai.com/v1 (padrão)"
+                    />
+                  )}
                   <Button
                     variant="secondary"
                     onClick={testConnection}
-                    disabled={loading || !llmApiKey.trim()}
+                    disabled={
+                      loading ||
+                      (!llmApiKey.trim() &&
+                        !(llmProvider === "openai" && baseUrl.trim()))
+                    }
                   >
-                    {loading ? <><Spinner className="mr-2" /> Testing...</> : "Test Connection"}
+                    {loading ? (
+                      <>
+                        <Spinner className="mr-2" /> Testando...
+                      </>
+                    ) : (
+                      "Testar conexão"
+                    )}
                   </Button>
                   {probeResult && (
-                    <p className={`text-sm ${probeResult.success ? "text-green-600" : "text-red-600"}`}>
-                      {probeResult.success ? "Connection successful" : probeResult.message}
+                    <p
+                      className={`text-sm ${probeResult.success ? "text-teal-600" : "text-red-600"}`}
+                    >
+                      {probeResult.success
+                        ? "Conexão bem-sucedida"
+                        : probeResult.message}
                     </p>
+                  )}
+
+                  {/* Model pickers */}
+                  {llmProvider === "ollama" && ollamaModels.length > 0 && (
+                    <>
+                      <Select
+                        label="Modelo de geração"
+                        options={ollamaModelOptions}
+                        value={generationModel}
+                        onChange={(e) => setGenerationModel(e.target.value)}
+                      />
+                      <p className="text-xs text-text-tertiary">
+                        Precisa de mais modelos? Execute{" "}
+                        <code>ollama pull &lt;nome&gt;</code> e teste a conexão
+                        novamente.
+                      </p>
+                    </>
+                  )}
+                  {llmProvider === "ollama" &&
+                    probeResult?.success &&
+                    !ollamaModelsError &&
+                    ollamaModels.length === 0 && (
+                      <p className="text-sm text-amber-600">
+                        Nenhum modelo instalado neste servidor Ollama. Execute{" "}
+                        <code>ollama pull &lt;nome&gt;</code> (ex.{" "}
+                        <code>ollama pull llama3</code>) e teste a conexão
+                        novamente.
+                      </p>
+                    )}
+                  {llmProvider === "ollama" && ollamaModelsError && (
+                    <p className="text-sm text-red-600">
+                      Não foi possível listar os modelos do Ollama:{" "}
+                      {ollamaModelsError}
+                    </p>
+                  )}
+                  {llmProvider !== "ollama" && (
+                    <Input
+                      label="Modelo de geração"
+                      value={generationModel}
+                      onChange={(e) => setGenerationModel(e.target.value)}
+                      placeholder={DEFAULT_GEN_MODEL[llmProvider]}
+                    />
                   )}
                 </>
               )}
             </>
           )}
 
-          {/* Step: Languages */}
-          {step === "languages" && (
-            <>
-              <h2 className="text-lg font-semibold">Languages</h2>
-              <p className="text-sm text-zinc-500">
-                Select the primary language and any additional languages for your documentation.
-              </p>
-              <Select
-                label="Primary language"
-                options={COMMON_LANGUAGES}
-                value={primaryLanguage}
-                onChange={(e) => setPrimaryLanguage(e.target.value)}
-              />
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Additional languages
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {COMMON_LANGUAGES.filter((l) => l.value !== primaryLanguage).map((lang) => (
-                    <button
-                      key={lang.value}
-                      type="button"
-                      onClick={() => toggleAdditionalLanguage(lang.value)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
-                        additionalLanguages.includes(lang.value)
-                          ? "bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-900 dark:border-blue-700 dark:text-blue-200"
-                          : "border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      {lang.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
           {/* Step: Admin Account */}
           {step === "admin" && (
             <>
-              <h2 className="text-lg font-semibold">Admin account</h2>
-              <p className="text-sm text-zinc-500">
-                Create the first administrator account.
+              <h2 className="text-lg font-semibold">Conta de administrador</h2>
+              <p className="text-sm text-text-tertiary">
+                Crie a primeira conta de administrador.
               </p>
               <Input
-                label="Email"
+                label="E-mail"
                 type="email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
                 autoComplete="email"
               />
               <Input
-                label="Password"
+                label="Senha"
                 type="password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Min. 12 characters"
+                placeholder="Mín. 12 caracteres"
                 autoComplete="new-password"
-                error={adminPassword.length > 0 && adminPassword.length < 12 ? "Min. 12 characters" : undefined}
+                error={
+                  adminPassword.length > 0 && adminPassword.length < 12
+                    ? "Mín. 12 caracteres"
+                    : undefined
+                }
               />
               <Input
-                label="Confirm password"
+                label="Confirmar senha"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
-                error={confirmPassword.length > 0 && confirmPassword !== adminPassword ? "Passwords do not match" : undefined}
+                error={
+                  confirmPassword.length > 0 &&
+                  confirmPassword !== adminPassword
+                    ? "As senhas não coincidem"
+                    : undefined
+                }
               />
             </>
           )}
@@ -303,42 +474,64 @@ export default function SetupPage() {
           {/* Step: Summary */}
           {step === "summary" && (
             <>
-              <h2 className="text-lg font-semibold">Review & Complete</h2>
-              <div className="rounded border border-zinc-200 dark:border-zinc-700 p-4 space-y-2 text-sm">
-                <div><span className="font-medium">Workspace:</span> {workspaceName}</div>
-                <div><span className="font-medium">LLM Provider:</span> {llmProvider}</div>
-                <div><span className="font-medium">Primary language:</span> {primaryLanguage}</div>
-                {additionalLanguages.length > 0 && (
-                  <div><span className="font-medium">Additional:</span> {additionalLanguages.join(", ")}</div>
+              <h2 className="text-lg font-semibold">Revisar e concluir</h2>
+              <div className="rounded border border-surface-border p-4 space-y-2 text-sm">
+                <div>
+                  <span className="font-medium">Workspace:</span>{" "}
+                  {workspaceName}
+                </div>
+                <div>
+                  <span className="font-medium">Provedor de LLM:</span>{" "}
+                  {llmProvider}
+                </div>
+                {llmProvider !== "test" && (
+                  <div>
+                    <span className="font-medium">Modelo de geração:</span>{" "}
+                    {generationModel}
+                  </div>
                 )}
-                <div><span className="font-medium">Admin email:</span> {adminEmail}</div>
+                <div>
+                  <span className="font-medium">Idioma principal:</span>{" "}
+                  {DEFAULT_PRIMARY_LANGUAGE}
+                </div>
+                <div>
+                  <span className="font-medium">E-mail do admin:</span>{" "}
+                  {adminEmail}
+                </div>
               </div>
             </>
           )}
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
         {/* Navigation */}
-        <div className="flex justify-between">
+        <div className="mt-8 flex justify-between">
           <Button
             variant="secondary"
             onClick={goBack}
             disabled={currentIndex === 0}
           >
-            Back
+            Voltar
           </Button>
           {step === "summary" ? (
             <Button onClick={handleSubmit} disabled={loading}>
-              {loading ? <><Spinner className="mr-2" /> Setting up...</> : "Complete Setup"}
+              {loading ? (
+                <>
+                  <Spinner className="mr-2" /> Configurando...
+                </>
+              ) : (
+                "Concluir configuração"
+              )}
             </Button>
           ) : (
             <Button onClick={goNext} disabled={!canGoNext()}>
-              Next
+              Próximo
             </Button>
           )}
         </div>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }

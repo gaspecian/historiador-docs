@@ -1,0 +1,27 @@
+name: voice-eval
+
+# Nightly voice regression suite (Sprint 11 phase B8 / US-11.17).
+# Runs prompts/eval/* against the stub LLM provider and validates
+# the scenario scripts parse. Regressions page on-call via the
+# existing GitHub Actions alert wiring.
+#
+# Scheduled UTC 07:00 ≈ 04:00 ART (Gabriel's timezone) so a fresh
+# pass is waiting at the start of the work day. `workflow_dispatch`
+# lets us kick it off manually before a deploy.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: validate eval scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run voice-eval skeleton
+        run: bash scripts/voice-eval/run.sh
+      - name: Count scenarios
+        run: |
+          echo "scenario_count=$(ls prompts/eval/*.md | grep -v README | wc -l)" >> "$GITHUB_OUTPUT"

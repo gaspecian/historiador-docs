@@ -7,6 +7,36 @@ info:
     identifier: AGPL-3.0-or-later
   version: 0.1.0
 paths:
+  /admin/analytics/mcp-queries:
+    get:
+      tags:
+      - admin
+      operationId: get_mcp_analytics
+      parameters:
+      - name: days
+        in: query
+        description: Number of days to look back (default 7, max 30).
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      responses:
+        '200':
+          description: MCP query analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAnalyticsResponse'
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '503':
+          description: Chronik not configured
+      security:
+      - bearer: []
   /admin/users:
     get:
       tags:
@@ -99,6 +129,32 @@ paths:
           description: workspace not found
       security:
       - bearer: []
+  /admin/workspace/llm:
+    patch:
+      tags:
+      - admin
+      operationId: update_llm_config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmPatchRequest'
+        required: true
+      responses:
+        '200':
+          description: llm config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmPatchResponse'
+        '400':
+          description: validation / probe failed
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+      security:
+      - bearer: []
   /admin/workspace/regenerate-token:
     post:
       tags:
@@ -111,6 +167,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegenerateTokenResponse'
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
+      security:
+      - bearer: []
+  /admin/workspace/reindex:
+    post:
+      tags:
+      - admin
+      operationId: reindex
+      responses:
+        '202':
+          description: re-indexing spawned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReindexResponse'
         '401':
           description: unauthenticated
         '403':
@@ -310,11 +384,9 @@ paths:
         required: true
       responses:
         '200':
-          description: AI-generated draft
+          description: 'SSE stream of generated markdown; event types: `delta` (data: {"text": "..."}), `error` (data: {"message": "..."}), `done` (data: {"length": N}). Content-Type: text/event-stream.'
           content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DraftResponse'
+            text/event-stream: {}
         '400':
           description: validation error
         '401':
@@ -336,17 +408,31 @@ paths:
         required: true
       responses:
         '200':
-          description: updated draft
+          description: SSE stream of refined markdown; see /editor/draft for event shape.
           content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IterateResponse'
+            text/event-stream: {}
         '400':
           description: validation error
         '401':
           description: unauthorized
         '403':
           description: forbidden
+      security:
+      - bearer: []
+  /export:
+    get:
+      tags:
+      - export
+      operationId: export_workspace
+      responses:
+        '200':
+          description: zip of all published pages
+          content:
+            application/zip: {}
+        '401':
+          description: unauthenticated
+        '403':
+          description: caller is not admin
       security:
       - bearer: []
   /health:
@@ -361,6 +447,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /health/ready:
+    get:
+      tags:
+      - system
+      operationId: handler
+      responses:
+        '200':
+          description: service is ready (or backfill disabled / completed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: backfill is running or failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
   /pages:
     get:
       tags:
@@ -377,7 +481,7 @@ paths:
           format: uuid
       responses:
         '200':
-          description: pages list
+          description: pages list — filtered to `collection_id` when provided, all workspace pages otherwise
           content:
             application/json:
               schema:
@@ -528,6 +632,237 @@ paths:
           description: not found
       security:
       - bearer: []
+  /pages/{id}/editor-conversation:
+    get:
+      tags:
+      - editor
+      operationId: get_conversation
+      parameters:
+      - name: id
+        in: path
+        description: page id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: |-
+          BCP 47 language tag identifying which language the conversation
+          belongs to, since authors can hold parallel threads per language.
+        required: true
+        schema:
+          type: string
+        example: en
+      responses:
+        '200':
+          description: Persisted conversation or an empty transcript if none saved yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: page not found
+      security:
+      - bearer: []
+    put:
+      tags:
+      - editor
+      operationId: put_conversation
+      parameters:
+      - name: id
+        in: path
+        description: page id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: |-
+          BCP 47 language tag identifying which language the conversation
+          belongs to, since authors can hold parallel threads per language.
+        required: true
+        schema:
+          type: string
+        example: en
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveConversationRequest'
+        required: true
+      responses:
+        '200':
+          description: Updated conversation echo (client uses `updated_at` for the banner).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '400':
+          description: validation error
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: page not found
+      security:
+      - bearer: []
+  /pages/{id}/export:
+    get:
+      tags:
+      - export
+      operationId: export_page
+      parameters:
+      - name: id
+        in: path
+        description: Page id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: BCP 47 language tag; defaults to workspace primary
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: markdown with YAML front-matter
+          content:
+            text/markdown: {}
+        '401':
+          description: unauthenticated
+        '404':
+          description: page or version not found
+      security:
+      - bearer: []
+  /pages/{id}/history:
+    get:
+      tags:
+      - pages
+      operationId: list_version_history
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: language
+        in: query
+        description: BCP 47 language tag (required).
+        required: true
+        schema:
+          type: string
+      - name: page
+        in: query
+        description: Page number (1-indexed, default 1).
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+      - name: per_page
+        in: query
+        description: Items per page (default 20, max 50).
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+      responses:
+        '200':
+          description: paginated version history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionHistoryListResponse'
+        '401':
+          description: unauthorized
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/history/{history_id}:
+    get:
+      tags:
+      - pages
+      operationId: get_version_history_item
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: history_id
+        in: path
+        description: Version history entry ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: full version content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionHistoryDetailResponse'
+        '401':
+          description: unauthorized
+        '404':
+          description: not found
+      security:
+      - bearer: []
+  /pages/{id}/history/{history_id}/restore:
+    post:
+      tags:
+      - pages
+      operationId: restore_version
+      parameters:
+      - name: id
+        in: path
+        description: Page ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: history_id
+        in: path
+        description: Version history entry ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: restored as draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '400':
+          description: page is published
+        '401':
+          description: unauthorized
+        '403':
+          description: forbidden
+        '404':
+          description: not found
+      security:
+      - bearer: []
   /pages/{id}/publish:
     post:
       tags:
@@ -604,6 +939,26 @@ paths:
           description: validation error or LLM key rejected
         '409':
           description: setup already complete
+  /setup/ollama-models:
+    post:
+      tags:
+      - setup
+      operationId: ollama_models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OllamaModelsRequest'
+        required: true
+      responses:
+        '200':
+          description: available models
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OllamaModelsResponse'
+        '400':
+          description: invalid URL or Ollama unreachable
   /setup/probe:
     post:
       tags:
@@ -622,6 +977,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProbeResponse'
+  /setup/status:
+    get:
+      tags:
+      - setup
+      operationId: status
+      responses:
+        '200':
+          description: setup readiness flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupStatusResponse'
 components:
   schemas:
     ActivateRequest:
@@ -702,6 +1069,42 @@ components:
         workspace_id:
           type: string
           format: uuid
+    ConversationMessageDto:
+      type: object
+      required:
+      - role
+      - content
+      - ts
+      properties:
+        content:
+          type: string
+        role:
+          type: string
+          description: '"user" or "assistant".'
+        ts:
+          type: integer
+          format: int64
+          description: Client-side millisecond Unix timestamp.
+    ConversationResponse:
+      type: object
+      required:
+      - page_id
+      - language
+      - messages
+      - updated_at
+      properties:
+        language:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
+        page_id:
+          type: string
+          format: uuid
+        updated_at:
+          type: string
+          format: date-time
     CreateCollectionRequest:
       type: object
       required:
@@ -733,6 +1136,17 @@ components:
           description: BCP 47 language tag (e.g., "en-US", "pt-BR").
         title:
           type: string
+    DayCountDto:
+      type: object
+      required:
+      - date
+      - count
+      properties:
+        count:
+          type: integer
+          format: int64
+        date:
+          type: string
     DraftRequest:
       type: object
       required:
@@ -740,19 +1154,19 @@ components:
       properties:
         brief:
           type: string
-          description: Natural language description of the document to create.
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
+          description: |-
+            Prior conversation turns the client has already shown, oldest
+            first. Optional so older clients (and the existing `curl`
+            examples) keep working. The server caps total turns and
+            characters before forwarding to the LLM.
         language:
           type:
           - string
           - 'null'
-          description: Optional BCP 47 language tag for the output language.
-    DraftResponse:
-      type: object
-      required:
-      - content_markdown
-      properties:
-        content_markdown:
-          type: string
     HealthResponse:
       type: object
       description: |-
@@ -803,17 +1217,51 @@ components:
       properties:
         current_draft:
           type: string
-          description: The current draft markdown to refine.
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
+          description: |-
+            Prior conversation turns the client has already shown, oldest
+            first. See `DraftRequest::history`.
         instruction:
           type: string
-          description: Follow-up instruction describing what to change.
-    IterateResponse:
+    LlmPatchRequest:
       type: object
       required:
-      - content_markdown
+      - llm_provider
+      - generation_model
       properties:
-        content_markdown:
+        base_url:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Optional OpenAI-compatible base URL (e.g.
+            `https://litellm.example/v1`). Persisted verbatim into
+            `workspaces.llm_base_url`. When set together with an empty
+            `llm_api_key`, no Authorization header is sent.
+        generation_model:
           type: string
+        llm_api_key:
+          type: string
+          description: |-
+            API key for cloud providers or base URL for Ollama. Leave
+            empty to keep the existing secret (useful when editing only
+            the model names) or — for the OpenAI provider with a custom
+            `base_url` — to mark the endpoint as unauthenticated.
+        llm_provider:
+          $ref: '#/components/schemas/LlmProvider'
+    LlmPatchResponse:
+      type: object
+      required:
+      - success
+      - requires_restart
+      properties:
+        requires_restart:
+          type: boolean
+        success:
+          type: boolean
     LlmProvider:
       type: string
       enum:
@@ -838,6 +1286,60 @@ components:
       properties:
         refresh_token:
           type: string
+    McpAnalyticsResponse:
+      type: object
+      required:
+      - period_days
+      - total_queries
+      - queries_by_day
+      - top_queries
+      - zero_result_queries
+      properties:
+        period_days:
+          type: integer
+          format: int32
+        queries_by_day:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayCountDto'
+        top_queries:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryFrequencyDto'
+        total_queries:
+          type: integer
+          format: int64
+        zero_result_queries:
+          $ref: '#/components/schemas/ZeroResultSummaryDto'
+    OllamaModelEntry:
+      type: object
+      required:
+      - name
+      - size_bytes
+      properties:
+        name:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+    OllamaModelsRequest:
+      type: object
+      required:
+      - base_url
+      properties:
+        base_url:
+          type: string
+          description: Base URL of a reachable Ollama server (e.g. `http://localhost:11434`).
+    OllamaModelsResponse:
+      type: object
+      required:
+      - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/OllamaModelEntry'
     PageResponse:
       type: object
       required:
@@ -947,6 +1449,14 @@ components:
       required:
       - llm_provider
       properties:
+        base_url:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Optional OpenAI-compatible base URL to probe against. Same
+            validation rules as the persisted field on
+            [`SetupRequest`]/[`LlmPatchRequest`].
         llm_api_key:
           type: string
         llm_provider:
@@ -975,6 +1485,41 @@ components:
           format: uuid
         status:
           type: string
+    QueryFrequencyDto:
+      type: object
+      required:
+      - query_text
+      - count
+      properties:
+        count:
+          type: integer
+          format: int64
+        query_text:
+          type: string
+    ReadyResponse:
+      type: object
+      required:
+      - status
+      - backfill
+      properties:
+        backfill:
+          type: string
+        failed:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        reason:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+        synced:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
     RefreshRequest:
       type: object
       required:
@@ -992,12 +1537,30 @@ components:
           description: |-
             The new bearer token in plaintext. This is the only time it
             will be visible — the server stores only the sha256 hash.
+    ReindexResponse:
+      type: object
+      required:
+      - scheduled
+      properties:
+        scheduled:
+          type: integer
+          format: int64
+          description: How many published page versions were scheduled for re-embedding.
     Role:
       type: string
       enum:
       - admin
       - author
       - viewer
+    SaveConversationRequest:
+      type: object
+      required:
+      - messages
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessageDto'
     SetupRequest:
       type: object
       required:
@@ -1005,7 +1568,6 @@ components:
       - admin_password
       - workspace_name
       - llm_provider
-      - llm_api_key
       - languages
       - primary_language
       properties:
@@ -1013,12 +1575,34 @@ components:
           type: string
         admin_password:
           type: string
+        base_url:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Optional OpenAI-compatible base URL (e.g.
+            `https://litellm.example/v1`). Persisted verbatim into
+            `workspaces.llm_base_url`. When set together with an empty
+            `llm_api_key`, no Authorization header is sent.
+        generation_model:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Model used for AI text generation (chat / editor). Optional for
+            cloud providers (falls back to sensible defaults); required for
+            Ollama because models are user-managed local pulls.
         languages:
           type: array
           items:
             type: string
         llm_api_key:
           type: string
+          description: |-
+            Empty allowed for the OpenAI provider when `base_url` is set
+            (self-hosted no-auth endpoints). The use case rejects the
+            no-URL + no-key combo for OpenAI; non-OpenAI providers still
+            require non-empty values where applicable.
         llm_provider:
           $ref: '#/components/schemas/LlmProvider'
         primary_language:
@@ -1040,6 +1624,13 @@ components:
         workspace_id:
           type: string
           format: uuid
+    SetupStatusResponse:
+      type: object
+      required:
+      - setup_complete
+      properties:
+        setup_complete:
+          type: boolean
     TokenResponse:
       type: object
       required:
@@ -1080,7 +1671,7 @@ components:
           type:
           - string
           - 'null'
-          description: BCP 47 language tag. Defaults to the version's current language.
+          description: BCP 47 language tag. Defaults to "en" when omitted.
         title:
           type:
           - string
@@ -1106,6 +1697,99 @@ components:
           description: '`true` if the user has not yet activated their account.'
         role:
           $ref: '#/components/schemas/Role'
+    VersionHistoryDetailResponse:
+      type: object
+      required:
+      - id
+      - page_id
+      - language
+      - version_number
+      - title
+      - content_markdown
+      - is_published
+      - created_at
+      properties:
+        author_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        content_markdown:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+          format: uuid
+        is_published:
+          type: boolean
+        language:
+          type: string
+        page_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        version_number:
+          type: integer
+          format: int32
+    VersionHistoryListResponse:
+      type: object
+      required:
+      - page_id
+      - language
+      - versions
+      - total
+      - page
+      - per_page
+      properties:
+        language:
+          type: string
+        page:
+          type: integer
+          format: int64
+        page_id:
+          type: string
+          format: uuid
+        per_page:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionHistorySummary'
+    VersionHistorySummary:
+      type: object
+      required:
+      - id
+      - version_number
+      - title
+      - content_preview
+      - is_published
+      - created_at
+      properties:
+        author_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        content_preview:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+          format: uuid
+        is_published:
+          type: boolean
+        title:
+          type: string
+        version_number:
+          type: integer
+          format: int32
     WorkspaceResponse:
       type: object
       required:
@@ -1114,9 +1798,12 @@ components:
       - languages
       - primary_language
       - llm_provider
+      - generation_model
       - mcp_endpoint_url
       - has_mcp_token
       properties:
+        generation_model:
+          type: string
         has_mcp_token:
           type: boolean
           description: Whether a bearer token has been configured.
@@ -1127,6 +1814,10 @@ components:
           type: array
           items:
             type: string
+        llm_base_url:
+          type:
+          - string
+          - 'null'
         llm_provider:
           type: string
         mcp_endpoint_url:
@@ -1136,6 +1827,33 @@ components:
           type: string
         primary_language:
           type: string
+    ZeroResultQueryDto:
+      type: object
+      required:
+      - query_text
+      - count
+      - last_seen
+      properties:
+        count:
+          type: integer
+          format: int64
+        last_seen:
+          type: string
+        query_text:
+          type: string
+    ZeroResultSummaryDto:
+      type: object
+      required:
+      - count
+      - queries
+      properties:
+        count:
+          type: integer
+          format: int64
+        queries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZeroResultQueryDto'
   securitySchemes:
     bearer:
       type: http
@@ -1156,3 +1874,5 @@ tags:
   description: Page authoring and publishing
 - name: editor
   description: AI-assisted document drafting
+- name: export
+  description: Markdown export

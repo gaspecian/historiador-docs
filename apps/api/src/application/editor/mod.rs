@@ -1,0 +1,24 @@
+//! Editor use cases — draft generation, iteration, conversation
+//! persistence.
+
+pub mod autonomy;
+pub mod block_ops;
+pub mod channels;
+pub mod comments;
+pub mod context;
+pub mod conversation;
+pub mod generate_draft;
+pub mod intake;
+pub mod iterate_draft;
+pub mod outline;
+pub mod prompt_template;
+pub mod prompts;
+pub mod readiness;
+pub mod share;
+pub mod summary;
+
+pub use conversation::{
+    LoadEditorConversationUseCase, SaveEditorConversationCommand, SaveEditorConversationUseCase,
+};
+pub use generate_draft::{DraftStream, GenerateDraftCommand, GenerateDraftUseCase};
+pub use iterate_draft::{IterateDraftCommand, IterateDraftUseCase, IterateStream};

@@ -1,0 +1,46 @@
+# Cargo-audit configuration for historiador-docs.
+#
+# Suppressed advisories are listed with the rationale for why the risk
+# is accepted or not applicable to this codebase. Every entry must cite
+# a specific reason — "won't fix" alone is not acceptable.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — rsa 0.9.x: Marvin Attack timing sidechannel.
+    # Pulled in transitively through `sqlx-mysql`, which is compiled by
+    # `sqlx-macros-core` even though we only enable the `postgres`
+    # feature of `sqlx`. No MySQL connection is ever established at
+    # runtime. No fixed release is available upstream (0.10 is RC-only).
+    # Re-evaluate when `rsa 0.10` stabilizes or sqlx stops pulling
+    # sqlx-mysql at macro-expansion time.
+    "RUSTSEC-2023-0071",
+
+    # RUSTSEC-2026-0097 — rand 0.8/0.9 unsound with custom loggers
+    # calling `rand::rng()`. Transitive through sqlx, async-openai,
+    # and quinn-proto/reqwest. We do not install a custom logger that
+    # invokes rand, so the unsoundness is unreachable in our usage.
+    # Remove when upstream deps update to a patched rand.
+    "RUSTSEC-2026-0097",
+
+    # RUSTSEC-2025-0012 — backoff is unmaintained. Transitive through
+    # async-openai 0.27. Async-openai uses it only for HTTP retry logic.
+    # Re-evaluate when async-openai drops backoff or swaps to a
+    # maintained alternative.
+    "RUSTSEC-2025-0012",
+
+    # RUSTSEC-2024-0384 — instant is unmaintained. Transitive through
+    # backoff (see above). Removed automatically once backoff is.
+    "RUSTSEC-2024-0384",
+
+    # RUSTSEC-2025-0141 — bincode 1.x is unmaintained. Transitive
+    # through syntect via comrak. Comrak uses syntect only for the
+    # default syntax-highlighting adapter; markdown chunking does not
+    # require syntect at runtime. No network-reachable attack surface.
+    "RUSTSEC-2025-0141",
+
+    # RUSTSEC-2024-0320 — yaml-rust is unmaintained. Transitive through
+    # syntect (same path as bincode above). Syntect uses yaml-rust for
+    # offline syntax definition files bundled in the crate; historiador
+    # does not load user-supplied YAML through this path.
+    "RUSTSEC-2024-0320",
+]

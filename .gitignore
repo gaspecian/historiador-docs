@@ -2,6 +2,9 @@
 target/
 **/*.rs.bk
 Cargo.lock.bak
+# proptest shrinks counterexamples to this file on failure; regenerated
+# each run and not worth versioning.
+**/*.proptest-regressions
 
 # --- Node ---
 node_modules/

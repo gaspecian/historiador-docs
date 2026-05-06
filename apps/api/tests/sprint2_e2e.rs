@@ -18,9 +18,18 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use historiador_api::{app, crypto::Cipher, setup::llm_probe::StubProbe, state::AppState};
-use historiador_db::vector_store::InMemoryVectorStore;
-use historiador_llm::{StubEmbeddingClient, StubTextGenerationClient};
+use historiador_api::{
+    app,
+    infrastructure::backfill::shared_disabled,
+    infrastructure::crypto::raw::Cipher,
+    infrastructure::llm::probe::{LlmProbe, StubProbe},
+    infrastructure::prompts::LoadedPrompt,
+    infrastructure::telemetry::editor::EditorMetrics,
+    presentation::{BuildDeps, UseCases},
+    state::AppState,
+};
+use historiador_db::vector_store::{InMemoryVectorStore, VectorStore};
+use historiador_llm::{StubTextGenerationClient, TextGenerationClient};
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -28,17 +37,38 @@ use sqlx::PgPool;
 fn test_state(pool: PgPool) -> Arc<AppState> {
     // 32 zero bytes, base64 — test fixture only.
     let enc_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    let cipher = Cipher::from_base64(enc_key).unwrap();
+    let jwt_secret: Vec<u8> = b"test-secret-at-least-32-bytes-long-xxxx".to_vec();
+    let llm_probe: Arc<dyn LlmProbe> = Arc::new(StubProbe);
+    let vector_store: Arc<dyn VectorStore> = Arc::new(InMemoryVectorStore::new());
+    let text_generation_client: Arc<dyn TextGenerationClient> = Arc::new(StubTextGenerationClient);
+
+    let use_cases = Arc::new(UseCases::build(BuildDeps {
+        pool: pool.clone(),
+        cipher: cipher.clone(),
+        jwt_secret: jwt_secret.clone(),
+        llm_probe: llm_probe.clone(),
+        vector_store: vector_store.clone(),
+        text_generation_client: text_generation_client.clone(),
+        chronik: None,
+    }));
+
     Arc::new(AppState {
         pool,
         git_sha: "test".into(),
-        jwt_secret: b"test-secret-at-least-32-bytes-long-xxxx".to_vec(),
-        cipher: Cipher::from_base64(enc_key).unwrap(),
+        jwt_secret,
+        cipher,
         public_base_url: "http://localhost:3000".into(),
         setup_complete: AtomicBool::new(false),
-        llm_probe: Arc::new(StubProbe),
-        vector_store: Arc::new(InMemoryVectorStore::new()),
-        embedding_client: Arc::new(StubEmbeddingClient::default()),
-        text_generation_client: Arc::new(StubTextGenerationClient),
+        llm_probe,
+        vector_store,
+        text_generation_client,
+        chronik: None,
+        use_cases,
+        editor_v2_enabled: false,
+        agent_prompt: Arc::new(LoadedPrompt::for_test()),
+        editor_metrics: Arc::new(EditorMetrics::new()),
+        backfill_state: shared_disabled(),
     })
 }
 

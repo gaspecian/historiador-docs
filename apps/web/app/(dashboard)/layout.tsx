@@ -5,6 +5,11 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useCollections } from "@/lib/use-collections";
+import {
+  CollectionSelectionProvider,
+  useCollectionSelection,
+} from "@/lib/collection-selection-context";
+import { usePagesQuery } from "@/lib/queries";
 import { CollectionTree } from "@/components/collections/collection-tree";
 import { CreateCollectionDialog } from "@/components/collections/create-collection-dialog";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -16,11 +21,30 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  return (
+    <CollectionSelectionProvider>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </CollectionSelectionProvider>
+  );
+}
+
+function DashboardLayoutInner({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, isAdmin, isLoading: authLoading } = useAuth();
   const collections = useCollections();
+  const { selectedId, setSelectedId } = useCollectionSelection();
+  const pagesQuery = usePagesQuery(null);
   const [showCreateCollection, setShowCreateCollection] = useState(false);
+
+  // `/dashboard/pages/<id>` is the detail route; pull the id out so
+  // the sidebar can highlight the active page.
+  const activePageMatch = pathname.match(/^\/dashboard\/pages\/([^/?#]+)$/);
+  const activePageId = activePageMatch ? activePageMatch[1] : null;
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -39,7 +63,7 @@ export default function DashboardLayout({
   if (!isAuthenticated) return null;
 
   const handleCollectionSelect = (id: string | null) => {
-    collections.setSelectedId(id);
+    setSelectedId(id);
     // Navigate to pages view if not already there
     if (!pathname.startsWith("/dashboard/pages") || pathname.includes("/dashboard/pages/")) {
       router.push("/dashboard/pages");
@@ -49,35 +73,45 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 flex flex-col">
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
-          <Link href="/dashboard/pages" className="text-lg font-bold">
+      <aside className="w-60 flex-shrink-0 border-r border-surface-border bg-surface-subtle flex flex-col text-[13px]">
+        <div className="px-3.5 pt-3.5 pb-2">
+          <Link
+            href="/dashboard/pages"
+            className="flex items-center gap-2 px-1.5 py-1 text-text-primary"
+            style={{ fontFamily: "var(--font-display)", fontSize: 19, fontStyle: "italic" }}
+          >
+            <span className="text-primary-600">
+              <svg width={20} height={20} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 7 V25" />
+                <path d="M16 7 C 12 5, 8 5, 4.5 6 V 24 C 8 23, 12 23, 16 25" />
+                <path d="M16 7 C 20 5, 24 5, 27.5 6 V 24 C 24 23, 20 23, 16 25" />
+                <path d="M22 10 L 26 14" />
+              </svg>
+            </span>
             Historiador
           </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="p-2 space-y-1">
+        <nav className="px-2 space-y-1">
           <Link
             href="/dashboard/pages"
-            className={`block px-3 py-1.5 text-sm rounded transition-colors ${
-              pathname.startsWith("/dashboard/pages")
-                ? "bg-zinc-200 dark:bg-zinc-800 font-medium"
-                : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            }`}
+            className={`block px-3 py-1.5 text-[13px] rounded-md transition-colors ${pathname.startsWith("/dashboard/pages")
+                ? "bg-primary-50 text-primary-700 font-medium"
+                : "text-text-secondary hover:bg-surface-hover"
+              }`}
           >
-            Pages
+            Páginas
           </Link>
           {isAdmin && (
             <Link
               href="/dashboard/admin"
-              className={`block px-3 py-1.5 text-sm rounded transition-colors ${
-                pathname === "/dashboard/admin"
-                  ? "bg-zinc-200 dark:bg-zinc-800 font-medium"
-                  : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              }`}
+              className={`block px-3 py-1.5 text-[13px] rounded-md transition-colors ${pathname === "/dashboard/admin"
+                  ? "bg-primary-50 text-primary-700 font-medium"
+                  : "text-text-secondary hover:bg-surface-hover"
+                }`}
             >
-              Admin
+              Administração
             </Link>
           )}
         </nav>
@@ -85,8 +119,8 @@ export default function DashboardLayout({
         {/* Collection tree */}
         <div className="flex-1 overflow-y-auto p-2">
           <div className="flex items-center justify-between px-2 py-1">
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-              Collections
+            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+              Coleções
             </span>
             <Button
               variant="ghost"
@@ -94,7 +128,7 @@ export default function DashboardLayout({
               onClick={() => setShowCreateCollection(!showCreateCollection)}
               className="text-xs"
             >
-              + New
+              + Nova
             </Button>
           </div>
 
@@ -110,29 +144,48 @@ export default function DashboardLayout({
 
           <CollectionTree
             tree={collections.tree}
-            selectedId={collections.selectedId}
+            pages={pagesQuery.data ?? []}
+            selectedId={selectedId}
+            activePageId={activePageId}
             expandedIds={collections.expandedIds}
-            isLoading={collections.isLoading}
+            isLoading={collections.isLoading || pagesQuery.isLoading}
             onSelect={handleCollectionSelect}
             onToggleExpand={collections.toggleExpanded}
           />
         </div>
+
+        <div className="mt-auto border-t border-surface-border px-3 pt-2.5 pb-3 flex items-center gap-2 text-xs text-teal-700">
+          <span className="relative inline-block h-[7px] w-[7px] rounded-full bg-teal-600">
+            <span
+              className="absolute rounded-full border-2 border-teal-600 opacity-35"
+              style={{ inset: -3, animation: "pulse 1.6s infinite" }}
+            />
+          </span>
+          MCP ativo
+        </div>
       </aside>
 
       {/* Main content area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-surface-page">
         {/* Top bar */}
-        <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-200 dark:border-zinc-700">
-          <div className="text-sm text-zinc-500">
-            {collections.selectedId
-              ? collections.collections.find((c) => c.id === collections.selectedId)?.name ?? "Collection"
-              : "All Pages"}
+        <header className="flex h-14 items-center justify-between bg-surface-canvas border-b border-surface-border px-6 gap-4">
+          <div className="text-[13px] text-text-secondary flex-1">
+            {selectedId
+              ? (
+                <span>
+                  <span className="text-text-disabled">/ </span>
+                  <span className="font-medium text-text-primary">
+                    {collections.collections.find((c) => c.id === selectedId)?.name ?? "Coleção"}
+                  </span>
+                </span>
+              )
+              : "Todas as páginas"}
           </div>
           <UserMenu />
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>

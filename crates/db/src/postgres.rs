@@ -8,8 +8,10 @@
 
 pub mod chunks;
 pub mod collections;
+pub mod editor_conversations;
 pub mod installation;
 pub mod mcp_queries;
+pub mod page_version_history;
 pub mod page_versions;
 pub mod pages;
 pub mod sessions;

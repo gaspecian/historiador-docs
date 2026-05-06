@@ -1,53 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch } from "./api";
-import type { Collection, TreeNode } from "@historiador/types";
+// Backwards-compatible wrapper around the TanStack Query hook. Keeps
+// expansion state local (purely UI) while routing data through the
+// shared query cache. Selection state lives in
+// CollectionSelectionContext so it can be shared across the dashboard
+// layout and the pages list view.
 
-function buildTree(collections: Collection[]): TreeNode[] {
-  const childrenMap = new Map<string | null, Collection[]>();
-  for (const c of collections) {
-    const key = c.parent_id ?? "root";
-    if (!childrenMap.has(key)) childrenMap.set(key, []);
-    childrenMap.get(key)!.push(c);
-  }
-
-  function recurse(parentId: string | null): TreeNode[] {
-    const key = parentId ?? "root";
-    return (childrenMap.get(key) ?? []).map((c) => ({
-      ...c,
-      children: recurse(c.id),
-    }));
-  }
-
-  return recurse(null);
-}
+import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys, useCollectionsQuery } from "@/lib/queries";
 
 export function useCollections() {
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const qc = useQueryClient();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchCollections = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const data = await apiFetch<Collection[]>("/collections");
-      setCollections(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load collections");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const query = useCollectionsQuery();
 
-  useEffect(() => {
-    fetchCollections();
-  }, [fetchCollections]);
-
-  const tree = useMemo(() => buildTree(collections), [collections]);
+  const refresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.collections.all });
+  }, [qc]);
 
   const toggleExpanded = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -59,14 +30,12 @@ export function useCollections() {
   }, []);
 
   return {
-    collections,
-    tree,
-    selectedId,
-    setSelectedId,
+    collections: query.data ?? [],
+    tree: query.tree,
     expandedIds,
     toggleExpanded,
-    isLoading,
-    error,
-    refresh: fetchCollections,
+    isLoading: query.isLoading,
+    error: query.error ? (query.error as Error).message : null,
+    refresh,
   };
 }

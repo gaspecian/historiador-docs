@@ -3,12 +3,24 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use anyhow::Context;
-use historiador_api::{app, crypto::Cipher, setup::llm_probe::HttpLlmProbe, state::AppState};
-use historiador_db::{postgres::installation, vector_store::InMemoryVectorStore};
+use historiador_api::{
+    app,
+    infrastructure::backfill::shared_disabled,
+    infrastructure::crypto::raw::Cipher,
+    infrastructure::llm::probe::HttpLlmProbe,
+    infrastructure::prompts::load_agent_prompt,
+    infrastructure::telemetry::editor::EditorMetrics,
+    presentation::{BuildDeps, UseCases},
+    state::AppState,
+};
+use historiador_db::{
+    chronik::{ChronikClient, ChronikConfig},
+    postgres::installation,
+    vector_store::{ChronikVectorStore, InMemoryVectorStore, VectorStore},
+};
 use historiador_llm::{
-    AnthropicTextGenerationClient, EmbeddingClient, OpenAiEmbeddingClient,
-    OpenAiTextGenerationClient, StubEmbeddingClient, StubTextGenerationClient,
-    TextGenerationClient,
+    AnthropicTextGenerationClient, OllamaTextClient, OpenAiGenerationConfig,
+    OpenAiTextGenerationClient, StubTextGenerationClient, TextGenerationClient,
 };
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -45,6 +57,34 @@ async fn main() -> anyhow::Result<()> {
     let public_base_url =
         std::env::var("PUBLIC_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
+    // Sprint 11 master flag. Default OFF — Sprint 4 SSE editor remains
+    // the only surface until the tier-A phases verify in staging.
+    let editor_v2_enabled = std::env::var("EDITOR_V2_ENABLED")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+
+    // Boot-time vector store backfill. Default OFF so dev/test boots
+    // stay fast; enable in production to reconcile any published
+    // page_versions sitting in Postgres but not yet in Chronik.
+    let backfill_on_boot = std::env::var("BACKFILL_ON_BOOT")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+
+    // Agent prompt — loaded once at boot, hashed for deploy auditing.
+    let prompt_version = std::env::var("PROMPT_VERSION").unwrap_or_else(|_| "v1".to_string());
+    let prompt_dir = std::env::var("PROMPT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("prompts/agent"));
+    let agent_prompt = std::sync::Arc::new(
+        load_agent_prompt(&prompt_version, &prompt_dir).context("failed to load agent prompt")?,
+    );
+    tracing::info!(
+        version = %agent_prompt.version,
+        hash = %agent_prompt.hash,
+        editor_v2_enabled,
+        "agent prompt loaded"
+    );
+
     // --- database pool + migrations (api is the only service that migrates) ---
     let pool = historiador_db::connect(&database_url)
         .await
@@ -62,68 +102,275 @@ async fn main() -> anyhow::Result<()> {
         "installation loaded"
     );
 
-    // Build LLM clients from env vars. If LLM_PROVIDER + LLM_API_KEY are
-    // set, use real providers; otherwise fall back to stubs (safe for dev).
-    let llm_provider = std::env::var("LLM_PROVIDER").unwrap_or_default();
-    let llm_api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
+    // Build LLM clients. When setup has already run, the stored
+    // workspace row is the source of truth (provider, models, and
+    // Ollama base URL or encrypted key). Before setup completes —
+    // e.g. the first boot in a fresh deploy — fall back to env vars
+    // so the setup wizard itself has a working probe/draft surface.
+    let workspace_row = historiador_db::postgres::workspaces::find_singleton(&pool).await?;
+    let text_generation_client = build_llm_clients_from_workspace(&cipher, workspace_row.as_ref())?;
 
-    let (embedding_client, text_generation_client): (
-        Arc<dyn EmbeddingClient>,
-        Arc<dyn TextGenerationClient>,
-    ) = match llm_provider.as_str() {
-        "openai" if !llm_api_key.is_empty() => {
-            tracing::info!("LLM provider: OpenAI");
-            (
-                Arc::new(OpenAiEmbeddingClient::new(&llm_api_key)),
-                Arc::new(OpenAiTextGenerationClient::new(&llm_api_key)),
-            )
+    // Build Chronik client if configured. Falling back to the in-memory
+    // vector store is gated behind ALLOW_IN_MEMORY_VECTOR_STORE=true
+    // because the in-memory store loses all chunks on process restart,
+    // which silently breaks page version history (ADR-007, code review
+    // finding 4.4).
+    let chronik_url = std::env::var("CHRONIK_SQL_URL").ok();
+    let allow_in_memory = historiador_db::vector_store::allow_in_memory_vector_store();
+    let (vector_store, chronik): (Arc<dyn VectorStore>, Option<ChronikClient>) = match chronik_url {
+        Some(url) if !url.is_empty() => {
+            let search_url = std::env::var("CHRONIK_SEARCH_URL").unwrap_or_else(|_| url.clone());
+            // API always needs Kafka. Default to localhost:9092 for dev convenience;
+            // production sets CHRONIK_KAFKA_BROKER explicitly.
+            let kafka_broker = Some(
+                std::env::var("CHRONIK_KAFKA_BROKER")
+                    .unwrap_or_else(|_| "localhost:9092".to_string()),
+            );
+
+            match ChronikClient::new(ChronikConfig {
+                base_url: url,
+                search_base_url: search_url,
+                kafka_broker,
+            })
+            .await
+            {
+                Ok(client) => {
+                    tracing::info!("vector store: Chronik-Stream");
+                    let vs = Arc::new(ChronikVectorStore::new(client.clone()));
+                    (vs, Some(client))
+                }
+                Err(e) if allow_in_memory => {
+                    tracing::warn!(
+                        error = %e,
+                        "⚠️  Chronik init failed — falling back to in-memory vector store \
+                         because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
+                         DATA WILL BE LOST ON RESTART. Do not use this in production."
+                    );
+                    (Arc::new(InMemoryVectorStore::new()), None)
+                }
+                Err(e) => {
+                    anyhow::bail!(
+                        "Chronik init failed ({e}). Start Chronik \
+                         (`docker compose up -d chronik`) or set \
+                         ALLOW_IN_MEMORY_VECTOR_STORE=true for dev-only \
+                         in-memory fallback (data lost on restart)."
+                    );
+                }
+            }
         }
-        "anthropic" if !llm_api_key.is_empty() => {
-            // Anthropic has no embedding API — embeddings stay on stub
-            // (or use EMBEDDING_API_KEY for OpenAI embeddings).
-            tracing::info!("LLM provider: Anthropic (embeddings: stub)");
-            let emb: Arc<dyn EmbeddingClient> = match std::env::var("EMBEDDING_API_KEY") {
-                Ok(key) if !key.is_empty() => Arc::new(OpenAiEmbeddingClient::new(&key)),
-                _ => Arc::new(StubEmbeddingClient::default()),
-            };
-            (
-                emb,
-                Arc::new(AnthropicTextGenerationClient::new(&llm_api_key)),
-            )
+        _ if allow_in_memory => {
+            tracing::warn!(
+                "⚠️  CHRONIK_SQL_URL not set — using in-memory vector store \
+                 because ALLOW_IN_MEMORY_VECTOR_STORE=true. \
+                 DATA WILL BE LOST ON RESTART. Do not use this in production."
+            );
+            (Arc::new(InMemoryVectorStore::new()), None)
         }
         _ => {
-            tracing::info!("LLM provider: stub (no LLM_PROVIDER set)");
-            (
-                Arc::new(StubEmbeddingClient::default()),
-                Arc::new(StubTextGenerationClient),
-            )
+            anyhow::bail!(
+                "CHRONIK_SQL_URL is not set and ALLOW_IN_MEMORY_VECTOR_STORE is \
+                 not true. Start Chronik (`docker compose up -d chronik`) or \
+                 set ALLOW_IN_MEMORY_VECTOR_STORE=true for dev-only in-memory \
+                 fallback (data lost on restart)."
+            );
         }
     };
+
+    // Ensure Chronik topics exist with the right configuration at boot.
+    // Idempotent: ensure_topic tolerates "already exists" from the broker.
+    if let Some(ref chronik_client) = chronik {
+        if let Some(ref kafka) = chronik_client.kafka_producer {
+            // published-pages: vector + full-text indexing (chunk pipeline).
+            // 1 partition: Chronik 2.4.1 single-broker can't reliably leader-elect
+            // across multiple partitions; the producer always targets partition 0.
+            if let Err(e) = kafka
+                .ensure_topic(
+                    historiador_db::chronik::producer::topics::PUBLISHED_PAGES,
+                    /*partitions*/ 1,
+                    Some(historiador_db::chronik::kafka_producer::published_pages_topic_config()),
+                )
+                .await
+            {
+                tracing::error!(error = %e, "failed to ensure published-pages topic — chunk pipeline writes will fail");
+            }
+
+            // Streaming-only topics (no vector indexing). 1 partition each —
+            // same single-broker constraint as published-pages.
+            for topic in [
+                historiador_db::chronik::producer::topics::PAGE_EVENTS,
+                historiador_db::chronik::producer::topics::MCP_QUERIES,
+                historiador_db::chronik::producer::topics::EDITOR_CONVERSATIONS,
+            ] {
+                if let Err(e) = kafka.ensure_topic(topic, /*partitions*/ 1, None).await {
+                    tracing::warn!(%topic, error = %e, "failed to ensure topic");
+                }
+            }
+        } else {
+            tracing::error!(
+                "API requires CHRONIK_KAFKA_BROKER but kafka_producer is None — \
+                 topic provisioning skipped; chunk pipeline writes will fail"
+            );
+            std::process::exit(1);
+        }
+    }
+
+    let llm_probe: Arc<dyn historiador_api::infrastructure::llm::probe::LlmProbe> =
+        Arc::new(HttpLlmProbe::default());
+    let jwt_secret_bytes = jwt_secret.into_bytes();
+
+    let use_cases = Arc::new(UseCases::build(BuildDeps {
+        pool: pool.clone(),
+        cipher: cipher.clone(),
+        jwt_secret: jwt_secret_bytes.clone(),
+        llm_probe: llm_probe.clone(),
+        vector_store: vector_store.clone(),
+        text_generation_client: text_generation_client.clone(),
+        chronik: chronik.clone(),
+    }));
 
     let state = Arc::new(AppState {
         pool,
         git_sha,
-        jwt_secret: jwt_secret.into_bytes(),
+        jwt_secret: jwt_secret_bytes,
         cipher,
         public_base_url,
         setup_complete,
-        llm_probe: Arc::new(HttpLlmProbe::default()),
-        vector_store: Arc::new(InMemoryVectorStore::new()),
-        embedding_client,
+        llm_probe,
+        vector_store,
         text_generation_client,
+        chronik,
+        use_cases,
+        editor_v2_enabled,
+        agent_prompt,
+        editor_metrics: Arc::new(EditorMetrics::new()),
+        backfill_state: shared_disabled(),
     });
 
-    let app = app::build_router(state);
+    let app = app::build_router(state.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "api server listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    // Spawn the boot-time backfill before handing control to the server.
+    // The server still binds and serves traffic immediately; only
+    // /health/ready reflects the in-progress backfill (returns 503
+    // while Running).
+    if backfill_on_boot {
+        if let Some(chronik_client) = state.chronik.clone() {
+            let pool = state.pool.clone();
+            let vector_store = state.vector_store.clone();
+            let backfill_state = state.backfill_state.clone();
+            tokio::spawn(async move {
+                let svc = historiador_api::infrastructure::backfill::BackfillService::new(
+                    pool,
+                    chronik_client,
+                    vector_store,
+                    backfill_state,
+                );
+                svc.run().await;
+            });
+            tracing::info!("backfill: spawned (BACKFILL_ON_BOOT=true)");
+        } else {
+            tracing::warn!(
+                "BACKFILL_ON_BOOT=true but no Chronik client configured — \
+                 skipping backfill (in-memory vector store cannot be probed)"
+            );
+        }
+    } else {
+        tracing::info!("backfill: disabled (BACKFILL_ON_BOOT not set / falsy)");
+    }
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
     Ok(())
+}
+
+/// Build the text-generation client from a workspace row, falling
+/// back to env vars before setup has completed. Embeddings are
+/// handled by Chronik server-side; the app no longer constructs an
+/// embedding client.
+fn build_llm_clients_from_workspace(
+    cipher: &Cipher,
+    workspace: Option<&historiador_db::postgres::workspaces::Workspace>,
+) -> anyhow::Result<Arc<dyn TextGenerationClient>> {
+    // Pre-setup: honor legacy LLM_PROVIDER + LLM_API_KEY env vars.
+    let Some(ws) = workspace else {
+        let provider = std::env::var("LLM_PROVIDER").unwrap_or_default();
+        let api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
+        return Ok(match provider.as_str() {
+            "openai" if !api_key.is_empty() => {
+                tracing::info!("LLM provider (env): OpenAI");
+                Arc::new(OpenAiTextGenerationClient::new(&api_key))
+            }
+            "anthropic" if !api_key.is_empty() => {
+                tracing::info!("LLM provider (env): Anthropic");
+                Arc::new(AnthropicTextGenerationClient::new(&api_key))
+            }
+            _ => {
+                tracing::info!("LLM provider (env): stub — setup not complete");
+                Arc::new(StubTextGenerationClient)
+            }
+        });
+    };
+
+    // Post-setup: every field comes from the workspace row.
+    let gen_model = ws.generation_model.as_str();
+
+    let client: Arc<dyn TextGenerationClient> = match ws.llm_provider.as_str() {
+        "openai" => {
+            let key_str = ws
+                .llm_api_key_encrypted
+                .as_deref()
+                .map(|k| cipher.decrypt(k))
+                .transpose()?
+                .unwrap_or_default();
+            let key: Option<&str> = if key_str.is_empty() {
+                None
+            } else {
+                Some(&key_str)
+            };
+            let base_url = ws.llm_base_url.as_deref();
+            tracing::info!(
+                gen = gen_model,
+                base_url = base_url.unwrap_or("api.openai.com"),
+                "LLM provider: OpenAI"
+            );
+            Arc::new(OpenAiTextGenerationClient::from_config(
+                OpenAiGenerationConfig {
+                    api_key: key,
+                    base_url,
+                    model: gen_model,
+                },
+            ))
+        }
+        "anthropic" => {
+            let key = ws
+                .llm_api_key_encrypted
+                .as_deref()
+                .map(|k| cipher.decrypt(k))
+                .transpose()?
+                .unwrap_or_default();
+            tracing::info!(gen = gen_model, "LLM provider: Anthropic");
+            Arc::new(AnthropicTextGenerationClient::with_model(&key, gen_model))
+        }
+        "ollama" => {
+            let base_url = ws
+                .llm_base_url
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
+            tracing::info!(base_url, gen = gen_model, "LLM provider: Ollama");
+            Arc::new(OllamaTextClient::new(base_url, gen_model))
+        }
+        _ => {
+            tracing::info!("LLM provider: stub (test / unknown)");
+            Arc::new(StubTextGenerationClient)
+        }
+    };
+
+    Ok(client)
 }
 
 fn init_tracing() {

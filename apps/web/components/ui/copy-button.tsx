@@ -9,7 +9,7 @@ interface CopyButtonProps {
   className?: string;
 }
 
-export function CopyButton({ text, label = "Copy", className }: CopyButtonProps) {
+export function CopyButton({ text, label = "Copiar", className }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -20,7 +20,7 @@ export function CopyButton({ text, label = "Copy", className }: CopyButtonProps)
 
   return (
     <Button variant="secondary" size="sm" onClick={handleCopy} className={className}>
-      {copied ? "Copied!" : label}
+      {copied ? "Copiado!" : label}
     </Button>
   );
 }

@@ -1,0 +1,363 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { useEditorStream } from "@/features/editor";
+import { CommentablePreview, type BlockComment } from "@/features/editor/review";
+import { SaveDialog } from "@/features/editor/save";
+import * as pagesService from "@/lib/services/pages";
+import type { PageResponse, PageVersionResponse } from "@historiador/types";
+
+export default function EditorPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [brief, setBrief] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const {
+    draft,
+    messages,
+    streaming,
+    liveAssistant,
+    generateDraft,
+    iterateDraft,
+    submitBlockComment,
+    setDraft,
+  } = useEditorStream();
+
+  // When the URL carries ?page_id=... the user is editing an existing
+  // page — fetch its version and seed the draft buffer so they can
+  // iterate with the AI instead of starting from a blank brief. The
+  // Save dialog then UPDATEs the existing page instead of creating a
+  // new one (handled further down).
+  const urlPageId = searchParams?.get("page_id") ?? null;
+  const urlLanguage = searchParams?.get("lang") ?? null;
+  // After a first create, we promote the freshly-saved page to in-memory
+  // edit state so subsequent "Salvar" clicks PATCH instead of POSTing
+  // and hitting the unique-slug constraint.
+  const [savedPageId, setSavedPageId] = useState<string | null>(urlPageId);
+  const [savedLanguage, setSavedLanguage] = useState<string | null>(urlLanguage);
+  const [existingTitle, setExistingTitle] = useState<string | null>(null);
+  useEffect(() => {
+    setSavedPageId(urlPageId);
+    setSavedLanguage(urlLanguage);
+  }, [urlPageId, urlLanguage]);
+  useEffect(() => {
+    if (!urlPageId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pagesService.get(urlPageId);
+        if (cancelled) return;
+        const versions = page.versions as PageVersionResponse[];
+        const version =
+          (urlLanguage
+            ? versions.find((v) => v.language === urlLanguage)
+            : undefined) ?? versions[0];
+        if (version) {
+          setDraft(version.content_markdown);
+          setExistingTitle(version.title);
+        }
+      } catch {
+        // page not found / forbidden — fall through to blank editor.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [urlPageId, urlLanguage, setDraft]);
+
+  const handleSaved = useCallback(
+    (page: PageResponse) => {
+      setSavedPageId(page.id);
+      const version =
+        (savedLanguage
+          ? page.versions.find((v) => v.language === savedLanguage)
+          : undefined) ?? page.versions[0];
+      if (version) {
+        setSavedLanguage(version.language);
+        setExistingTitle(version.title);
+      }
+      const lang = version?.language ?? savedLanguage ?? "";
+      const qs = new URLSearchParams();
+      qs.set("page_id", page.id);
+      if (lang) qs.set("lang", lang);
+      router.replace(`/editor?${qs.toString()}`);
+    },
+    [router, savedLanguage],
+  );
+
+  // GitHub-PR-style comments keyed by block index. The parent owns
+  // state so the commentable preview stays a pure render component.
+  // Reset when the draft is replaced wholesale — block indexes drift
+  // after an edit round-trip, so keeping stale anchors hurts more
+  // than losing the thread history.
+  const [commentsByBlock, setCommentsByBlock] = useState<
+    Record<number, Array<{ id: string; text: string; status: "pending" | "replied" | "resolved" }>>
+  >({});
+  // When the AI responds to a comment turn, mark pending comments
+  // on the affected block as replied so the UI reflects the cycle.
+  const lastCommentBlockRef = useRef<number | null>(null);
+  const prevStreamingRef = useRef(false);
+  useEffect(() => {
+    // Transition streaming:true → false means the AI just finished
+    // responding. Flip pending comments on the last-commented block
+    // to "replied".
+    if (prevStreamingRef.current && !streaming && lastCommentBlockRef.current !== null) {
+      const idx = lastCommentBlockRef.current;
+      setCommentsByBlock((prev) => {
+        const list = prev[idx];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [idx]: list.map((c) => (c.status === "pending" ? { ...c, status: "replied" } : c)),
+        };
+      });
+      lastCommentBlockRef.current = null;
+    }
+    prevStreamingRef.current = streaming;
+  }, [streaming]);
+
+  const submitGenerate = async () => {
+    if (!brief.trim() || streaming) return;
+    await generateDraft({ brief });
+    setBrief("");
+  };
+
+  const submitRefine = async () => {
+    if (!instruction.trim() || !draft || streaming) return;
+    await iterateDraft({ instruction });
+    setInstruction("");
+  };
+
+  const handleBlockComment = useCallback(
+    (
+      blockIndex: number,
+      blockSource: string,
+      startLine: number,
+      endLine: number,
+      text: string,
+    ) => {
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setCommentsByBlock((prev) => {
+        const existing = prev[blockIndex] ?? [];
+        return {
+          ...prev,
+          [blockIndex]: [...existing, { id, text, status: "pending" }],
+        };
+      });
+      lastCommentBlockRef.current = blockIndex;
+      void submitBlockComment(blockSource, startLine, endLine, text);
+    },
+    [submitBlockComment]
+  );
+
+  const handleResolveComment = useCallback((blockIndex: number, commentId: string) => {
+    setCommentsByBlock((prev) => {
+      const list = prev[blockIndex];
+      if (!list) return prev;
+      return {
+        ...prev,
+        [blockIndex]: list.map((c) => (c.id === commentId ? { ...c, status: "resolved" } : c)),
+      };
+    });
+  }, []);
+
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+
+  const loading = streaming;
+
+  return (
+    <main className="grid h-full grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] bg-surface-page">
+      {/* Conversation pane */}
+      <section className="flex flex-col border-r border-surface-border bg-surface-subtle min-h-0">
+        <header className="flex h-14 items-center border-b border-surface-border bg-surface-canvas px-6">
+          <h1
+            className="text-text-primary"
+            style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 400, fontStyle: "italic", margin: 0 }}
+          >
+            Conversa com a IA
+          </h1>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
+          {messages.length === 0 && !loading && (
+            <div className="text-sm text-text-tertiary">
+              Comece descrevendo o documento que você quer criar. A IA escreve; você guia.
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`rounded-lg px-4 py-3 text-sm ${
+                msg.role === "user"
+                  ? "bg-surface-canvas border border-surface-border"
+                  : "bg-primary-50 text-text-primary"
+              }`}
+            >
+              <div className="mb-1 text-xs font-semibold uppercase text-text-tertiary tracking-wide">
+                {msg.role === "user" ? "Você" : "IA"}
+              </div>
+              <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55]">
+                {msg.content}
+              </pre>
+            </div>
+          ))}
+
+          {loading && (
+            <>
+              {liveAssistant ? (
+                <div className="rounded-lg px-4 py-3 text-sm bg-primary-50 text-text-primary">
+                  <div className="mb-1 text-xs font-semibold uppercase text-text-tertiary tracking-wide">
+                    IA
+                  </div>
+                  <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55]">
+                    {liveAssistant}
+                    <span className="animate-pulse">▍</span>
+                  </pre>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+                  <span className="relative inline-block h-2 w-2 rounded-full bg-primary-600">
+                    <span
+                      className="absolute rounded-full border-2 border-primary-600 opacity-35"
+                      style={{ inset: -3, animation: "pulse 1.6s infinite" }}
+                    />
+                  </span>
+                  Escrevendo…
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-surface-border bg-surface-canvas p-4">
+          {!draft ? (
+            <div className="space-y-2">
+              <textarea
+                className="w-full rounded-md border border-surface-border bg-surface-canvas p-3 text-sm text-text-primary placeholder:text-text-disabled focus:border-primary-600 focus:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                rows={3}
+                placeholder="Descreva o documento que você quer criar…"
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.metaKey) submitGenerate();
+                }}
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-tertiary" style={{ fontFamily: "var(--font-mono)" }}>
+                  ⌘+Enter para gerar
+                </span>
+                <Button onClick={submitGenerate} disabled={loading || !brief.trim()}>
+                  Gerar rascunho
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                className="flex-1 h-10 rounded-md border border-surface-border bg-surface-canvas px-3 text-sm text-text-primary placeholder:text-text-disabled focus:border-primary-600 focus:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                placeholder="Descreva o que mudar…"
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitRefine();
+                }}
+              />
+              <Button onClick={submitRefine} disabled={loading || !instruction.trim()}>
+                Refinar
+              </Button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Document pane */}
+      <section className="flex flex-col min-h-0 bg-surface-page">
+        <header className="flex h-14 items-center justify-between bg-surface-canvas border-b border-surface-border px-6 gap-4">
+          <div className="text-[13px] text-text-secondary">
+            {draft ? "Rascunho" : "Sem documento ainda"}
+          </div>
+          {draft && (
+            <Button
+              size="sm"
+              onClick={() => setSaveDialogOpen(true)}
+              disabled={streaming}
+            >
+              Salvar
+            </Button>
+          )}
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-10 py-8">
+          <div className="mx-auto" style={{ maxWidth: "var(--content-max)" }}>
+            {draft ? (
+              <CommentablePreview
+                markdown={normaliseDraftMarkdown(
+                  draft.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, ""),
+                )}
+                commentsByBlock={commentsByBlock as Record<number, BlockComment[]>}
+                onComment={handleBlockComment}
+                onResolve={handleResolveComment}
+                submitting={streaming}
+              />
+            ) : (
+              <div
+                className="text-text-tertiary"
+                style={{ fontFamily: "var(--font-display)", fontSize: 28, fontStyle: "italic", lineHeight: 1.3 }}
+              >
+                O documento aparece aqui quando a conversa começar.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <SaveDialog
+        open={saveDialogOpen}
+        markdown={draft}
+        pageId={savedPageId}
+        initialTitle={existingTitle ?? undefined}
+        language={savedLanguage ?? undefined}
+        onClose={() => setSaveDialogOpen(false)}
+        onSaved={handleSaved}
+      />
+    </main>
+  );
+}
+
+function normaliseDraftMarkdown(md: string): string {
+  const lines = md.split(/\r?\n/);
+  const out: string[] = [];
+  const isBlank = (s: string) => s.trim().length === 0;
+  const isAtxHeading = (s: string) => /^#{1,6}\s+\S/.test(s);
+  const isSetextUnderline = (s: string) => /^(=+|-+)\s*$/.test(s) && s.trim().length >= 2;
+  const isFence = (s: string) => /^```/.test(s.trimStart()) || /^~~~/.test(s.trimStart());
+  const isListItem = (s: string) => /^\s*(?:[-*+]\s+|\d+\.\s+)/.test(s);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const prev = out.length > 0 ? out[out.length - 1] : "";
+    const next = lines[i + 1] ?? "";
+
+    if (isAtxHeading(line) && out.length > 0 && !isBlank(prev)) out.push("");
+    if (isFence(line) && out.length > 0 && !isBlank(prev)) out.push("");
+
+    if (isSetextUnderline(line)) {
+      out.push(line);
+      if (!isBlank(next)) out.push("");
+      continue;
+    }
+
+    out.push(line);
+
+    if (isAtxHeading(line) && !isBlank(next)) out.push("");
+    if (isListItem(next) && !isBlank(line) && !isListItem(line)) out.push("");
+  }
+
+  return out.join("\n");
+}

@@ -14,7 +14,7 @@ ADR-004 proposed a full Node.js/TypeScript stack (Fastify for the API and MCP se
 The primary drivers for Rust:
 - The MCP server has a strict < 2 second p95 latency target — Rust's predictable, GC-free performance makes this easier to guarantee
 - The chunking pipeline is CPU-intensive (markdown AST traversal, tokenization, embedding calls) — Rust's native concurrency model handles this without the event loop constraints of Node.js
-- VexFS is the vector database underpinning the system; having backend services in Rust creates natural alignment if VexFS is Rust-native or has a first-class Rust client
+- Chronik-Stream is the data platform underpinning the system (see ADR-007); having all backend services in Rust creates natural alignment with a first-class Rust client
 - Rust's memory safety guarantees reduce entire classes of runtime bugs without sacrificing performance
 
 The monorepo uses **pnpm workspaces** for the JavaScript/TypeScript layer (Next.js frontend, shared type packages) and a **Cargo workspace** for the Rust layer, orchestrated together by **Turborepo**.
@@ -24,8 +24,8 @@ The monorepo uses **pnpm workspaces** for the JavaScript/TypeScript layer (Next.
 ## Decision
 
 **Use a mixed-language monorepo:**
-- **Frontend**: Next.js (React, TypeScript) — dashboard, AI editor, admin panel, setup wizard
-- **Backend API**: Rust with Axum — page management, user management, chunking pipeline, language validation
+- **Frontend**: Next.js (React, TypeScript) — dashboard, split-pane AI editor, admin panel, setup wizard
+- **Backend API**: Rust with Axum — page management, user management, chunking pipeline, WebSocket editor handler, language validation
 - **MCP Server**: Rust with Axum — standalone service, read-only, implements MCP protocol
 - **Monorepo tooling**: pnpm workspaces (TypeScript layer) + Cargo workspace (Rust layer), orchestrated by Turborepo
 - **API contract**: OpenAPI schema generated from Rust (via `utoipa`) → TypeScript types generated for the frontend (via `openapi-typescript`)
@@ -51,7 +51,7 @@ The monorepo uses **pnpm workspaces** for the JavaScript/TypeScript layer (Next.
 - Rust's ownership model makes the chunking pipeline memory-safe without manual management
 - Rust async (Tokio) handles high concurrency efficiently — embedding generation and MCP queries can be parallelized cleanly
 - Small, statically-linked Docker images — the Rust services compile to single binaries with minimal runtime dependencies
-- Natural alignment with VexFS if its client library is Rust-native
+- Natural alignment with Chronik-Stream — both are Rust-native; first-party author access to both projects
 - Axum (from the Tokio team) is the most modern, actively maintained Rust web framework — excellent ecosystem (tower middleware, tracing, sqlx)
 
 **Cons:**
@@ -101,7 +101,7 @@ historiador-doc/
 │   │   └── src/
 │   ├── chunker/                    # Structure-aware markdown chunker library
 │   │   └── src/
-│   └── db/                         # Shared VexFS + PostgreSQL clients (Rust)
+│   └── db/                         # Shared Chronik-Stream + PostgreSQL clients (Rust)
 │       └── src/
 ├── Cargo.toml                      # Rust workspace root
 ├── pnpm-workspace.yaml             # pnpm workspace (web + packages/types)
@@ -146,7 +146,7 @@ Wrap all LLM calls behind a `LlmClient` trait defined in a shared `crates/llm` c
 | Store | Library | Notes |
 |-------|---------|-------|
 | PostgreSQL | `sqlx` | Async, compile-time query checking, no ORM overhead |
-| VexFS | VexFS Rust client (first-party) | Direct integration with the VexFS team |
+| Chronik-Stream | Chronik Rust client (first-party) | Implements `VectorStore`, `SearchStore`, and `EventStore` traits defined in `crates/db`; see ADR-007 |
 
 ### OpenAPI Type Contract
 
@@ -208,15 +208,15 @@ cargo build (crates/api)
 - Open-source contributions to the backend require Rust familiarity — consider maintaining thorough contributor documentation and ensuring the chunker and MCP crates have clear, well-commented interfaces
 
 **Must revisit:**
-- If VexFS does not yet have a Rust client library, the first engineering task is to build or request one — this is a blocking dependency for the backend services
+- Confirm Chronik-Stream has a production-ready Rust client library — this is a blocking dependency for `crates/db` (tracked in ADR-007 action items)
 - Evaluate `cargo-chef` for Docker layer caching of Rust dependencies — without it, Docker builds recompile all dependencies on every code change
 
 ---
 
 ## Action Items
 
-1. [ ] Confirm VexFS has a Rust client library or plan its development with the VexFS team
-2. [ ] Initialize Cargo workspace at the repo root with `crates/api`, `crates/mcp`, `crates/chunker`, `crates/db`
+1. [ ] Confirm Chronik-Stream Rust client library status with the Specian team (see ADR-007 action items)
+2. [ ] Initialize Cargo workspace at the repo root with `crates/api`, `crates/mcp`, `crates/chunker`, `crates/db`, `crates/llm`
 3. [ ] Set up `utoipa` in `crates/api` and validate OpenAPI schema generation as part of the build
 4. [ ] Configure `openapi-typescript` in the Turborepo pipeline to consume `openapi.yaml` and output `packages/types/generated/`
 5. [ ] Set up `cargo-watch` for hot reload during local Rust development

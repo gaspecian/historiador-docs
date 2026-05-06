@@ -2,14 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
-import { EditorPanel } from "@/components/editor/editor-panel";
+import { marked } from "marked";
+import { Pencil } from "lucide-react";
+import * as adminService from "@/lib/services/admin";
+import * as pagesService from "@/lib/services/pages";
+import * as exportService from "@/lib/services/export";
+import { useAuth } from "@/lib/auth-context";
 import { LanguageTabs } from "@/components/pages/language-tabs";
 import { PublishConfirmModal } from "@/components/pages/publish-confirm-modal";
+import { VersionHistoryPanel } from "@/components/pages/version-history-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Spinner } from "@/components/ui/spinner";
-import type { PageResponse, WorkspaceResponse } from "@historiador/types";
+import type { PageResponse } from "@historiador/types";
 
 export default function PageDetailPage() {
   const params = useParams();
@@ -22,13 +28,19 @@ export default function PageDetailPage() {
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null);
   const [workspaceLanguages, setWorkspaceLanguages] = useState<string[]>([]);
   const [primaryLanguage, setPrimaryLanguage] = useState<string>("en");
-  const [saving, setSaving] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const { canEdit } = useAuth();
+
+  const STATUS_LABELS: Record<string, string> = {
+    draft: "Rascunho",
+    published: "Publicada",
+  };
 
   useEffect(() => {
     Promise.all([
-      apiFetch<PageResponse>(`/pages/${pageId}`),
-      apiFetch<WorkspaceResponse>("/admin/workspace").catch(() => null),
+      pagesService.get(pageId),
+      adminService.getWorkspace().catch(() => null),
     ]).then(([pageData, ws]) => {
       setPage(pageData);
       if (ws) {
@@ -57,32 +69,36 @@ export default function PageDetailPage() {
   }
 
   if (!page) {
-    return <div className="text-center py-8 text-zinc-500">Page not found</div>;
+    return <div className="text-center py-8 text-text-tertiary">Página não encontrada</div>;
   }
 
   const activeVersion = page.versions.find((v) => v.language === activeLanguage);
   const isMissingLanguage = activeLanguage && !activeVersion;
   const primaryVersion = page.versions.find((v) => v.language === primaryLanguage);
 
-  const handleSave = async (markdown: string) => {
-    setSaving(true);
-    try {
-      await apiFetch(`/pages/${pageId}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title: activeVersion?.title || primaryVersion?.title || "Untitled",
-          content_markdown: markdown,
-          language: activeLanguage,
-        }),
-      });
-      // Refresh page data
-      const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
-      setPage(updated);
-    } catch {
-      // Alpha error handling
-    } finally {
-      setSaving(false);
-    }
+  const handleCreateBlank = async () => {
+    await pagesService.update(pageId, {
+      title: activeVersion?.title || primaryVersion?.title || "Sem título",
+      content_markdown: "",
+      language: activeLanguage ?? undefined,
+    });
+    setPage(await pagesService.get(pageId));
+  };
+
+  const handleCopyFromPrimary = async () => {
+    if (!primaryVersion) return;
+    await pagesService.update(pageId, {
+      title: activeVersion?.title || primaryVersion.title || "Sem título",
+      content_markdown: primaryVersion.content_markdown,
+      language: activeLanguage ?? undefined,
+    });
+    setPage(await pagesService.get(pageId));
+  };
+
+  const goToEditor = () => {
+    const params = new URLSearchParams({ page_id: pageId });
+    if (activeLanguage) params.set("lang", activeLanguage);
+    router.push(`/editor?${params.toString()}`);
   };
 
   const missingLanguages = workspaceLanguages.filter(
@@ -105,34 +121,71 @@ export default function PageDetailPage() {
 
   const doToggleStatus = async () => {
     setShowPublishModal(false);
-    const endpoint = page.status === "draft" ? "publish" : "draft";
-    await apiFetch(`/pages/${pageId}/${endpoint}`, { method: "POST" });
-    const updated = await apiFetch<PageResponse>(`/pages/${pageId}`);
+    if (page.status === "draft") {
+      await pagesService.publish(pageId);
+    } else {
+      await pagesService.draft(pageId);
+    }
+    const updated = await pagesService.get(pageId);
     setPage(updated);
   };
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="px-10 py-7 max-w-4xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/pages")}>
-            &larr; Back
+            &larr; Voltar
           </Button>
           <h1 className="text-lg font-semibold">
             {activeVersion?.title || primaryVersion?.title || page.slug}
           </h1>
           <Badge variant={page.status === "published" ? "success" : "warning"}>
-            {page.status}
+            {STATUS_LABELS[page.status] ?? page.status}
           </Badge>
         </div>
         <div className="flex gap-2">
+          {canEdit && activeVersion && (
+            <Button size="sm" onClick={goToEditor} title="Abrir no editor">
+              <span className="inline-flex items-center gap-1.5">
+                <Pencil className="w-4 h-4" aria-hidden />
+                Editar
+              </span>
+            </Button>
+          )}
           <Button
-            variant={page.status === "draft" ? "primary" : "secondary"}
+            variant="ghost"
             size="sm"
-            onClick={handlePublishClick}
+            onClick={() => setShowHistory(true)}
+            title="Histórico de versões"
           >
-            {page.status === "draft" ? "Publish" : "Unpublish"}
+            Histórico
           </Button>
+          {canEdit && (
+            <Button
+              variant={page.status === "draft" ? "primary" : "secondary"}
+              size="sm"
+              onClick={handlePublishClick}
+            >
+              {page.status === "draft" ? "Publicar" : "Despublicar"}
+            </Button>
+          )}
+          <Dropdown
+            trigger={<span aria-label="Mais ações">⋮</span>}
+            items={[
+              {
+                label: "Baixar como Markdown",
+                onClick: () => {
+                  exportService
+                    .pageMarkdown(pageId, activeLanguage ?? undefined)
+                    .catch(() => {
+                      /* alpha error handling */
+                    });
+                },
+                disabled: page.status !== "published" || !activeLanguage,
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -146,47 +199,29 @@ export default function PageDetailPage() {
 
       {/* Content preview or missing-language prompt */}
       {isMissingLanguage ? (
-        <div className="border border-amber-200 dark:border-amber-800 rounded p-6 text-center space-y-3 bg-amber-50 dark:bg-amber-900/20">
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            No <strong>{activeLanguage}</strong> version exists yet.
+        <div className="border border-amber-200 rounded p-6 text-center space-y-3 bg-amber-50">
+          <p className="text-sm text-amber-800">
+            Nenhuma versão em <strong>{activeLanguage}</strong> existe ainda.
           </p>
-          <div className="flex justify-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => handleSave("")}
-            >
-              Create blank version
-            </Button>
-            {primaryVersion && activeLanguage !== primaryLanguage && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => handleSave(primaryVersion.content_markdown)}
-              >
-                Copy from {primaryLanguage}
+          {canEdit && (
+            <div className="flex justify-center gap-3">
+              <Button variant="secondary" size="sm" onClick={handleCreateBlank}>
+                Criar versão em branco
               </Button>
-            )}
-          </div>
+              {primaryVersion && activeLanguage !== primaryLanguage && (
+                <Button variant="primary" size="sm" onClick={handleCopyFromPrimary}>
+                  Copiar de {primaryLanguage}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       ) : activeVersion ? (
-        <div className="border border-zinc-200 dark:border-zinc-700 rounded p-4">
-          <pre className="whitespace-pre-wrap break-words font-mono text-sm">
-            {activeVersion.content_markdown}
-          </pre>
-        </div>
-      ) : null}
-
-      {/* Editor */}
-      <div className="border border-zinc-200 dark:border-zinc-700 rounded p-4">
-        <h2 className="text-sm font-medium mb-3">AI Editor</h2>
-        <EditorPanel
-          initialContent={activeVersion?.content_markdown}
-          language={activeLanguage || undefined}
-          onSave={handleSave}
+        <article
+          className="md-prose border border-surface-border rounded-lg bg-surface-canvas p-8"
+          dangerouslySetInnerHTML={{ __html: renderPageMarkdown(activeVersion.content_markdown) }}
         />
-        {saving && <p className="text-xs text-zinc-500 mt-2">Saving...</p>}
-      </div>
+      ) : null}
 
       <PublishConfirmModal
         open={showPublishModal}
@@ -194,6 +229,23 @@ export default function PageDetailPage() {
         onConfirm={doToggleStatus}
         onCancel={() => setShowPublishModal(false)}
       />
+
+      <VersionHistoryPanel
+        pageId={pageId}
+        language={activeLanguage || primaryLanguage}
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        onRestore={async () => {
+          const updated = await pagesService.get(pageId);
+          setPage(updated);
+        }}
+      />
     </div>
   );
+}
+
+function renderPageMarkdown(md: string): string {
+  const cleaned = md.replace(/<!--\s*block:[0-9a-fA-F-]+\s*-->/g, "");
+  const html = marked.parse(cleaned, { async: false, gfm: true, breaks: false });
+  return typeof html === "string" ? html : "";
 }

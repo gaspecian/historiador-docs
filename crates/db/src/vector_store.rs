@@ -1,113 +1,104 @@
 //! `VectorStore` trait + implementations.
 //!
-//! Sprint 3 ships an in-memory stub so the chunk pipeline runs
-//! end-to-end without a real VexFS instance. The `HttpVexfsClient`
-//! retains its health-check capability but returns `NotImplemented`
-//! for search/upsert until VexFS's HTTP API is finalized.
-//!
-//! # Invariant (ADR-001)
-//!
-//! VexFS is the retrieval source of truth for chunk embeddings.
-//! Postgres stores only `chunks.vexfs_ref` — an opaque pointer that
-//! [`VectorStore`] implementations interpret. Never duplicate embeddings
-//! into Postgres.
+//! Production backend is Chronik-Stream (ADR-007). Writes go through
+//! Kafka (Chronik has no HTTP write path); reads go through Chronik's
+//! REST `/_vector/<topic>/search` (text query, Chronik embeds).
+//! Hits are addressed by `(partition, offset)` because Chronik does
+//! not assign user-controllable doc ids.
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::RwLock;
 use thiserror::Error;
 
+use crate::chronik::kafka_producer::ProducedRecord;
+
 #[derive(Debug, Error)]
 pub enum VectorStoreError {
-    #[error("vexfs http error: {0}")]
+    #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("not implemented — VexFS wire integration pending")]
-    NotImplemented,
+    #[error("kafka error: {0}")]
+    Kafka(String),
 
     #[error("internal error: {0}")]
     Internal(String),
 }
 
-// ---- types for the expanded trait ----
-
-/// A chunk with its embedding, ready to be upserted into the vector store.
+/// A chunk's payload as published to Chronik. Chronik embeds the
+/// `content` field per the topic's `vector.field=$.content` config.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChunkEmbedding {
+pub struct ChunkPayload {
     pub page_version_id: String,
     pub section_index: i32,
     pub heading_path: Vec<String>,
     pub content: String,
     pub language: String,
     pub token_count: i32,
-    pub embedding: Vec<f32>,
 }
 
-/// Opaque pointer to a chunk embedding stored in the vector store,
-/// paired with a relevance score from a similarity search.
+/// A reference to a chunk located in Chronik, paired with the
+/// similarity score from a search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkRef {
-    pub vexfs_ref: String,
+    pub partition: i32,
+    pub offset: i64,
     pub score: f32,
-    pub content: String,
-    pub heading_path: Vec<String>,
-    pub language: String,
-    pub page_version_id: String,
+    /// `text_preview` from Chronik (may be truncated). The
+    /// authoritative content lives in the Postgres `chunks` row joined
+    /// during MCP enrichment.
+    pub text_preview: Option<String>,
 }
 
-/// Filters for similarity search.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchFilters {
     pub language: Option<String>,
     pub page_version_id: Option<String>,
 }
 
-// ---- trait ----
-
-/// Abstraction over the vector store. Swappable so the API and MCP
-/// server can be tested against an in-memory fake, and so a migration
-/// to a different backend (e.g. Qdrant) never touches call sites.
 #[async_trait]
 pub trait VectorStore: Send + Sync {
-    /// Returns `Ok(true)` if the underlying store responds to a health
-    /// probe.
     async fn health(&self) -> Result<bool, VectorStoreError>;
 
-    /// Upsert chunk embeddings. Returns the vexfs_ref identifiers
-    /// assigned to each chunk (in the same order as the input).
-    async fn upsert_chunks(
+    /// Produce chunk records to Chronik. Returns the
+    /// `(partition, offset)` for each chunk in input order.
+    async fn produce_chunks(
         &self,
-        chunks: Vec<ChunkEmbedding>,
-    ) -> Result<Vec<String>, VectorStoreError>;
+        chunks: Vec<ChunkPayload>,
+    ) -> Result<Vec<ProducedRecord>, VectorStoreError>;
 
-    /// Top-k similarity search with metadata filters.
+    /// Top-k semantic search on the topic. The query text is embedded
+    /// by Chronik using the topic's configured embedding model.
     async fn search(
         &self,
-        query_embedding: &[f32],
+        query: &str,
         filters: SearchFilters,
         k: usize,
     ) -> Result<Vec<ChunkRef>, VectorStoreError>;
+}
 
-    /// Delete all chunk embeddings for a page_version.
-    async fn delete_by_page_version(&self, page_version_id: &str) -> Result<u64, VectorStoreError>;
+pub fn allow_in_memory_vector_store() -> bool {
+    std::env::var("ALLOW_IN_MEMORY_VECTOR_STORE")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false)
 }
 
 // ---- InMemoryVectorStore ----
 
-/// In-memory vector store for Sprint 3. Data is lost on process
-/// restart. Uses brute-force cosine similarity for search.
+/// In-memory store for unit tests. Substring-matches the query
+/// against chunk content and returns synthetic `(partition, offset)`
+/// pairs. Not a semantic search — only useful to exercise the
+/// upstream code paths.
 pub struct InMemoryVectorStore {
-    store: RwLock<HashMap<String, ChunkEmbedding>>,
-    counter: RwLock<u64>,
+    store: RwLock<Vec<(ProducedRecord, ChunkPayload)>>,
+    next_offset: RwLock<i64>,
 }
 
 impl InMemoryVectorStore {
     pub fn new() -> Self {
         Self {
-            store: RwLock::new(HashMap::new()),
-            counter: RwLock::new(0),
+            store: RwLock::new(Vec::new()),
+            next_offset: RwLock::new(0),
         }
     }
 }
@@ -124,32 +115,35 @@ impl VectorStore for InMemoryVectorStore {
         Ok(true)
     }
 
-    async fn upsert_chunks(
+    async fn produce_chunks(
         &self,
-        chunks: Vec<ChunkEmbedding>,
-    ) -> Result<Vec<String>, VectorStoreError> {
+        chunks: Vec<ChunkPayload>,
+    ) -> Result<Vec<ProducedRecord>, VectorStoreError> {
         let mut store = self
             .store
             .write()
             .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
-        let mut counter = self
-            .counter
+        let mut next = self
+            .next_offset
             .write()
             .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
 
-        let mut refs = Vec::with_capacity(chunks.len());
+        let mut records = Vec::with_capacity(chunks.len());
         for chunk in chunks {
-            *counter += 1;
-            let vexfs_ref = format!("mem-{}", *counter);
-            store.insert(vexfs_ref.clone(), chunk);
-            refs.push(vexfs_ref);
+            let rec = ProducedRecord {
+                partition: 0,
+                offset: *next,
+            };
+            *next += 1;
+            store.push((rec, chunk));
+            records.push(rec);
         }
-        Ok(refs)
+        Ok(records)
     }
 
     async fn search(
         &self,
-        query_embedding: &[f32],
+        query: &str,
         filters: SearchFilters,
         k: usize,
     ) -> Result<Vec<ChunkRef>, VectorStoreError> {
@@ -157,122 +151,100 @@ impl VectorStore for InMemoryVectorStore {
             .store
             .read()
             .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
-
-        let mut scored: Vec<(String, &ChunkEmbedding, f32)> = store
+        let q = query.to_lowercase();
+        let mut hits: Vec<ChunkRef> = store
             .iter()
-            .filter(|(_, chunk)| {
+            .filter(|(_, c)| {
                 if let Some(ref lang) = filters.language {
-                    if &chunk.language != lang {
+                    if &c.language != lang {
                         return false;
                     }
                 }
-                if let Some(ref pvid) = filters.page_version_id {
-                    if &chunk.page_version_id != pvid {
+                if let Some(ref pv) = filters.page_version_id {
+                    if &c.page_version_id != pv {
                         return false;
                     }
                 }
                 true
             })
-            .map(|(ref_id, chunk)| {
-                let score = cosine_similarity(query_embedding, &chunk.embedding);
-                (ref_id.clone(), chunk, score)
+            .filter_map(|(rec, c)| {
+                let lc = c.content.to_lowercase();
+                if lc.contains(&q) {
+                    Some(ChunkRef {
+                        partition: rec.partition,
+                        offset: rec.offset,
+                        score: 1.0,
+                        text_preview: Some(c.content.chars().take(200).collect()),
+                    })
+                } else {
+                    None
+                }
             })
             .collect();
-
-        // Sort by score descending.
-        scored.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(k);
-
-        let results = scored
-            .into_iter()
-            .map(|(vexfs_ref, chunk, score)| ChunkRef {
-                vexfs_ref,
-                score,
-                content: chunk.content.clone(),
-                heading_path: chunk.heading_path.clone(),
-                language: chunk.language.clone(),
-                page_version_id: chunk.page_version_id.clone(),
-            })
-            .collect();
-
-        Ok(results)
-    }
-
-    async fn delete_by_page_version(&self, page_version_id: &str) -> Result<u64, VectorStoreError> {
-        let mut store = self
-            .store
-            .write()
-            .map_err(|e| VectorStoreError::Internal(format!("lock poisoned: {e}")))?;
-        let before = store.len();
-        store.retain(|_, chunk| chunk.page_version_id != page_version_id);
-        Ok((before - store.len()) as u64)
+        hits.truncate(k);
+        Ok(hits)
     }
 }
 
-/// Cosine similarity between two vectors.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 {
-        return 0.0;
-    }
-    dot / (norm_a * norm_b)
+// ---- ChronikVectorStore ----
+
+/// Vector store backed by Chronik-Stream. Writes go through Kafka
+/// (`ChronikClient::kafka_producer`), reads go through the REST
+/// `/_vector/<topic>/search` endpoint.
+pub struct ChronikVectorStore {
+    client: crate::chronik::ChronikClient,
 }
 
-// ---- HttpVexfsClient (kept from Sprint 1) ----
-
-/// HTTP client for VexFS's unified REST server.
-///
-/// Talks to VexFS via `reqwest`. The base URL typically looks like
-/// `http://vexfs:7680` inside docker-compose. The upsert/search/delete
-/// methods return `NotImplemented` until VexFS's HTTP API is finalized.
-pub struct HttpVexfsClient {
-    base_url: String,
-    http: Client,
-}
-
-impl HttpVexfsClient {
-    pub fn new(base_url: impl Into<String>) -> Self {
-        Self {
-            base_url: base_url.into(),
-            http: Client::new(),
-        }
+impl ChronikVectorStore {
+    pub fn new(client: crate::chronik::ChronikClient) -> Self {
+        Self { client }
     }
 }
 
 #[async_trait]
-impl VectorStore for HttpVexfsClient {
+impl VectorStore for ChronikVectorStore {
     async fn health(&self) -> Result<bool, VectorStoreError> {
-        let url = format!("{}/api/v1/version", self.base_url);
-        let resp = self.http.get(url).send().await?;
-        Ok(resp.status().is_success())
+        self.client.search_health().await
     }
 
-    async fn upsert_chunks(
+    async fn produce_chunks(
         &self,
-        _chunks: Vec<ChunkEmbedding>,
-    ) -> Result<Vec<String>, VectorStoreError> {
-        Err(VectorStoreError::NotImplemented)
+        chunks: Vec<ChunkPayload>,
+    ) -> Result<Vec<ProducedRecord>, VectorStoreError> {
+        use crate::chronik::producer::topics::PUBLISHED_PAGES;
+
+        let producer =
+            self.client.kafka_producer.as_ref().ok_or_else(|| {
+                VectorStoreError::Kafka("kafka producer not configured".to_string())
+            })?;
+
+        let mut out = Vec::with_capacity(chunks.len());
+        for chunk in chunks {
+            let key = format!("{}:{}", chunk.page_version_id, chunk.section_index);
+            let payload = serde_json::json!({
+                "page_version_id": chunk.page_version_id,
+                "section_index": chunk.section_index,
+                "heading_path": chunk.heading_path,
+                "content": chunk.content,
+                "language": chunk.language,
+                "token_count": chunk.token_count,
+            });
+            let rec = producer
+                .produce(PUBLISHED_PAGES, &key, &payload)
+                .await
+                .map_err(|e| VectorStoreError::Kafka(e.to_string()))?;
+            out.push(rec);
+        }
+        Ok(out)
     }
 
     async fn search(
         &self,
-        _query_embedding: &[f32],
-        _filters: SearchFilters,
-        _k: usize,
+        query: &str,
+        filters: SearchFilters,
+        k: usize,
     ) -> Result<Vec<ChunkRef>, VectorStoreError> {
-        Err(VectorStoreError::NotImplemented)
-    }
-
-    async fn delete_by_page_version(
-        &self,
-        _page_version_id: &str,
-    ) -> Result<u64, VectorStoreError> {
-        Err(VectorStoreError::NotImplemented)
+        self.client.vector_search_text(query, filters, k).await
     }
 }
 
@@ -281,120 +253,35 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn in_memory_upsert_and_search() {
+    async fn in_memory_substring_search() {
         let store = InMemoryVectorStore::new();
-
-        let chunks = vec![
-            ChunkEmbedding {
-                page_version_id: "pv-1".into(),
-                section_index: 0,
-                heading_path: vec!["Intro".into()],
-                content: "Hello world".into(),
-                language: "en".into(),
-                token_count: 2,
-                embedding: vec![1.0, 0.0, 0.0],
-            },
-            ChunkEmbedding {
-                page_version_id: "pv-1".into(),
-                section_index: 1,
-                heading_path: vec!["Details".into()],
-                content: "More details".into(),
-                language: "en".into(),
-                token_count: 2,
-                embedding: vec![0.0, 1.0, 0.0],
-            },
-        ];
-
-        let refs = store.upsert_chunks(chunks).await.unwrap();
-        assert_eq!(refs.len(), 2);
-
-        // Search with a query close to the first chunk.
-        let results = store
-            .search(&[0.9, 0.1, 0.0], SearchFilters::default(), 10)
-            .await
-            .unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].content, "Hello world");
-    }
-
-    #[tokio::test]
-    async fn in_memory_delete_by_page_version() {
-        let store = InMemoryVectorStore::new();
-
-        let chunks = vec![
-            ChunkEmbedding {
-                page_version_id: "pv-1".into(),
-                section_index: 0,
-                heading_path: vec![],
-                content: "chunk a".into(),
-                language: "en".into(),
-                token_count: 2,
-                embedding: vec![1.0],
-            },
-            ChunkEmbedding {
-                page_version_id: "pv-2".into(),
-                section_index: 0,
-                heading_path: vec![],
-                content: "chunk b".into(),
-                language: "en".into(),
-                token_count: 2,
-                embedding: vec![1.0],
-            },
-        ];
-
-        store.upsert_chunks(chunks).await.unwrap();
-        let deleted = store.delete_by_page_version("pv-1").await.unwrap();
-        assert_eq!(deleted, 1);
-
-        // Only pv-2 chunk should remain.
-        let results = store
-            .search(&[1.0], SearchFilters::default(), 10)
-            .await
-            .unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].page_version_id, "pv-2");
-    }
-
-    #[tokio::test]
-    async fn in_memory_search_filters_by_language() {
-        let store = InMemoryVectorStore::new();
-
-        let chunks = vec![
-            ChunkEmbedding {
-                page_version_id: "pv-1".into(),
-                section_index: 0,
-                heading_path: vec![],
-                content: "english".into(),
-                language: "en".into(),
-                token_count: 1,
-                embedding: vec![1.0],
-            },
-            ChunkEmbedding {
-                page_version_id: "pv-1".into(),
-                section_index: 1,
-                heading_path: vec![],
-                content: "portuguese".into(),
-                language: "pt-BR".into(),
-                token_count: 1,
-                embedding: vec![1.0],
-            },
-        ];
-
-        store.upsert_chunks(chunks).await.unwrap();
-
-        let results = store
-            .search(
-                &[1.0],
-                SearchFilters {
-                    language: Some("pt-BR".into()),
-                    ..Default::default()
+        store
+            .produce_chunks(vec![
+                ChunkPayload {
+                    page_version_id: "pv-1".into(),
+                    section_index: 0,
+                    heading_path: vec!["Intro".into()],
+                    content: "Hello world".into(),
+                    language: "en".into(),
+                    token_count: 2,
                 },
-                10,
-            )
+                ChunkPayload {
+                    page_version_id: "pv-1".into(),
+                    section_index: 1,
+                    heading_path: vec!["Details".into()],
+                    content: "More details".into(),
+                    language: "en".into(),
+                    token_count: 2,
+                },
+            ])
             .await
             .unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].content, "portuguese");
+
+        let hits = store
+            .search("hello", SearchFilters::default(), 10)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
     }
 
     #[tokio::test]

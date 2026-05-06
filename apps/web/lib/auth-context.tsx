@@ -21,6 +21,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** True for admins and authors; false for viewers. */
+  canEdit: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -43,19 +45,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // On mount: check localStorage for existing token
+  // Post-hydration bootstrap: localStorage is client-only, so we can't read it
+  // during render (SSR mismatch) or via a lazy useState initializer. The
+  // setState-in-effect warning is expected here.
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (token) {
       const payload = decodeJwtPayload(token);
       if (payload && payload.exp * 1000 > Date.now()) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser({
           id: payload.sub,
           workspaceId: payload.wsid,
           role: payload.role,
         });
       } else {
-        // Token expired or invalid — clear
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
       }
@@ -125,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isAuthenticated: user !== null,
       isAdmin: user?.role === "admin",
+      canEdit: user?.role === "admin" || user?.role === "author",
       isLoading,
       login,
       logout,

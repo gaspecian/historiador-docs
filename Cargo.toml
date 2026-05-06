@@ -3,9 +3,11 @@ resolver = "2"
 members = [
     "apps/api",
     "apps/mcp",
+    "crates/blocks",
     "crates/chunker",
     "crates/db",
     "crates/llm",
+    "crates/tools",
 ]
 
 [workspace.package]
@@ -17,14 +19,17 @@ rust-version = "1.82"
 [workspace.dependencies]
 # --- async runtime ---
 tokio = { version = "1.40", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 async-trait = "0.1"
+futures = "0.3"
+async-stream = "0.3"
 
 # --- web framework ---
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors"] }
 
-# --- http client (VexFS stub + future LLM calls) ---
+# --- http client ---
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # --- database ---
@@ -56,8 +61,11 @@ utoipa-swagger-ui = { version = "8", features = ["axum"] }
 # --- markdown (Sprint 2 chunker) ---
 comrak = "0.29"
 
+# --- export (Sprint 8 markdown zip) ---
+async_zip = { version = "0.0.17", features = ["tokio", "deflate"] }
+
 # --- misc ---
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 
@@ -67,13 +75,16 @@ async-openai = "0.27"
 # --- auth & setup (Sprint 2) ---
 argon2 = "0.5"
 jsonwebtoken = "9"
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 rand = "0.8"
+secrecy  = "0.10"
 sha2 = "0.10"
+subtle = "2"
 regex = "1"
+wiremock = "0.6"
 
 [profile.release]
 lto = "thin"

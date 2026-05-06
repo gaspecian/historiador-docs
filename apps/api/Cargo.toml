@@ -16,10 +16,23 @@ path = "src/main.rs"
 name = "gen-openapi"
 path = "src/bin/gen-openapi.rs"
 
+# Sprint 10 item #7 — seed 10k synthetic chunks for the MCP load test.
+[[bin]]
+name = "load-test-seed"
+path = "src/bin/load_test_seed.rs"
+
+# Sprint 11 phase A2 — one-shot backfill of block-ID comments into
+# existing page_versions.content_markdown rows. Idempotent.
+[[bin]]
+name = "backfill-block-ids"
+path = "src/bin/backfill_block_ids.rs"
+
 [dependencies]
 historiador_db = { path = "../../crates/db" }
 historiador_chunker = { path = "../../crates/chunker" }
 historiador_llm = { path = "../../crates/llm" }
+historiador_tools = { path = "../../crates/tools" }
+historiador_blocks = { path = "../../crates/blocks" }
 
 tokio.workspace = true
 axum.workspace = true
@@ -46,7 +59,15 @@ rand.workspace = true
 sha2.workspace = true
 regex.workspace = true
 reqwest.workspace = true
+url = "2"
 async-trait.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+tokio-util.workspace = true
+async_zip.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true

@@ -4,7 +4,7 @@ Plataforma de documentacao open-source e self-hosted onde cada base de conhecime
 
 ## O que torna diferente
 
-- **Representacao dual** — as paginas sao escritas como markdown legivel por humanos *e* armazenadas como chunks estruturais em um vector store ([VexFS](https://github.com/lspecian/vexfs)). Autores nunca veem os chunks; ferramentas de IA nunca veem o markdown bruto.
+- **Representacao dual** — as paginas sao escritas como markdown legivel por humanos *e* armazenadas como chunks estruturais em um vector store ([Chronik-Stream](https://github.com/lspecian/chronik-stream), ver [ADR-007](artifacts/adr/ADR-007-chronik-stream.md)). Autores nunca veem os chunks; ferramentas de IA nunca veem o markdown bruto.
 - **MCP nativo desde o primeiro dia** — o endpoint MCP e um servico standalone e somente-leitura. Empresas expoem apenas a porta do MCP externamente, mantendo o app de autoria e a API internos.
 - **Multilingual por padrao** — os idiomas obrigatorios sao configurados na instalacao e aplicados em toda a documentacao. O editor de IA solicita ao autor a criacao de conteudo em cada idioma configurado.
 - **Self-hosted, dados ficam dentro da empresa** — roda via Docker Compose em um VPS Linux padrao (2 vCPU / 4 GB minimo). Sem dependencia de cloud.
@@ -19,16 +19,22 @@ apps/
   mcp/          Axum MCP server    (porta 3002, exposta externamente)
   web/          Next.js dashboard  (porta 3000, interna)
 crates/
-  db/           Clientes compartilhados Postgres + VexFS
+  db/           Clientes compartilhados Postgres + Chronik-Stream
   chunker/      Chunker de markdown structure-aware (comrak AST)
   llm/          Abstracao de provedores LLM (OpenAI, Anthropic, Ollama)
 packages/
   types/        Tipos TypeScript auto-gerados a partir do openapi.yaml
 ```
 
-O **servidor MCP tem zero acesso de escrita** ao Postgres e ao VexFS — garantido tanto na camada de variaveis de ambiente quanto na camada de roles do banco. Veja [ADR-003](artifacts/adr/ADR-003-mcp-server-architecture.md).
+O **servidor MCP tem zero acesso de escrita** ao Postgres e ao Chronik-Stream — garantido tanto na camada de variaveis de ambiente quanto na camada de roles do banco. Veja [ADR-003](artifacts/adr/ADR-003-mcp-server-architecture.md).
 
 ## Inicio rapido
+
+> Esta secao cobre o setup **local de desenvolvimento**. Para instalar
+> em producao (single-host VPS via `docker-compose.prod.yml`, com
+> proxy reverso e TLS), siga o [guia de instalacao](docs/installation.md).
+> Veja tambem o [blueprint de arquitetura](docs/architecture.md) e o
+> [mapa de dependencias](docs/dependencies.md).
 
 ### Pre-requisitos
 
@@ -43,7 +49,7 @@ Docker Compose roda apenas a infra (Postgres + Ollama). API, MCP e frontend roda
 
 ```bash
 # Clonar o repositorio
-git clone https://github.com/lspecian/historiador-doc.git
+git clone https://github.com/gaspecian/historiador-doc.git
 cd historiador-doc
 
 # Criar o .env local a partir do exemplo
@@ -51,7 +57,7 @@ cp .env.example .env
 # Em producao, SEMPRE sobrescreva JWT_SECRET e APP_ENCRYPTION_KEY:
 #   openssl rand -base64 32
 
-# Subir Postgres + Ollama (modelo llama3.2:1b baixa automaticamente)
+# Subir Postgres + Ollama + Chronik-Stream (modelo llama3.2:1b baixa automaticamente)
 docker compose up -d
 ```
 
@@ -76,6 +82,7 @@ cargo run -p historiador_mcp --bin mcp
 | mcp      | http://localhost:3002        | Endpoint MCP (somente leitura)        |
 | postgres | localhost:5432               | Armazenamento relacional              |
 | ollama   | http://localhost:11434       | Inferencia local (Llama)              |
+| chronik  | localhost:9092 / 6092        | Vector + full-text search (Kafka / SQL) |
 
 ### 3. Frontend (pnpm dev)
 
@@ -140,14 +147,14 @@ Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev
 ### 5. Conectar Claude Desktop ao endpoint MCP
 
 1. No dashboard, va em **Admin** > **MCP Server** e clique "Regenerate Token"
-2. Copie o token e a URL do endpoint MCP (ex: `http://localhost:3002/query`)
+2. Copie o token e a URL do endpoint MCP (`http://localhost:3002/mcp`)
 3. No Claude Desktop, abra Settings > MCP Servers e adicione:
 
 ```json
 {
   "mcpServers": {
     "historiador": {
-      "url": "http://localhost:3002/query",
+      "url": "http://localhost:3002/mcp",
       "token": "<seu-bearer-token>"
     }
   }
@@ -156,13 +163,48 @@ Rodar o `/setup/init` duas vezes retorna `409 Conflict`. Para resetar (so em dev
 
 4. Agora o Claude pode consultar sua documentacao diretamente via MCP.
 
-### Limitacoes conhecidas (Alpha)
+#### Conformidade com o protocolo MCP
 
-> **VexFS integration in progress** — os chunks persistem apenas enquanto o container esta rodando. Reiniciar o container limpa o vector store in-memory. Dados relacionais (paginas, usuarios, collections) persistem normalmente no Postgres.
+O endpoint `POST /mcp` fala [Model Context Protocol](https://modelcontextprotocol.io/) via JSON-RPC 2.0 (versao do protocolo `2025-03-26`), implementando `initialize`, `tools/list` e `tools/call`. Ele anuncia uma unica ferramenta `query` cujo `inputSchema` aceita `query` (obrigatorio), `language` (BCP 47, opcional) e `top_k` (1–20, default 5). A autenticacao e via header `Authorization: Bearer <token>`, com comparacao em tempo constante sobre o digest SHA-256 do token (ver o relatorio de seguranca em [docs/security.md](docs/security.md)).
 
-- Sem envio de email: links de ativacao de convite devem ser compartilhados manualmente
-- Sem historico de versao de paginas: edicoes sobrescrevem a versao atual
-- Sem suporte a embeddings via Ollama: se usar Ollama como provedor LLM, embeddings usam stub
+O endpoint `POST /query` (REST customizado) permanece disponivel como alias interno para a UI web e nao faz parte do contrato MCP publico.
+
+### Limitacoes conhecidas (v1.0)
+
+Resumo; a lista completa com racional vive em [CHANGELOG.md](CHANGELOG.md)
+na secao `[1.0.0] → Known Limitations`.
+
+- Transporte do editor em v1.0 e Server-Sent Events (SSE), nao WebSocket.
+  A reconstrucao com WebSocket + modo conversacao/geracao + edicao inline
+  de secao esta sendo feita na sprint 11 / v1.1 — ver
+  [ADR-009](artifacts/adr/ADR-009-websocket-transport-reaffirm.md).
+- Middleware RBAC no nivel de rota ainda nao existe; autorizacao e
+  feita na camada de use case. Defesa em profundidade em v1.1.
+- Envio de email ainda nao e automatico — convites retornam a URL de
+  ativacao e o admin compartilha manualmente. Em v1.1.
+- Embeddings nativos via Ollama estao como stub; OpenAI e Anthropic
+  funcionam nativamente.
+
+### Referencias
+
+- [docs/installation.md](docs/installation.md) — guia de instalacao em
+  producao (single-host VPS), provisionamento de segredos, primeira
+  execucao do wizard, backups e upgrades.
+- [docs/architecture.md](docs/architecture.md) — blueprint de
+  arquitetura: diagramas de servicos, fronteiras de seguranca, fluxos
+  de requisicao e invariantes criticas.
+- [docs/dependencies.md](docs/dependencies.md) — mapa de dependencias:
+  versoes, portas, variaveis de ambiente e requisitos de host.
+- [docs/security.md](docs/security.md) — postura de seguranca, auditoria
+  de dependencias, comparacao em tempo constante do token MCP, separacao
+  de roles Postgres.
+- [docs/performance.md](docs/performance.md) — alvo de p95 < 2 s para
+  1.000 queries sobre 10.000 chunks + script de carga (`scripts/load-test/run.sh`).
+- [docs/deploy/nginx.conf](docs/deploy/nginx.conf) — config de
+  referencia do proxy reverso (TLS termination + roteamento web/MCP).
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup local, pipeline de
+  OpenAPI → TypeScript, convencoes de PR.
+- [CHANGELOG.md](CHANGELOG.md) — lancamento v1.0.0 completo.
 
 ## Desenvolvimento
 

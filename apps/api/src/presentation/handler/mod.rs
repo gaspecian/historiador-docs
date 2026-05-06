@@ -1,0 +1,13 @@
+//! Thin HTTP handlers. Each function: extract → build command → call
+//! use case → map response. No business logic.
+
+pub mod admin;
+pub mod auth;
+pub mod collections;
+pub mod editor;
+pub mod editor_ws;
+pub mod export;
+pub mod health;
+pub mod health_ready;
+pub mod pages;
+pub mod setup;

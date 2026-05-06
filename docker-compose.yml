@@ -1,8 +1,8 @@
 # Historiador Doc — local dev infrastructure.
 #
 # Philosophy: docker-compose runs only the stateful/prebuilt services
-# (Postgres, Ollama, and optionally VexFS). The Rust binaries (api, mcp)
-# and the Next.js frontend (web) are meant to run on the host via
+# (Postgres, Ollama, Chronik-Stream). The Rust binaries (api, mcp) and
+# the Next.js frontend (web) are meant to run on the host via
 # `cargo run` and `pnpm dev` so iteration is fast and failures show up
 # in a normal terminal instead of buried in container logs.
 #
@@ -11,12 +11,10 @@
 # need it — see Dockerfile.rust, which is still present).
 #
 # Services started by `docker compose up -d` (default):
-#   * postgres (5432) — SQL store for workspaces, users, pages, chunks
-#   * ollama   (11434) — local Llama inference (llama3.2:1b pre-pulled)
-#
-# Services started by `docker compose --profile vector up -d`:
-#   * vexfs    (7680) — vector store; only needed once the chunker lands.
-#     Requires running `scripts/setup-vexfs.sh` once to vendor the code.
+#   * postgres (5432)  — SQL store for workspaces, users, pages, chunks
+#   * ollama   (11434) — local inference (llama3.1:8b + nomic-embed-text pre-pulled)
+#   * chronik  (9092 Kafka, 6092 SQL REST) — event streaming, vector
+#     search, full-text search, and SQL analytics (ADR-007)
 #
 # Security invariants (ADR-003, enforced on the DB side by
 # docker/postgres/init/10-roles.sh):
@@ -53,23 +51,32 @@ services:
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
-    # Serve, then pull the model in the background on first boot.
-    # `|| true` keeps the container alive even if the pull fails (no
-    # network, model renamed upstream) — the user can retry with
-    # `docker compose exec ollama ollama pull llama3.2:1b` later.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         /bin/ollama serve &
-        sleep 3
-        /bin/ollama pull ${OLLAMA_MODEL:-llama3.2:1b} || true
-        wait
+        SERVE_PID=$$!
+        until /bin/ollama list >/dev/null 2>&1; do
+          sleep 1
+        done
+        echo "[ollama] server ready, pulling models"
+        /bin/ollama pull "${OLLAMA_GEN_MODEL:-qwen2.5:14b-instruct}"
+        /bin/ollama pull "${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
+        echo "[ollama] models ready"
+        wait $$SERVE_PID
     environment:
       OLLAMA_KEEP_ALIVE: "24h"
     volumes:
       - ollama_data:/root/.ollama
     ports:
       - "127.0.0.1:${HOST_PORT_OLLAMA:-11434}:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${OLLAMA_GPU_COUNT:-all}
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
       interval: 10s
@@ -77,34 +84,38 @@ services:
       retries: 10
       start_period: 15s
 
-  vexfs:
-    # Opt-in: `docker compose --profile vector up -d`.
-    # VexFS has no published image. Run `scripts/setup-vexfs.sh` once to
-    # clone the pinned commit into vendor/vexfs/ (the script sidesteps a
-    # broken submodule reference in the upstream repo by passing
-    # --no-recurse-submodules to git clone). Compose builds from the
-    # local clone, NOT from a git URL, because buildkit's git fetcher
-    # always initializes submodules and fails on the broken reference.
-    profiles: ["vector"]
-    build:
-      context: ./vendor/vexfs
+  chronik:
+    image: ghcr.io/lspecian/chronik-stream:${CHRONIK_VERSION:-2.4.1}
     restart: unless-stopped
+    user: "0:0"
+    security_opt:
+      - seccomp:unconfined
+    command: ["start", "--bind", "0.0.0.0", "--advertise", "127.0.0.1", "--data-dir", "/var/lib/chronik"]
     environment:
       RUST_LOG: info
-      VEXFS_PORT: "7680"
-      VEXFS_DATA_DIR: /app/data
+      CHRONIK_DATA_DIR: /var/lib/chronik
+      OPENAI_API_KEY: ${EMBEDDING_API_KEY:-}
+      CHRONIK_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      CHRONIK_DEFAULT_VECTOR_ENABLED: true
+      # Topic configurations with per-topic capability flags.
+      CHRONIK_TOPICS: >-
+        published-pages:vector,fulltext;
+        mcp-queries:sql;
+        editor-conversations:stream;
+        page-events:stream,sql
     volumes:
-      - vexfs_data:/app/data
+      - chronik_data:/var/lib/chronik
     ports:
-      - "127.0.0.1:${HOST_PORT_VEXFS:-7680}:7680"
+      - "127.0.0.1:${HOST_PORT_CHRONIK_KAFKA:-9092}:9092"
+      - "127.0.0.1:${HOST_PORT_CHRONIK_SQL:-6092}:6092"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:7680/api/v1/version"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:6092/health"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 15s
 
 volumes:
   postgres_data:
   ollama_data:
-  vexfs_data:
+  chronik_data:
