@@ -17,6 +17,7 @@ pub struct HealthResponse {
 #[utoipa::path(
     get,
     path = "/health",
+    operation_id = "health",
     responses(
         (status = 200, description = "service is healthy", body = HealthResponse)
     ),

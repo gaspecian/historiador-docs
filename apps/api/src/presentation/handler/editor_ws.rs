@@ -273,12 +273,10 @@ async fn run_socket(
                         };
 
                         match msg {
-                            EditorMessage::ClientHello { client_last_seq } => {
-                                if !client_synced {
-                                    replay_from(&state, &mut sender, page_id, &language, author_id, client_last_seq)
-                                        .await?;
-                                    client_synced = true;
-                                }
+                            EditorMessage::ClientHello { client_last_seq } if !client_synced => {
+                                replay_from(&state, &mut sender, page_id, &language, author_id, client_last_seq)
+                                    .await?;
+                                client_synced = true;
                             }
                             EditorMessage::SkipDiscovery => {
                                 skip_discovery = true;

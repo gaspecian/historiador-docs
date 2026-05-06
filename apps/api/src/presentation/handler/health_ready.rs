@@ -27,6 +27,7 @@ pub struct ReadyResponse {
 #[utoipa::path(
     get,
     path = "/health/ready",
+    operation_id = "health_ready",
     responses(
         (status = 200, description = "service is ready (or backfill disabled / completed)", body = ReadyResponse),
         (status = 503, description = "backfill is running or failed", body = ReadyResponse),

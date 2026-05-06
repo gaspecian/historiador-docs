@@ -12,9 +12,13 @@ FROM node:${NODE_VERSION}-alpine AS deps
 RUN corepack enable
 WORKDIR /app
 
-# Copy lockfile + workspace roots so pnpm can resolve workspace deps
+# Copy lockfile + workspace roots so pnpm can resolve workspace deps.
+# packages/types/package.json is required so pnpm sees the workspace
+# package referenced by apps/web (`@historiador/types: workspace:*`)
+# and creates a valid symlink instead of a broken one.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/web/package.json ./apps/web/
+COPY packages/types/package.json ./packages/types/
 RUN pnpm install --frozen-lockfile
 
 # ---- stage 2: build ----
@@ -28,6 +32,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY apps/web ./apps/web
+# Workspace package source — the `@historiador/types` symlink in
+# node_modules points here, so the source must be present for
+# `next build` to resolve `import { ... } from "@historiador/types"`.
+COPY packages ./packages
 RUN cd apps/web && npx next build
 
 # ---- stage 3: production runner ----
