@@ -182,6 +182,7 @@ jobs:
 
       - name: Create manifest list and push
         id: manifest
+        shell: bash
         env:
           REGISTRY: ${{ env.REGISTRY }}
           IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
