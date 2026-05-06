@@ -14,3 +14,16 @@
 #    reviewer). No silent suppressions.
 # 2. Re-evaluate suppressions before each stable release; remove entries
 #    where an upstream fix is now available.
+
+# --- Debian Bookworm runtime base image (api, mcp) ----------------------
+# All entries below come from `debian:bookworm-slim` and have no fix
+# published by the Debian security team as of the v1.0.0 release.
+# Re-check before v1.1.0 — see Dockerfile.rust runtime stage.
+CVE-2023-45853  # zlib heap overflow; Debian status: will_not_fix (vendor patch declined upstream). Not exploitable in our binaries — we do not pass attacker-controlled input to MiniZip. 2026-05-06 — gabriel
+CVE-2026-0861   # glibc memalign integer overflow; no fix in Debian Bookworm. App does not call memalign with attacker-controlled sizes. 2026-05-06 — gabriel
+CVE-2026-4878   # libcap TOCTOU privilege-escalation race; no fix in Bookworm. We run as non-root uid 10001, no setuid/setcap binaries shipped. 2026-05-06 — gabriel
+CVE-2026-41989  # libgcrypt DoS / buffer overflow; no fix in Bookworm. App does not link or call libgcrypt directly. 2026-05-06 — gabriel
+CVE-2026-33845  # gnutls DTLS zero-length DoS; no fix in Bookworm. App uses rustls (not gnutls) for TLS. 2026-05-06 — gabriel
+CVE-2026-33846  # gnutls heap buffer overflow; no fix in Bookworm. Same rationale as CVE-2026-33845 — gnutls is a transitive package, not a runtime dep. 2026-05-06 — gabriel
+CVE-2026-29111  # systemd arbitrary code execution / DoS; no fix in Bookworm. Container has no systemd in PID 1, ENTRYPOINT is the app binary directly. 2026-05-06 — gabriel
+CVE-2025-69720  # ncurses buffer overflow; no fix in Bookworm. App does not link ncurses. 2026-05-06 — gabriel
