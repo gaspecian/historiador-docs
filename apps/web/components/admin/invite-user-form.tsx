@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import * as adminService from "@/lib/services/admin";
+import { formatDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -83,7 +84,7 @@ export function InviteUserForm({ onInvited }: Props) {
  <CopyButton text={result.activation_url} />
  </div>
  <p className="text-xs text-text-tertiary">
- Expira: {new Date(result.expires_at).toLocaleString()}
+ Expira: {formatDateTime(result.expires_at)}
  </p>
  </div>
  )}

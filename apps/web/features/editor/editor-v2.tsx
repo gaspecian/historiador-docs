@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useState } from "react";
+import { formatTime } from "@/lib/format";
 
 import type { AutonomyMode } from "@/lib/editor-ws";
 
@@ -187,7 +188,7 @@ export function EditorV2({ pageId, language, token }: EditorV2Props = {}) {
           </button>
           <AutonomySelector mode={autonomyMode} onChange={handleAutonomyChange} />
           <span className="t-body-sm text-[var(--color-text-tertiary)]">
-            {savedAt ? `Salvo ${savedAt.toLocaleTimeString()}` : "Ainda não salvo"}
+            {savedAt ? `Salvo ${formatTime(savedAt)}` : "Ainda não salvo"}
           </span>
         </div>
       </header>

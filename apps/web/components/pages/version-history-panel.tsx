@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import * as pagesService from "@/lib/services/pages";
+import { formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -132,7 +133,7 @@ export function VersionHistoryPanel({
  </div>
  <p className="text-sm font-medium truncate">{v.title}</p>
  <p className="text-xs text-text-tertiary mt-1">
- {new Date(v.created_at).toLocaleString()}
+ {formatDateTime(v.created_at)}
  </p>
  </li>
  ))}
@@ -192,7 +193,7 @@ export function VersionHistoryPanel({
  </div>
  <h4 className="text-sm font-medium">{detail.title}</h4>
  <p className="text-xs text-text-tertiary">
- {new Date(detail.created_at).toLocaleString()}
+ {formatDateTime(detail.created_at)}
  </p>
  <pre className="whitespace-pre-wrap break-words font-mono text-xs bg-surface-subtle rounded p-3 max-h-96 overflow-y-auto">
  {detail.content_markdown}

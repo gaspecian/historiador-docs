@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { DraftPublishToggle } from "./draft-publish-toggle";
@@ -91,7 +92,7 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
  />
  </td>
  <td className="px-4 py-2 text-text-tertiary">
- {new Date(page.updated_at).toLocaleDateString()}
+ {formatDate(page.updated_at)}
  </td>
  <td className="px-4 py-2">
  <DraftPublishToggle
