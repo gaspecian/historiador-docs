@@ -43,7 +43,7 @@ impl InviteUserUseCase {
             .is_some()
         {
             return Err(DomainError::Conflict(
-                "a user with this email already exists in the workspace".into(),
+                "já existe um usuário com este e-mail no workspace".into(),
             )
             .into());
         }

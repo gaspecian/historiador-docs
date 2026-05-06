@@ -87,7 +87,7 @@ impl UpdateLlmConfigUseCase {
                     && ws.llm_api_key_encrypted.is_none()
                 {
                     return Err(ApplicationError::Domain(DomainError::Validation(
-                        "openai requires either an API key or a custom base URL".into(),
+                        "openai exige uma chave de API ou uma URL base personalizada".into(),
                     )));
                 }
                 let encrypted = if cmd.llm_api_key.is_empty() {
@@ -116,7 +116,7 @@ impl UpdateLlmConfigUseCase {
                 )
                 .await
                 .map_err(|e| {
-                    ApplicationError::Domain(DomainError::Validation(format!("LLM rejected: {e}")))
+                    ApplicationError::Domain(DomainError::Validation(format!("LLM rejeitou: {e}")))
                 })?;
         }
 

@@ -140,7 +140,7 @@ impl RestoreVersionUseCase {
 
         if matches!(page.status, PageStatus::Published) {
             return Err(DomainError::Validation(
-                "page is published — revert to draft before restoring".into(),
+                "a página está publicada — reverta para rascunho antes de restaurar".into(),
             )
             .into());
         }

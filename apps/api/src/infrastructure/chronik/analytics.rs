@@ -26,7 +26,7 @@ impl ChronikQueryAnalytics {
 impl QueryAnalytics for ChronikQueryAnalytics {
     async fn mcp_query_stats(&self, days: i32) -> Result<McpQueryStats, ApplicationError> {
         let client = self.client.as_ref().ok_or_else(|| {
-            DomainError::Validation("analytics unavailable — Chronik not configured".into())
+            DomainError::Validation("análises indisponíveis — Chronik não configurado".into())
         })?;
         let raw = client.mcp_query_stats(days).await?;
         Ok(map_stats(raw))
