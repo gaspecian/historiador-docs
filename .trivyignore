@@ -15,6 +15,11 @@
 # 2. Re-evaluate suppressions before each stable release; remove entries
 #    where an upstream fix is now available.
 
+# --- Debian 12 base (api, mcp, web) -------------------------------------
+# All three images derive from distroless Debian 12 bases and inherit
+# libc6 (glibc). No fix in Debian 12 yet. Re-evaluate before v1.0.1.
+CVE-2026-0861   # glibc libc6 integer overflow in memalign leads to heap corruption. No fix in Debian 12 (status: affected, no fixed version). App does not pass attacker-controlled sizes to memalign. 2026-05-06 — gabriel
+
 # --- Distroless nodejs22-debian12 (web image) ---------------------------
 # The distroless/nodejs22-debian12:nonroot base image ships libssl3 at
 # 3.0.18-1~deb12u2. distroless/cc-debian12 (used by api/mcp) ships
