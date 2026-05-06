@@ -12,11 +12,11 @@ import type { LlmProvider, WorkspaceResponse } from "@historiador/types";
 const VALID_PROVIDERS: LlmProvider[] = ["openai", "anthropic", "ollama", "test"];
 
 const PROVIDER_OPTIONS = [
-  { value: "", label: "Select a provider…" },
+  { value: "", label: "Selecione um provedor…" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "ollama", label: "Ollama (local)" },
-  { value: "test", label: "Test (no LLM)" },
+  { value: "test", label: "Teste (sem LLM)" },
 ];
 
 type ProviderState = LlmProvider | "";
@@ -130,7 +130,7 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     if (provider === "") return;
     if (provider !== "test" && !generationModel.trim()) {
       setProbeSuccess(false);
-      setProbeMessage("Generation model is required.");
+      setProbeMessage("Modelo de geração obrigatório.");
       return;
     }
     setSaving(true);
@@ -172,18 +172,17 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
   const saveBlock = (
     <div className="flex gap-2">
       <Button onClick={save} disabled={saving}>
-        {saving ? <><Spinner className="mr-2" /> Saving…</> : "Save LLM settings"}
+        {saving ? <><Spinner className="mr-2" /> Salvando…</> : "Salvar configurações de LLM"}
       </Button>
     </div>
   );
 
   const resultBlock = result?.success && (
     <div className="space-y-2 rounded border border-surface-border p-3 text-sm">
-      <p className="text-teal-600">Settings saved.</p>
+      <p className="text-teal-600">Configurações salvas.</p>
       {result.requires_restart && (
         <p className="text-amber-600">
-          Restart the API process for the generation model change to take effect in the
-          editor.
+          Reinicie o processo da API para que a alteração do modelo de geração tenha efeito no editor.
         </p>
       )}
     </div>
@@ -197,21 +196,21 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     return (
       <div className="space-y-4">
         <Input
-          label={`${label} API key (leave empty to keep${
-            isOpenAi ? " or to use no auth with a custom URL" : ""
+          label={`Chave de API ${label} (deixe vazio para manter${
+            isOpenAi ? " ou para usar sem auth com URL personalizada" : ""
           })`}
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="•••••••• (keep existing)"
+          placeholder="•••••••• (manter existente)"
         />
         {isOpenAi && (
           <Input
-            label="Base URL (optional)"
+            label="Base URL (opcional)"
             type="url"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.openai.com/v1 (default)"
+            placeholder="https://api.openai.com/v1 (padrão)"
           />
         )}
         <Button
@@ -220,11 +219,11 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
           onClick={testConnection}
           disabled={testing || !canTest}
         >
-          {testing ? <><Spinner className="mr-2" /> Testing…</> : "Test connection"}
+          {testing ? <><Spinner className="mr-2" /> Testando…</> : "Testar conexão"}
         </Button>
         {probeBlock}
         <Input
-          label="Generation model"
+          label="Modelo de geração"
           value={generationModel}
           onChange={(e) => setGenerationModel(e.target.value)}
         />
@@ -237,7 +236,7 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
   const renderOllamaForm = () => (
     <div className="space-y-4">
       <Input
-        label="Ollama base URL"
+        label="URL base do Ollama"
         type="url"
         value={apiKey}
         onChange={(e) => setApiKey(e.target.value)}
@@ -249,19 +248,19 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
         onClick={testConnection}
         disabled={testing || !apiKey.trim()}
       >
-        {testing ? <><Spinner className="mr-2" /> Testing…</> : "Test connection"}
+        {testing ? <><Spinner className="mr-2" /> Testando…</> : "Testar conexão"}
       </Button>
       {probeBlock}
       {ollamaOptions.length > 0 ? (
         <Select
-          label="Generation model"
+          label="Modelo de geração"
           options={ollamaOptions}
           value={generationModel}
           onChange={(e) => setGenerationModel(e.target.value)}
         />
       ) : (
         <Input
-          label="Generation model"
+          label="Modelo de geração"
           value={generationModel}
           onChange={(e) => setGenerationModel(e.target.value)}
         />
@@ -274,8 +273,8 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
   const renderTestForm = () => (
     <div className="space-y-4">
       <p className="text-sm text-text-secondary">
-        The test provider returns deterministic stub responses. No credentials or
-        models required — useful for local development and CI.
+        O provedor de teste retorna respostas determinísticas. Não exige credenciais
+        ou modelos — útil para desenvolvimento local e CI.
       </p>
       {saveBlock}
       {resultBlock}
@@ -286,7 +285,7 @@ export function LlmSettingsForm({ workspace, onSaved }: Props) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <Select
-          label="Provider"
+          label="Provedor"
           options={PROVIDER_OPTIONS}
           value={provider}
           onChange={(e) => handleProviderChange(e.target.value as ProviderState)}
