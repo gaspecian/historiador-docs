@@ -25,7 +25,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Historiador Doc",
-  description: "Self-hosted documentation platform with built-in MCP server",
+  description: "Plataforma de documentação self-hosted com servidor MCP integrado",
 };
 
 export default function RootLayout({
@@ -35,7 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="pt-BR"
       className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
