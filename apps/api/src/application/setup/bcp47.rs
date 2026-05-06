@@ -9,18 +9,19 @@ pub fn validate_pair(languages: &[String], primary: &str) -> Result<(), Applicat
     for tag in languages {
         if !re.is_match(tag) {
             return Err(
-                DomainError::Validation(format!("invalid BCP 47 language tag: {tag}")).into(),
+                DomainError::Validation(format!("tag de idioma BCP 47 inválida: {tag}")).into(),
             );
         }
     }
     if !re.is_match(primary) {
-        return Err(
-            DomainError::Validation(format!("invalid BCP 47 primary_language: {primary}")).into(),
-        );
+        return Err(DomainError::Validation(format!(
+            "primary_language BCP 47 inválido: {primary}"
+        ))
+        .into());
     }
     if !languages.iter().any(|l| l == primary) {
         return Err(
-            DomainError::Validation("primary_language must be one of languages".into()).into(),
+            DomainError::Validation("primary_language precisa estar em languages".into()).into(),
         );
     }
     Ok(())

@@ -17,7 +17,7 @@ impl ListOllamaModelsUseCase {
             .await
             .map_err(|e| {
                 ApplicationError::Domain(DomainError::Validation(format!(
-                    "Ollama unreachable: {e}"
+                    "Ollama inacessível: {e}"
                 )))
             })?;
         Ok(tags

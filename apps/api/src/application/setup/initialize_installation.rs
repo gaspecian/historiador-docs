@@ -75,7 +75,7 @@ impl InitializeInstallationUseCase {
             && cmd.llm_api_key.is_empty()
         {
             return Err(ApplicationError::Domain(DomainError::Validation(
-                "openai requires either an API key or a custom base URL".into(),
+                "openai exige uma chave de API ou uma URL base personalizada".into(),
             )));
         }
 
@@ -89,7 +89,9 @@ impl InitializeInstallationUseCase {
             )
             .await
             .map_err(|e| {
-                ApplicationError::Domain(DomainError::Validation(format!("LLM key rejected: {e}")))
+                ApplicationError::Domain(DomainError::Validation(format!(
+                    "chave de LLM rejeitada: {e}"
+                )))
             })?;
 
         let password_hash =
