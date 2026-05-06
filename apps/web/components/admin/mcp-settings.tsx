@@ -16,7 +16,7 @@ export function McpSettings({ workspace }: Props) {
  const [loading, setLoading] = useState(false);
 
  const handleRegenerate = async () => {
- if (!confirm("Regenerate the MCP bearer token? The old token will stop working immediately.")) return;
+ if (!confirm("Regenerar o token bearer do MCP? O token antigo deixará de funcionar imediatamente.")) return;
  setLoading(true);
  try {
  const data = await adminService.regenerateToken();
@@ -34,7 +34,7 @@ export function McpSettings({ workspace }: Props) {
  {/* MCP Endpoint URL */}
  <div className="space-y-1">
  <label className="block text-sm font-medium text-text-secondary">
- MCP Endpoint URL
+ URL do endpoint MCP
  </label>
  <div className="flex items-center gap-2">
  <code className="flex-1 text-sm bg-surface-subtle p-2 rounded border border-surface-border">
@@ -47,7 +47,7 @@ export function McpSettings({ workspace }: Props) {
  {/* Bearer Token */}
  <div className="space-y-1">
  <label className="block text-sm font-medium text-text-secondary">
- Bearer Token
+ Token Bearer
  </label>
  {token ? (
  <div className="space-y-2">
@@ -60,18 +60,18 @@ export function McpSettings({ workspace }: Props) {
  size="sm"
  onClick={() => setShowToken(!showToken)}
  >
- {showToken ? "Hide" : "Show"}
+ {showToken ? "Ocultar" : "Mostrar"}
  </Button>
  <CopyButton text={token} />
  </div>
  <p className="text-xs text-amber-600">
- Save this token now. It will not be shown again.
+ Salve este token agora. Ele não será exibido novamente.
  </p>
  </div>
  ) : (
  <div className="flex items-center gap-2">
  <span className="text-sm text-text-tertiary">
- {workspace.has_mcp_token ? "Token is set" : "No token configured"}
+ {workspace.has_mcp_token ? "Token configurado" : "Nenhum token configurado"}
  </span>
  </div>
  )}
@@ -81,7 +81,7 @@ export function McpSettings({ workspace }: Props) {
  onClick={handleRegenerate}
  disabled={loading}
  >
- {loading ? "Regenerating..." : "Regenerate Token"}
+ {loading ? "Regenerando…" : "Regenerar token"}
  </Button>
  </div>
  </div>

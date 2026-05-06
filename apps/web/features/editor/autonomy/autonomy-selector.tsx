@@ -26,17 +26,17 @@ export interface AutonomySelectorProps {
 const OPTIONS: Array<{ value: AutonomyMode; label: string; hint: string }> = [
   {
     value: "propose",
-    label: "Propose",
+    label: "Proposta",
     hint: "Cada mudança vira uma proposta que você aprova ou rejeita.",
   },
   {
     value: "checkpointed",
-    label: "Checkpointed",
+    label: "Com checkpoint",
     hint: "O agente escreve em seções e pausa para você revisar.",
   },
   {
     value: "autonomous",
-    label: "Autonomous",
+    label: "Autônomo",
     hint: "Mudanças aplicam sozinhas após 1,5 s — use com cuidado.",
   },
 ];

@@ -24,20 +24,21 @@ export function ExportSection() {
  return (
  <div className="space-y-2 text-sm">
  <p className="text-text-secondary">
- Download every published page in every language as a zip of markdown
- files, organized by collection hierarchy. Each file carries YAML
- front-matter for round-trip compatibility with docs-as-code tooling.
+ Baixe todas as páginas publicadas em todos os idiomas como um zip de
+ arquivos markdown, organizados pela hierarquia de coleções. Cada
+ arquivo carrega front-matter YAML para compatibilidade com ferramentas
+ docs-as-code.
  </p>
  <Button variant="secondary" size="sm" onClick={download} disabled={loading}>
  {loading ? (
  <>
- <Spinner className="mr-2" /> Preparing zip…
+ <Spinner className="mr-2" /> Preparando zip…
  </>
  ) : (
- "Download workspace as markdown"
+ "Baixar workspace como markdown"
  )}
  </Button>
- {error && <p className="text-red-600">Export failed: {error}</p>}
+ {error && <p className="text-red-600">Falha na exportação: {error}</p>}
  </div>
  );
 }

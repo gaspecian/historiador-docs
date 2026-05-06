@@ -149,14 +149,14 @@ export default function SetupPage() {
         } else {
           const msg = await modelsRes.text().catch(() => "");
           setOllamaModelsError(
-            msg || `Failed to list models (HTTP ${modelsRes.status})`,
+            msg || `Não foi possível listar os modelos (HTTP ${modelsRes.status})`,
           );
         }
       }
     } catch (err) {
       setProbeResult({
         success: false,
-        message: err instanceof Error ? err.message : "Connection failed",
+        message: err instanceof Error ? err.message : "Falha na conexão",
       });
     } finally {
       setLoading(false);
@@ -189,7 +189,7 @@ export default function SetupPage() {
 
       if (!res.ok) {
         const body = await res.json();
-        throw new Error(body.message || "Setup failed");
+        throw new Error(body.message || "Falha na configuração");
       }
 
       await res.json();
@@ -198,7 +198,7 @@ export default function SetupPage() {
       await login(adminEmail, adminPassword);
       router.push("/dashboard/pages");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Setup failed");
+      setError(err instanceof Error ? err.message : "Falha na configuração");
     } finally {
       setLoading(false);
     }

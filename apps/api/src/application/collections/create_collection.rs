@@ -28,7 +28,7 @@ impl CreateCollectionUseCase {
             self.collections
                 .find_by_id(parent_id, actor.workspace_id)
                 .await?
-                .ok_or_else(|| DomainError::Validation("parent collection not found".into()))?;
+                .ok_or_else(|| DomainError::Validation("coleção pai não encontrada".into()))?;
         }
 
         let slug = Slug::parse(slugify(&cmd.name))?;
@@ -49,7 +49,7 @@ fn map_slug_conflict(err: ApplicationError) -> ApplicationError {
     if let ApplicationError::Infrastructure(ref any_err) = err {
         let msg = any_err.to_string();
         if msg.contains("duplicate key") || msg.contains("unique constraint") {
-            return DomainError::Conflict("collection slug already exists".into()).into();
+            return DomainError::Conflict("o slug da coleção já existe".into()).into();
         }
     }
     err

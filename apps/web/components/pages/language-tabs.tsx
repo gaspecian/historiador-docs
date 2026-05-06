@@ -34,9 +34,9 @@ export function LanguageTabs({ workspaceLanguages, versions, activeLanguage, onS
  >
  {lang}
  {exists ? (
- <span className="inline-block w-2 h-2 rounded-full bg-teal-500" title="Version exists" />
+ <span className="inline-block w-2 h-2 rounded-full bg-teal-500" title="Versão existe" />
  ) : (
- <span className="inline-block w-2 h-2 rounded-full bg-amber-500" title="Missing version" />
+ <span className="inline-block w-2 h-2 rounded-full bg-amber-500" title="Versão faltando" />
  )}
  </button>
  );

@@ -19,7 +19,7 @@ export function McpAnalytics() {
  const result = await adminService.mcpAnalytics(days);
  setData(result);
  } catch (e) {
- setError(e instanceof Error ? e.message : "Failed to load analytics");
+ setError(e instanceof Error ? e.message : "Não foi possível carregar as análises");
  } finally {
  setLoading(false);
  }
@@ -54,14 +54,14 @@ export function McpAnalytics() {
  size="sm"
  onClick={() => setDays(7)}
  >
- 7 days
+ 7 dias
  </Button>
  <Button
  variant={days === 30 ? "primary" : "secondary"}
  size="sm"
  onClick={() => setDays(30)}
  >
- 30 days
+ 30 dias
  </Button>
  </div>
 
@@ -69,19 +69,19 @@ export function McpAnalytics() {
  <div className="rounded border border-surface-border p-4">
  <p className="text-2xl font-bold">{data.total_queries}</p>
  <p className="text-sm text-text-tertiary">
- Total queries ({data.period_days}d)
+ Total de consultas ({data.period_days}d)
  </p>
  </div>
 
  {/* Queries by day */}
  {data.queries_by_day.length > 0 && (
  <div>
- <h3 className="text-sm font-medium mb-2">Queries by day</h3>
+ <h3 className="text-sm font-medium mb-2">Consultas por dia</h3>
  <table className="w-full text-sm">
  <thead>
  <tr className="border-b border-surface-border">
- <th className="text-left py-1 font-medium">Date</th>
- <th className="text-right py-1 font-medium">Count</th>
+ <th className="text-left py-1 font-medium">Data</th>
+ <th className="text-right py-1 font-medium">Contagem</th>
  <th className="text-left py-1 pl-3 font-medium w-1/2">
  Volume
  </th>
@@ -120,12 +120,12 @@ export function McpAnalytics() {
  {/* Top query topics */}
  {data.top_queries.length > 0 && (
  <div>
- <h3 className="text-sm font-medium mb-2">Top query topics</h3>
+ <h3 className="text-sm font-medium mb-2">Tópicos de consulta mais frequentes</h3>
  <table className="w-full text-sm">
  <thead>
  <tr className="border-b border-surface-border">
- <th className="text-left py-1 font-medium">Query</th>
- <th className="text-right py-1 font-medium">Count</th>
+ <th className="text-left py-1 font-medium">Consulta</th>
+ <th className="text-right py-1 font-medium">Contagem</th>
  </tr>
  </thead>
  <tbody>
@@ -147,17 +147,17 @@ export function McpAnalytics() {
  {data.zero_result_queries.count > 0 && (
  <div>
  <h3 className="text-sm font-medium mb-2">
- Zero-result queries ({data.zero_result_queries.count})
+ Consultas sem resultado ({data.zero_result_queries.count})
  </h3>
  <p className="text-xs text-text-tertiary mb-2">
- Queries that returned no results — potential documentation gaps.
+ Consultas que não retornaram resultados — possíveis lacunas na documentação.
  </p>
  <table className="w-full text-sm">
  <thead>
  <tr className="border-b border-surface-border">
- <th className="text-left py-1 font-medium">Query</th>
- <th className="text-right py-1 font-medium">Count</th>
- <th className="text-right py-1 font-medium">Last seen</th>
+ <th className="text-left py-1 font-medium">Consulta</th>
+ <th className="text-right py-1 font-medium">Contagem</th>
+ <th className="text-right py-1 font-medium">Última vez</th>
  </tr>
  </thead>
  <tbody>
@@ -180,8 +180,8 @@ export function McpAnalytics() {
 
  {data.total_queries === 0 && (
  <p className="text-sm text-text-tertiary text-center py-4">
- No MCP queries recorded yet. Queries will appear here once the MCP
- endpoint receives traffic.
+ Nenhuma consulta MCP registrada ainda. As consultas aparecerão aqui
+ assim que o endpoint MCP receber tráfego.
  </p>
  )}
  </div>

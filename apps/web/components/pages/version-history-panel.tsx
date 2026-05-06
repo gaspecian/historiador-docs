@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import * as pagesService from "@/lib/services/pages";
+import { formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -99,7 +100,7 @@ export function VersionHistoryPanel({
  {/* Timeline list */}
  <div className="w-1/2 border-r border-surface-border overflow-y-auto">
  <div className="flex items-center justify-between p-3 border-b border-surface-border">
- <h3 className="text-sm font-semibold">Version History</h3>
+ <h3 className="text-sm font-semibold">Histórico de versões</h3>
  <Button variant="ghost" size="sm" onClick={onClose}>
  &times;
  </Button>
@@ -127,12 +128,12 @@ export function VersionHistoryPanel({
  v{v.version_number}
  </span>
  {v.is_published && (
- <Badge variant="success">Published</Badge>
+ <Badge variant="success">Publicada</Badge>
  )}
  </div>
  <p className="text-sm font-medium truncate">{v.title}</p>
  <p className="text-xs text-text-tertiary mt-1">
- {new Date(v.created_at).toLocaleString()}
+ {formatDateTime(v.created_at)}
  </p>
  </li>
  ))}
@@ -147,7 +148,7 @@ export function VersionHistoryPanel({
  disabled={page <= 1}
  onClick={() => setPage((p) => p - 1)}
  >
- Prev
+ Anterior
  </Button>
  <span className="text-xs text-text-tertiary">
  {page} / {totalPages}
@@ -158,14 +159,14 @@ export function VersionHistoryPanel({
  disabled={page >= totalPages}
  onClick={() => setPage((p) => p + 1)}
  >
- Next
+ Próxima
  </Button>
  </div>
  )}
  </>
  ) : (
  <p className="text-sm text-text-tertiary text-center py-8">
- No version history yet.
+ Nenhum histórico ainda.
  </p>
  )}
  </div>
@@ -173,7 +174,7 @@ export function VersionHistoryPanel({
  {/* Preview pane */}
  <div className="w-1/2 overflow-y-auto">
  <div className="p-3 border-b border-surface-border">
- <h3 className="text-sm font-semibold">Preview</h3>
+ <h3 className="text-sm font-semibold">Pré-visualização</h3>
  </div>
 
  {detailLoading ? (
@@ -187,12 +188,12 @@ export function VersionHistoryPanel({
  v{detail.version_number}
  </span>
  {detail.is_published && (
- <Badge variant="success">Published</Badge>
+ <Badge variant="success">Publicada</Badge>
  )}
  </div>
  <h4 className="text-sm font-medium">{detail.title}</h4>
  <p className="text-xs text-text-tertiary">
- {new Date(detail.created_at).toLocaleString()}
+ {formatDateTime(detail.created_at)}
  </p>
  <pre className="whitespace-pre-wrap break-words font-mono text-xs bg-surface-subtle rounded p-3 max-h-96 overflow-y-auto">
  {detail.content_markdown}
@@ -203,12 +204,12 @@ export function VersionHistoryPanel({
  onClick={handleRestore}
  disabled={restoring}
  >
- {restoring ? "Restoring..." : "Restore as draft"}
+ {restoring ? "Restaurando…" : "Restaurar como rascunho"}
  </Button>
  </div>
  ) : (
  <p className="text-sm text-text-tertiary text-center py-8">
- Select a version to preview.
+ Selecione uma versão para pré-visualizar.
  </p>
  )}
  </div>

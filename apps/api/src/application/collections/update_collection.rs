@@ -52,7 +52,7 @@ fn map_slug_conflict(err: ApplicationError) -> ApplicationError {
     if let ApplicationError::Infrastructure(ref any_err) = err {
         let msg = any_err.to_string();
         if msg.contains("duplicate key") || msg.contains("unique constraint") {
-            return DomainError::Conflict("collection slug conflict".into()).into();
+            return DomainError::Conflict("conflito de slug de coleção".into()).into();
         }
     }
     err

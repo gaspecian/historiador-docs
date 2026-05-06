@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { DraftPublishToggle } from "./draft-publish-toggle";
@@ -18,6 +19,11 @@ interface Props {
 export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Props) {
  const router = useRouter();
 
+ const STATUS_LABELS: Record<string, string> = {
+  draft: "Rascunho",
+  published: "Publicada",
+ };
+
  const handleMissingLanguageClick = (pageId: string, lang: string) => {
  router.push(`/dashboard/pages/${pageId}?lang=${lang}`);
  };
@@ -33,7 +39,7 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
  if (pages.length === 0) {
  return (
  <div className="text-center py-8 text-sm text-text-tertiary">
- No pages yet. Create one to get started.
+ Nenhuma página ainda. Crie uma para começar.
  </div>
  );
  }
@@ -44,16 +50,16 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
  <thead className="bg-surface-subtle">
  <tr>
  <th className="text-left px-4 py-2 font-medium text-text-secondary">
- Title
+ Título
  </th>
  <th className="text-left px-4 py-2 font-medium text-text-secondary">
- Status
+ Situação
  </th>
  <th className="text-left px-4 py-2 font-medium text-text-secondary">
- Languages
+ Idiomas
  </th>
  <th className="text-left px-4 py-2 font-medium text-text-secondary">
- Updated
+ Atualizada
  </th>
  <th className="px-4 py-2" />
  </tr>
@@ -74,7 +80,7 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
  </td>
  <td className="px-4 py-2">
  <Badge variant={page.status === "published" ? "success" : "warning"}>
- {page.status}
+ {STATUS_LABELS[page.status] ?? page.status}
  </Badge>
  </td>
  <td className="px-4 py-2">
@@ -86,7 +92,7 @@ export function PageList({ pages, isLoading, workspaceLanguages, onRefresh }: Pr
  />
  </td>
  <td className="px-4 py-2 text-text-tertiary">
- {new Date(page.updated_at).toLocaleDateString()}
+ {formatDate(page.updated_at)}
  </td>
  <td className="px-4 py-2">
  <DraftPublishToggle

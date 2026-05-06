@@ -30,7 +30,7 @@ export function OutlineCard({ sections, onApprove, approved = false }: OutlineCa
       <div className="flex items-center gap-2">
         <ListChecks className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden />
         <span className="t-label text-[var(--color-text-secondary)]">
-          {approved ? "Outline approved" : "Proposed outline"}
+          {approved ? "Esboço aprovado" : "Esboço proposto"}
         </span>
       </div>
       <ol className="flex flex-col gap-2 list-none pl-0 m-0">
@@ -56,7 +56,7 @@ export function OutlineCard({ sections, onApprove, approved = false }: OutlineCa
           className="self-start inline-flex items-center gap-2 t-body-sm px-3 py-1.5 rounded-[var(--radius-md)] bg-[var(--color-primary-600)] text-[var(--color-text-inverse)] hover:bg-[var(--color-primary-700)]"
         >
           <Check className="w-4 h-4" aria-hidden />
-          Aprovar outline
+          Aprovar esboço
         </button>
       )}
     </div>

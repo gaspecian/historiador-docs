@@ -29,7 +29,7 @@ export function CreateCollectionDialog({ parentId, onCreated, onCancel }: Props)
       });
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create collection");
+      setError(err instanceof Error ? err.message : "Não foi possível criar a coleção");
     } finally {
       setLoading(false);
     }
@@ -38,7 +38,7 @@ export function CreateCollectionDialog({ parentId, onCreated, onCancel }: Props)
   return (
     <form onSubmit={handleSubmit} className="p-2 space-y-2">
       <Input
-        placeholder="Collection name"
+        placeholder="Nome da coleção"
         value={name}
         onChange={(e) => setName(e.target.value)}
         autoFocus
@@ -46,10 +46,10 @@ export function CreateCollectionDialog({ parentId, onCreated, onCancel }: Props)
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={loading || !name.trim()}>
-          {loading ? "Creating..." : "Create"}
+          {loading ? "Criando…" : "Criar"}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-          Cancel
+          Cancelar
         </Button>
       </div>
     </form>

@@ -32,6 +32,11 @@ export default function PageDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const { canEdit } = useAuth();
 
+  const STATUS_LABELS: Record<string, string> = {
+    draft: "Rascunho",
+    published: "Publicada",
+  };
+
   useEffect(() => {
     Promise.all([
       pagesService.get(pageId),
@@ -64,7 +69,7 @@ export default function PageDetailPage() {
   }
 
   if (!page) {
-    return <div className="text-center py-8 text-text-tertiary">Page not found</div>;
+    return <div className="text-center py-8 text-text-tertiary">Página não encontrada</div>;
   }
 
   const activeVersion = page.versions.find((v) => v.language === activeLanguage);
@@ -73,7 +78,7 @@ export default function PageDetailPage() {
 
   const handleCreateBlank = async () => {
     await pagesService.update(pageId, {
-      title: activeVersion?.title || primaryVersion?.title || "Untitled",
+      title: activeVersion?.title || primaryVersion?.title || "Sem título",
       content_markdown: "",
       language: activeLanguage ?? undefined,
     });
@@ -83,7 +88,7 @@ export default function PageDetailPage() {
   const handleCopyFromPrimary = async () => {
     if (!primaryVersion) return;
     await pagesService.update(pageId, {
-      title: activeVersion?.title || primaryVersion.title || "Untitled",
+      title: activeVersion?.title || primaryVersion.title || "Sem título",
       content_markdown: primaryVersion.content_markdown,
       language: activeLanguage ?? undefined,
     });
@@ -130,13 +135,13 @@ export default function PageDetailPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/pages")}>
-            &larr; Back
+            &larr; Voltar
           </Button>
           <h1 className="text-lg font-semibold">
             {activeVersion?.title || primaryVersion?.title || page.slug}
           </h1>
           <Badge variant={page.status === "published" ? "success" : "warning"}>
-            {page.status}
+            {STATUS_LABELS[page.status] ?? page.status}
           </Badge>
         </div>
         <div className="flex gap-2">
@@ -152,9 +157,9 @@ export default function PageDetailPage() {
             variant="ghost"
             size="sm"
             onClick={() => setShowHistory(true)}
-            title="Version history"
+            title="Histórico de versões"
           >
-            History
+            Histórico
           </Button>
           {canEdit && (
             <Button
@@ -162,14 +167,14 @@ export default function PageDetailPage() {
               size="sm"
               onClick={handlePublishClick}
             >
-              {page.status === "draft" ? "Publish" : "Unpublish"}
+              {page.status === "draft" ? "Publicar" : "Despublicar"}
             </Button>
           )}
           <Dropdown
-            trigger={<span aria-label="More actions">⋮</span>}
+            trigger={<span aria-label="Mais ações">⋮</span>}
             items={[
               {
-                label: "Download as Markdown",
+                label: "Baixar como Markdown",
                 onClick: () => {
                   exportService
                     .pageMarkdown(pageId, activeLanguage ?? undefined)

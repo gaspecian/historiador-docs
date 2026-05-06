@@ -38,29 +38,29 @@ impl ApiError {
             ApiError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
-                "authentication required".into(),
+                "autenticação necessária".into(),
             ),
             ApiError::Forbidden => (
                 StatusCode::FORBIDDEN,
                 "forbidden",
-                "insufficient role".into(),
+                "permissão insuficiente".into(),
             ),
             ApiError::NotFound => (
                 StatusCode::NOT_FOUND,
                 "not_found",
-                "resource not found".into(),
+                "recurso não encontrado".into(),
             ),
             ApiError::Validation(msg) => (StatusCode::BAD_REQUEST, "validation_error", msg.clone()),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg.clone()),
             ApiError::SetupRequired => (
                 StatusCode::LOCKED,
                 "setup_required",
-                "installation setup is not complete".into(),
+                "configuração da instalação não foi concluída".into(),
             ),
             ApiError::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_server_error",
-                "internal server error".into(),
+                "erro interno do servidor".into(),
             ),
         }
     }

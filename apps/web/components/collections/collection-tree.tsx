@@ -48,7 +48,7 @@ export function CollectionTree({
         onClick={() => onSelect(null)}
       >
         <span className="w-4" />
-        <span className="font-medium">All Pages</span>
+        <span className="font-medium">Todas as páginas</span>
       </div>
 
       {tree.map((node) => (

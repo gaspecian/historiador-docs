@@ -43,7 +43,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  }`}
  >
  <div className="text-xs text-text-tertiary mb-1">
- {msg.role === "user" ? "You" : "AI"}
+ {msg.role === "user" ? "Você" : "IA"}
  </div>
  <pre className="whitespace-pre-wrap break-words font-mono text-xs">
  {msg.content}
@@ -52,14 +52,14 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  ))}
  {streaming && (
  <div className="p-3 rounded bg-surface-hover text-sm">
- <div className="text-xs text-text-tertiary mb-1">AI</div>
+ <div className="text-xs text-text-tertiary mb-1">IA</div>
  {liveAssistant ? (
  <pre className="whitespace-pre-wrap break-words font-mono text-xs">
  {liveAssistant}
  <span className="animate-pulse">▍</span>
  </pre>
  ) : (
- <span className="text-text-tertiary">Generating…</span>
+ <span className="text-text-tertiary">Gerando…</span>
  )}
  </div>
  )}
@@ -72,7 +72,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  <textarea
  className="w-full p-3 border rounded text-sm bg-white"
  rows={3}
- placeholder="Describe the document you want to create..."
+ placeholder="Descreva o documento que você quer criar…"
  value={brief}
  onChange={(e) => setBrief(e.target.value)}
  onKeyDown={(e) => {
@@ -80,7 +80,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  }}
  />
  <Button onClick={submitGenerate} disabled={streaming || !brief.trim()}>
- Generate Draft
+ Gerar rascunho
  </Button>
  </div>
  ) : (
@@ -88,7 +88,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  <div className="flex gap-2">
  <input
  className="flex-1 p-2 border rounded text-sm bg-white"
- placeholder="Describe what to change..."
+ placeholder="Descreva o que mudar…"
  value={instruction}
  onChange={(e) => setInstruction(e.target.value)}
  onKeyDown={(e) => {
@@ -96,7 +96,7 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  }}
  />
  <Button onClick={submitRefine} disabled={streaming || !instruction.trim()}>
- Refine
+ Refinar
  </Button>
  </div>
  <div className="flex gap-2">
@@ -105,11 +105,11 @@ export function EditorPanel({ initialContent, language, onSave }: Props) {
  size="sm"
  onClick={() => navigator.clipboard.writeText(draft)}
  >
- Copy to clipboard
+ Copiar para a área de transferência
  </Button>
  {onSave && (
  <Button size="sm" onClick={() => onSave(draft)}>
- Save to page
+ Salvar na página
  </Button>
  )}
  </div>

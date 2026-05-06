@@ -55,17 +55,17 @@ export default function AdminPage() {
   }
 
   if (!workspace) {
-    return <div className="text-center py-8 text-text-tertiary">Unable to load admin data.</div>;
+    return <div className="text-center py-8 text-text-tertiary">Não foi possível carregar os dados de administração.</div>;
   }
 
   return (
     <div className="px-10 py-7 max-w-4xl mx-auto space-y-8">
-      <h1 className="text-lg font-semibold">Admin Panel</h1>
+      <h1 className="text-lg font-semibold">Painel administrativo</h1>
 
       {/* User Management */}
       <section className="space-y-4">
         <h2 className="text-md font-medium border-b border-surface-border pb-2">
-          Users
+          Usuários
         </h2>
         <InviteUserForm onInvited={fetchData} />
         <UserList users={users} onRefresh={fetchData} />
@@ -74,7 +74,7 @@ export default function AdminPage() {
       {/* MCP Settings */}
       <section className="space-y-4">
         <h2 className="text-md font-medium border-b border-surface-border pb-2">
-          MCP Server
+          Servidor MCP
         </h2>
         <McpSettings workspace={workspace} />
       </section>
@@ -82,7 +82,7 @@ export default function AdminPage() {
       {/* Workspace Config */}
       <section className="space-y-4">
         <h2 className="text-md font-medium border-b border-surface-border pb-2">
-          Workspace Configuration
+          Configurações do workspace
         </h2>
         <WorkspaceConfig workspace={workspace} />
       </section>
@@ -90,7 +90,7 @@ export default function AdminPage() {
       {/* LLM Settings */}
       <section className="space-y-4">
         <h2 className="text-md font-medium border-b border-surface-border pb-2">
-          LLM Settings
+          Configurações de LLM
         </h2>
         <LlmSettingsForm workspace={workspace} onSaved={fetchData} />
       </section>
@@ -98,7 +98,7 @@ export default function AdminPage() {
       {/* Export */}
       <section className="space-y-4">
         <h2 className="text-md font-medium border-b border-surface-border pb-2">
-          Export
+          Exportação
         </h2>
         <ExportSection />
       </section>
@@ -106,7 +106,7 @@ export default function AdminPage() {
       {/* MCP Analytics */}
       <section className="space-y-4">
         <h2 className="text-md font-medium border-b border-surface-border pb-2">
-          MCP Analytics
+          Análises MCP
         </h2>
         <McpAnalytics />
       </section>

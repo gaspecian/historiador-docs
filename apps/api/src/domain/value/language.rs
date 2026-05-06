@@ -12,7 +12,7 @@ impl Language {
     pub fn parse(raw: impl Into<String>) -> Result<Self, DomainError> {
         let s = raw.into();
         if s.trim().is_empty() {
-            return Err(DomainError::Validation("language tag is empty".into()));
+            return Err(DomainError::Validation("a tag de idioma está vazia".into()));
         }
         Ok(Self(s))
     }

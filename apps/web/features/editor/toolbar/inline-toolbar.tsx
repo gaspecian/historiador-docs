@@ -51,7 +51,7 @@ export function InlineToolbar({ selectionText, anchor, onAction }: InlineToolbar
   return (
     <div
       role="toolbar"
-      aria-label="AI quick actions"
+      aria-label="Ações rápidas de IA"
       style={style}
       className="flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-surface-border)] bg-[var(--color-surface-canvas)] shadow-[var(--shadow-md)] px-1 py-1"
     >
